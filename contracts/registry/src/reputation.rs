@@ -1,1 +1,1 @@
-// Per-address compliance score aggregation
+//! Per-address compliance score aggregation (Phase 2 placeholder)
