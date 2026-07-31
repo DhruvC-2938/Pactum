@@ -1,8 +1,8 @@
-# Astra Name Service (astra-ns)
+# Pactum
 
-**Human-readable names for Stellar addresses — turn `GAJG7C...Y27ES` into `aman.xlm`.**
+**An on-chain registry for recurring commitments — and a public, verifiable record of who keeps their word.**
 
-Astra Name Service (ANS) is an open, on-chain naming registry for the Stellar network, built on Soroban. It lets anyone register a short, memorable name and point it at their Stellar address — and lets any wallet, dApp, or contract resolve that name back to an address in a single call.
+Pactum lets any two parties register a real-world commitment on Stellar — a refund promise, an uptime guarantee, a milestone check-in, a recurring report — and tracks whether it was fulfilled on time, late, or broken. Every commitment becomes part of a public, queryable compliance history for the addresses involved.
 
 [![Soroban](https://img.shields.io/badge/Soroban-Smart%20Contracts-7D00FF)](https://soroban.stellar.org)
 [![Network](https://img.shields.io/badge/Network-Stellar%20Testnet-08B5E5)](https://stellar.org)
@@ -10,52 +10,57 @@ Astra Name Service (ANS) is an open, on-chain naming registry for the Stellar ne
 
 ---
 
-## Why Astra?
+## The problem
 
-Stellar addresses are 56-character strings (`G...`). They're impossible to remember, easy to mistype, and unfriendly to share. Other chains solved this years ago — Ethereum has ENS, Solana has SNS — but Stellar has never had a strong, general-purpose name service.
+Escrow contracts handle *one-time* deals — money goes in, money comes out once conditions are met. But a lot of real commitments aren't one-time payments at all:
 
-Astra fixes that: a simple registry contract plus a lightweight API/SDK so any wallet or app can resolve `alice.xlm → GABCDEF...` in one request.
+- A landlord promising to return a deposit within 30 days of move-out
+- An API provider guaranteeing 99.9% uptime this quarter
+- A freelancer committing to weekly milestone updates
+- A DAO grantee promising monthly progress reports
 
----
+There's currently no simple, general-purpose way to record these kinds of ongoing promises on-chain, or to see — trustlessly — whether someone has a track record of actually keeping them.
 
-## How it works
+## What Pactum does
+
+Pactum is a lightweight registry, not a payment or custody system. It doesn't hold funds. It records **who promised what to whom, by when — and whether they delivered.**
 
 ```
- register("aman.xlm", owner, 1 year)
+ create_commitment(issuer, counterparty, terms, due_at)
               │
               ▼
-     ┌─────────────────┐
-     │  Registry        │   on-chain source of truth
-     │  Contract        │   (Soroban, Rust)
-     └────────┬─────────┘
+     ┌──────────────────┐
+     │  Registry          │   on-chain source of truth
+     │  Contract          │   (Soroban, Rust)
+     └────────┬──────────┘
               │ events
               ▼
-     ┌─────────────────┐
-     │  Indexer          │   watches events, builds a
-     │  (backend)         │   fast lookup cache
-     └────────┬─────────┘
+     ┌──────────────────┐
+     │  Indexer            │   watches events, aggregates
+     │  (backend)           │   per-address compliance history
+     └────────┬──────────┘
               │
               ▼
-     ┌─────────────────┐
-     │  REST API          │   GET /resolve/aman.xlm
-     │  + JS SDK           │   → GABCDEF...Y27ES
-     └─────────────────┘
+     ┌──────────────────┐
+     │  REST API            │   GET /reputation/GABC...
+     │  + JS SDK             │   → { fulfilled: 14, late: 2, breached: 1 }
+     └──────────────────┘
 ```
 
-1. **Register** — a user claims a name on-chain, paying a small XLM fee, for a chosen duration.
-2. **Resolve** — anyone (a wallet, a dApp, another contract) looks up the name and gets back the current owner's address.
-3. **Renew / Transfer** — owners renew before expiry or transfer ownership to someone else.
-4. **Records** — owners can attach optional metadata to their name (avatar URL, social handles, a secondary address for a different asset, etc.).
+1. **Create** — either party (or both) registers a commitment: what's promised, to whom, and the due date.
+2. **Attest** — when the due date arrives, the commitment is marked fulfilled, either by mutual confirmation, a designated oracle, or the counterparty's sign-off.
+3. **Dispute** — if the parties disagree on whether it was met, the commitment is flagged as disputed rather than silently resolved either way.
+4. **Aggregate** — the backend indexes every commitment's outcome into a per-address compliance history — a real record built from timestamped, on-chain events instead of subjective star ratings.
 
 ---
 
 ## Project structure
 
 ```
-astra-ns/
+pactum/
 ├── contracts/registry/     # Soroban smart contract (Rust)
 ├── backend/                # REST API + on-chain event indexer (TypeScript)
-├── sdk/js/                 # Lightweight JS/TS SDK for dApp & wallet integration
+├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
 ├── docs/                   # Architecture, contract & API reference, integration guide
 └── examples/                # Minimal integration demo
 ```
@@ -73,7 +78,7 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Backend API | Node.js + TypeScript + Express |
 | Indexer | Soroban RPC event listener |
 | Database | PostgreSQL |
-| SDK | TypeScript, published as `@astra-ns/sdk` |
+| SDK | TypeScript, published as `@pactum/sdk` |
 | Testing | Cargo test (contract) · Jest (backend) |
 | CI/CD | GitHub Actions |
 
@@ -83,13 +88,12 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
 | Method | Kind | Description |
 |---|---|---|
-| `register(name, owner, duration)` | write | Claim a new name, pay the registration fee |
-| `resolve(name)` | read | Return the address currently owned by `name` |
-| `reverse_resolve(address)` | read | Return the primary name pointing at `address` |
-| `renew(name, duration)` | write | Extend a name's expiry |
-| `transfer(name, new_owner)` | write | Transfer ownership of a name |
-| `set_record(name, key, value)` | write | Attach metadata to a name |
-| `is_available(name)` | read | Check if a name is unclaimed or expired |
+| `create_commitment(issuer, counterparty, terms_hash, due_at)` | write | Register a new commitment between two addresses |
+| `attest(commitment_id, outcome)` | write | Mark a commitment fulfilled, late, or breached |
+| `dispute(commitment_id, reason)` | write | Flag a commitment as contested rather than resolved |
+| `resolve_dispute(commitment_id, outcome)` | write | Designated arbitrator/oracle settles a disputed commitment |
+| `get_commitment(commitment_id)` | read | Fetch a single commitment's details and status |
+| `get_reputation(address)` | read | Aggregate fulfilled / late / breached counts for an address |
 
 Full spec lives in [`docs/contract-reference.md`](./docs/contract-reference.md) as the contract develops.
 
@@ -101,8 +105,8 @@ Full spec lives in [`docs/contract-reference.md`](./docs/contract-reference.md) 
 
 ```bash
 # 1. Clone
-git clone https://github.com/<your-username>/astra-ns.git
-cd astra-ns
+git clone https://github.com/<your-username>/pactum.git
+cd pactum
 
 # 2. Build & test the contract
 cd contracts && cargo test
@@ -119,16 +123,15 @@ npm run dev
 
 ## Roadmap
 
-- [ ] Core registry contract — register / resolve / renew / transfer
-- [ ] Multi-record support (multiple addresses/metadata per name)
-- [ ] Subdomains (`shop.aman.xlm`)
-- [ ] Expiry grace period before a name is released
-- [ ] Premium/short-name auction system
-- [ ] REST API + on-chain indexer
-- [ ] JS/TS SDK (`@astra-ns/sdk`)
-- [ ] Wallet integration example
-- [ ] Rate limiting & anti-squatting protections
-- [ ] Public resolver dashboard (names registered, lookups over time)
+- [ ] Core registry contract — create / attest / dispute / resolve
+- [ ] Per-address reputation aggregation
+- [ ] Oracle-based auto-attestation for measurable commitments (e.g. uptime feeds)
+- [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
+- [ ] Public reputation lookup API
+- [ ] JS/TS SDK (`@pactum/sdk`)
+- [ ] Marketplace integration example (check a counterparty's history before a deal)
+- [ ] Rate limiting & spam-commitment protections
+- [ ] Dashboard endpoint (commitments created/fulfilled over time)
 
 Open an issue if you'd like to pick up any of these — contributions welcome.
 
