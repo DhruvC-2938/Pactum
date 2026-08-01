@@ -1,12 +1,23 @@
 use soroban_sdk::{contracttype, Address, BytesN};
 
 /// Represents the current lifecycle state of a commitment.
-/// Currently minimal for Phase 1 with only the `Pending` status.
+///
+/// # Variants
+/// * `Pending` - The commitment has been created and is awaiting fulfillment or breach.
+/// * `Fulfilled` - The commitment was successfully fulfilled.
+/// * `Late` - The commitment was fulfilled after the due date.
+/// * `Breached` - The commitment was breached or defaulted upon.
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommitmentStatus {
     /// Commitment has been created and is awaiting fulfillment or breach.
     Pending,
+    /// Commitment was successfully fulfilled.
+    Fulfilled,
+    /// Commitment was fulfilled after the due date.
+    Late,
+    /// Commitment was breached or defaulted upon.
+    Breached,
 }
 
 /// A registered recurring or ongoing commitment between two parties on Stellar.
@@ -27,6 +38,8 @@ pub struct Commitment {
     pub status: CommitmentStatus,
     /// Unix timestamp (seconds) when the commitment was created.
     pub created_at: u64,
+    /// Unix timestamp (seconds) when the commitment was attested, if it has been attested.
+    pub attested_at: Option<u64>,
 }
 
 /// Storage keys used for persisting commitments and contract state.

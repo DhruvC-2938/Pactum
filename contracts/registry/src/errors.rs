@@ -9,4 +9,10 @@ pub enum Error {
     DueAtInPast = 1,
     /// No commitment was found with the specified ID.
     CommitmentNotFound = 2,
+    /// The commitment is no longer in Pending status and has already been resolved.
+    AlreadyResolved = 3,
+    /// The caller is not authorized to perform this action on the commitment.
+    Unauthorized = 4,
+    /// The provided outcome status is invalid (e.g., attempting to attest as Pending).
+    InvalidOutcome = 5,
 }

@@ -113,6 +113,12 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "attested_at"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "counterparty"
                       },
                       "val": {
@@ -217,6 +223,12 @@
                 "durability": "persistent",
                 "val": {
                   "map": [
+                    {
+                      "key": {
+                        "symbol": "attested_at"
+                      },
+                      "val": "void"
+                    },
                     {
                       "key": {
                         "symbol": "counterparty"

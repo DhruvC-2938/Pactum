@@ -67,6 +67,7 @@ impl RegistryContract {
             due_at,
             status: CommitmentStatus::Pending,
             created_at: now,
+            attested_at: None,
         };
 
         // 5. Store in persistent storage keyed by id.
@@ -96,5 +97,37 @@ impl RegistryContract {
             .persistent()
             .get(&DataKey::Commitment(id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound))
+    }
+
+    /// Attests to the lifecycle status of a commitment.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `caller` - The address attesting to the commitment. Must authorize the call and be issuer or counterparty.
+    /// * `id` - The unique identifier of the commitment to attest.
+    /// * `outcome` - The new lifecycle status (`Fulfilled`, `Late`, or `Breached`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
+    /// * Panics with `Error::Unauthorized` if `caller` is neither `issuer` nor `counterparty`.
+    /// * Panics with `Error::InvalidOutcome` if `outcome` is `CommitmentStatus::Pending`.
+    /// * Panics with `Error::AlreadyResolved` if the commitment is not currently `Pending`.
+    pub fn attest(env: Env, caller: Address, id: u64, outcome: CommitmentStatus) {
+        attestation::attest(&env, caller, id, outcome);
+    }
+
+    /// Checks whether a commitment is overdue.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `id` - The unique identifier of the commitment to check.
+    ///
+    /// # Returns
+    /// * `bool` - True if the commitment is still `Pending` and the ledger timestamp is greater than `due_at`.
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
+    pub fn is_overdue(env: Env, id: u64) -> bool {
+        attestation::is_overdue(&env, id)
     }
 }
