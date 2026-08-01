@@ -7,6 +7,7 @@ Pactum lets any two parties register a real-world commitment on Stellar — a re
 [![Soroban](https://img.shields.io/badge/Soroban-Smart%20Contracts-7D00FF)](https://soroban.stellar.org)
 [![Network](https://img.shields.io/badge/Network-Stellar%20Testnet-08B5E5)](https://stellar.org)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
+[![CI](https://github.com/amankoli09/Pactum/actions/workflows/ci.yml/badge.svg)](https://github.com/amankoli09/Pactum/actions/workflows/ci.yml)
 
 ---
 

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  contract-tests:
+    name: Contract Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry and build target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      - name: Run Soroban contract test suite
+        working-directory: contracts
+        run: cargo test --workspace
+
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Temporary check until the backend phase begins: skip gracefully if package.json does not exist or is empty
+      - name: Check if backend package.json exists and is non-empty
+        id: check_backend
+        run: |
+          if [ -s backend/package.json ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Backend Skipped::backend/package.json is missing or empty. Skipping backend tests gracefully until backend phase begins."
+          fi
+
+      - name: Set up Node.js 20.x (LTS)
+        if: steps.check_backend.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Cache npm dependencies
+        if: steps.check_backend.outputs.ready == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('backend/package-lock.json', 'backend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install backend dependencies
+        if: steps.check_backend.outputs.ready == 'true'
+        working-directory: backend
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run backend linter
+        if: steps.check_backend.outputs.ready == 'true'
+        working-directory: backend
+        run: --if-present npm run lint
+
+      - name: Run backend test suite
+        if: steps.check_backend.outputs.ready == 'true'
+        working-directory: backend
+        run: |
+          if node -e "const pkg = require('./package.json'); process.exit(pkg.scripts && pkg.scripts.test && pkg.scripts.test !== 'echo \"Error: no test specified\" && exit 1' ? 0 : 1)"; then
+            npm test
+          else
+            echo "No valid test script defined in backend/package.json yet. Skipping test execution."
+          fi

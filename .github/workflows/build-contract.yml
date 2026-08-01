@@ -1,0 +1,41 @@
+name: Build Contract
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-wasm:
+    name: Build Soroban Wasm Artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry and build target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
+      - name: Build optimized Soroban Wasm contract
+        working-directory: contracts
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Upload Wasm contract artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: soroban-contract-wasm
+          path: contracts/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
