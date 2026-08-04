@@ -1,5 +1,9 @@
 use soroban_sdk::{contracttype, Address, BytesN};
 
+/// The default dispute window in seconds (7 days = 604,800 seconds).
+/// A party may raise a dispute within this duration after an attestation occurs.
+pub const DISPUTE_WINDOW_SECONDS: u64 = 7 * 24 * 60 * 60;
+
 /// Represents the current lifecycle state of a commitment.
 ///
 /// # Variants
@@ -7,6 +11,7 @@ use soroban_sdk::{contracttype, Address, BytesN};
 /// * `Fulfilled` - The commitment was successfully fulfilled.
 /// * `Late` - The commitment was fulfilled after the due date.
 /// * `Breached` - The commitment was breached or defaulted upon.
+/// * `Disputed` - The commitment outcome is disputed by one of the parties.
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommitmentStatus {
@@ -18,6 +23,8 @@ pub enum CommitmentStatus {
     Late,
     /// Commitment was breached or defaulted upon.
     Breached,
+    /// Commitment outcome is disputed by one of the parties.
+    Disputed,
 }
 
 /// A registered recurring or ongoing commitment between two parties on Stellar.
@@ -50,4 +57,7 @@ pub enum DataKey {
     Commitment(u64),
     /// Instance storage key for the incrementing counter of IDs.
     NextId,
+    /// Instance storage key for the designated Arbitrator address.
+    Arbitrator,
 }
+

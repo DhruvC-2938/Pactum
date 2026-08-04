@@ -2,6 +2,7 @@
 
 pub mod attestation;
 pub mod commitments;
+pub mod disputes;
 pub mod errors;
 pub mod events;
 pub mod reputation;
@@ -9,6 +10,7 @@ pub mod reputation;
 #[cfg(test)]
 mod test;
 
+pub use commitments::DISPUTE_WINDOW_SECONDS;
 use commitments::{Commitment, CommitmentStatus, DataKey};
 use errors::Error;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
@@ -19,7 +21,43 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
+    /// Initializes the contract with a designated arbitrator address.
+    /// Can only be called once.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `arbitrator` (via `require_auth`).
+    /// * Why: Requiring the designated arbitrator to authorize initialization ensures
+    ///   that an address cannot be appointed as arbitrator without its explicit consent.
+    ///
+    /// # Panics
+    /// * Panics with `Error::AlreadyInitialized` if called more than once.
+    pub fn initialize(env: Env, arbitrator: Address) {
+        if env.storage().instance().has(&DataKey::Arbitrator) {
+            panic_with_error!(&env, Error::AlreadyInitialized);
+        }
+        arbitrator.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::Arbitrator, &arbitrator);
+    }
+
+    /// Retrieves the designated arbitrator address.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    pub fn get_arbitrator(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
+    }
+
     /// Creates and registers a new ongoing commitment between an issuer and a counterparty.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `issuer` (via `require_auth`).
+    /// * Why: Only the party issuing (promising) the commitment should be able to create
+    ///   and bind themselves to a new commitment on-chain.
     ///
     /// # Arguments
     /// * `env` - The Soroban execution environment.
@@ -55,7 +93,9 @@ impl RegistryContract {
             .instance()
             .get(&DataKey::NextId)
             .unwrap_or(1);
-        let next_id = id.checked_add(1).expect("ID overflow");
+        let next_id = id
+            .checked_add(1)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
         env.storage().instance().set(&DataKey::NextId, &next_id);
 
         // 4. Create the Commitment object with Pending status.
@@ -101,6 +141,12 @@ impl RegistryContract {
 
     /// Attests to the lifecycle status of a commitment.
     ///
+    /// # Authorization
+    /// * Authorized caller: `caller` (via `require_auth`), which must be either the
+    ///   commitment's `issuer` or `counterparty`.
+    /// * Why: Only the participating parties involved in the commitment are authorized
+    ///   to attest to its outcome.
+    ///
     /// # Arguments
     /// * `env` - The Soroban execution environment.
     /// * `caller` - The address attesting to the commitment. Must authorize the call and be issuer or counterparty.
@@ -110,7 +156,7 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
     /// * Panics with `Error::Unauthorized` if `caller` is neither `issuer` nor `counterparty`.
-    /// * Panics with `Error::InvalidOutcome` if `outcome` is `CommitmentStatus::Pending`.
+    /// * Panics with `Error::InvalidOutcome` if `outcome` is `CommitmentStatus::Pending` or `Disputed`.
     /// * Panics with `Error::AlreadyResolved` if the commitment is not currently `Pending`.
     pub fn attest(env: Env, caller: Address, id: u64, outcome: CommitmentStatus) {
         attestation::attest(&env, caller, id, outcome);
@@ -130,4 +176,43 @@ impl RegistryContract {
     pub fn is_overdue(env: Env, id: u64) -> bool {
         attestation::is_overdue(&env, id)
     }
+
+    /// Raises a dispute on an attested commitment within the dispute window.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `caller` (via `require_auth`), which must be either the
+    ///   commitment's `issuer` or `counterparty`.
+    /// * Why: Only the participating parties to the commitment have standing to contest
+    ///   an attested outcome and initiate a dispute.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `caller` - The address initiating the dispute. Must authorize the call.
+    /// * `id` - The unique identifier of the commitment to dispute.
+    pub fn dispute(env: Env, caller: Address, id: u64) {
+        disputes::dispute(&env, caller, id);
+    }
+
+    /// Resolves a disputed commitment to a final outcome.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
+    ///   the designated arbitrator address stored at contract initialization.
+    /// * Why: Only the mutually trusted, designated arbitrator is authorized to adjudicate
+    ///   and resolve contested commitments.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `arbitrator` - The designated arbitrator address resolving the dispute. Must authorize the call.
+    /// * `id` - The unique identifier of the disputed commitment.
+    /// * `final_outcome` - The resolution status (`Fulfilled`, `Late`, or `Breached`).
+    pub fn resolve_dispute(
+        env: Env,
+        arbitrator: Address,
+        id: u64,
+        final_outcome: CommitmentStatus,
+    ) {
+        disputes::resolve_dispute(&env, arbitrator, id, final_outcome);
+    }
 }
+

@@ -25,3 +25,27 @@ pub fn commitment_attested(
         status,
     );
 }
+
+/// Publishes an event when a commitment is disputed by a party.
+pub fn commitment_disputed(
+    env: &Env,
+    id: u64,
+) {
+    env.events().publish(
+        (symbol_short!("disputed"), id),
+        (),
+    );
+}
+
+/// Publishes an event when a dispute on a commitment is resolved by the arbitrator.
+pub fn dispute_resolved(
+    env: &Env,
+    id: u64,
+    final_outcome: CommitmentStatus,
+) {
+    env.events().publish(
+        (symbol_short!("resolved"), id),
+        final_outcome,
+    );
+}
+

@@ -15,4 +15,19 @@ pub enum Error {
     Unauthorized = 4,
     /// The provided outcome status is invalid (e.g., attempting to attest as Pending).
     InvalidOutcome = 5,
+    /// The contract has already been initialized.
+    AlreadyInitialized = 6,
+    /// The caller is not the designated arbitrator.
+    NotArbitrator = 7,
+    /// The dispute window for this commitment has expired.
+    DisputeWindowExpired = 8,
+    /// The transition is invalid for the current commitment status.
+    InvalidTransition = 9,
+    /// The contract has not been initialized.
+    NotInitialized = 10,
+    /// The caller is not authorized to perform this action.
+    NotAuthorized = 11,
+    /// Numerical overflow occurred when calculating ID or timestamps.
+    Overflow = 12,
 }
+

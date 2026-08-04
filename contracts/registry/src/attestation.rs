@@ -6,6 +6,12 @@ use crate::events;
 use soroban_sdk::{panic_with_error, Address, Env};
 
 /// Performs attestation on a commitment, resolving its status.
+///
+/// # Authorization
+/// * Authorized caller: `caller` (via `require_auth`), which must be either the commitment's
+///   `issuer` or `counterparty`.
+/// * Why: Only the participating parties involved in the commitment are authorized to attest
+///   to its outcome.
 pub fn attest(
     env: &Env,
     caller: Address,
@@ -15,8 +21,8 @@ pub fn attest(
     // 1. Require authorization from the caller.
     caller.require_auth();
 
-    // 2. Reject Pending as an outcome value.
-    if outcome == CommitmentStatus::Pending {
+    // 2. Reject Pending or Disputed as an outcome value.
+    if outcome == CommitmentStatus::Pending || outcome == CommitmentStatus::Disputed {
         panic_with_error!(env, Error::InvalidOutcome);
     }
 
