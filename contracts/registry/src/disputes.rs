@@ -57,6 +57,11 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
+    env.storage().persistent().extend_ttl(
+        &DataKey::Commitment(id),
+        crate::commitments::TTL_THRESHOLD_LEDGERS,
+        crate::commitments::TTL_EXTEND_LEDGERS,
+    );
 
     // 9. Update reputation (decrement previous outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), old_status, false);
@@ -111,13 +116,19 @@ pub fn resolve_dispute(
         panic_with_error!(env, Error::InvalidTransition);
     }
 
-    // 6. Update status to final_outcome.
+    // 6. Update status to final_outcome and clear attested_at to prevent re-dispute.
     commitment.status = final_outcome;
+    commitment.attested_at = None;
 
     // 7. Save updated commitment to storage.
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
+    env.storage().persistent().extend_ttl(
+        &DataKey::Commitment(id),
+        crate::commitments::TTL_THRESHOLD_LEDGERS,
+        crate::commitments::TTL_EXTEND_LEDGERS,
+    );
 
     // 8. Update reputation (increment with final outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), final_outcome, true);

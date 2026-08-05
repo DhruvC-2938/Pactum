@@ -52,6 +52,11 @@ pub fn attest(
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
+    env.storage().persistent().extend_ttl(
+        &DataKey::Commitment(id),
+        crate::commitments::TTL_THRESHOLD_LEDGERS,
+        crate::commitments::TTL_EXTEND_LEDGERS,
+    );
 
     // 8. Update reputation (increment).
     crate::reputation::update_reputation(env, commitment.issuer, outcome, true);

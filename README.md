@@ -98,6 +98,20 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
 Full spec lives in [`docs/contract-reference.md`](./docs/contract-reference.md) as the contract develops.
 
+## Production Deployment
+
+The contract is currently deployed on the Stellar Testnet for testing and integration.
+
+| Contract | Network | Contract ID | Explorer |
+|----------|---------|-------------|----------|
+| Registry | Testnet | `CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E` | [Stellar Expert](https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E) |
+
+### Example Transactions
+
+- **Initialize Contract**: [`2b9cc1afa24a3bc9a8412e045cc8c23b8d2fc3e83899ae7e3b7b8ba2b1a40552`](https://stellar.expert/explorer/testnet/tx/2b9cc1afa24a3bc9a8412e045cc8c23b8d2fc3e83899ae7e3b7b8ba2b1a40552)
+- **Create Commitment**: [`5cfdc977deb9c5e16be8127611dcbcd7df6a4d67706dec082eee464af1ae34fc`](https://stellar.expert/explorer/testnet/tx/5cfdc977deb9c5e16be8127611dcbcd7df6a4d67706dec082eee464af1ae34fc)
+- **Attest Commitment**: [`6e73137635796cd1786c8a6feec8365c92751f514669a3b9a907e27420088890`](https://stellar.expert/explorer/testnet/tx/6e73137635796cd1786c8a6feec8365c92751f514669a3b9a907e27420088890)
+
 ---
 
 ## Getting started (local dev)

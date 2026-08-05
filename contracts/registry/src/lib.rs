@@ -39,6 +39,11 @@ impl RegistryContract {
         env.storage()
             .instance()
             .set(&DataKey::Arbitrator, &arbitrator);
+        
+        env.storage().instance().extend_ttl(
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
     }
 
     /// Retrieves the designated arbitrator address.
@@ -46,10 +51,17 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
     pub fn get_arbitrator(env: Env) -> Address {
-        env.storage()
+        let arbitrator = env.storage()
             .instance()
             .get(&DataKey::Arbitrator)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        
+        env.storage().instance().extend_ttl(
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
+        
+        arbitrator
     }
 
     /// Creates and registers a new ongoing commitment between an issuer and a counterparty.
@@ -97,6 +109,10 @@ impl RegistryContract {
             .checked_add(1)
             .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
         env.storage().instance().set(&DataKey::NextId, &next_id);
+        env.storage().instance().extend_ttl(
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
 
         // 4. Create the Commitment object with Pending status.
         let commitment = Commitment {
@@ -110,10 +126,15 @@ impl RegistryContract {
             attested_at: None,
         };
 
-        // 5. Store in persistent storage keyed by id.
+        // 5. Store in persistent storage keyed by id and extend TTL.
         env.storage()
             .persistent()
             .set(&DataKey::Commitment(id), &commitment);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Commitment(id),
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
 
         // 6. Emit Created event.
         events::commitment_created(&env, id, &issuer, &counterparty);
@@ -133,10 +154,18 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::CommitmentNotFound` if the ID does not exist in storage.
     pub fn get_commitment(env: Env, id: u64) -> Commitment {
-        env.storage()
+        let commitment = env.storage()
             .persistent()
             .get(&DataKey::Commitment(id))
-            .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound))
+            .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound));
+        
+        env.storage().persistent().extend_ttl(
+            &DataKey::Commitment(id),
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
+        
+        commitment
     }
 
     /// Attests to the lifecycle status of a commitment.

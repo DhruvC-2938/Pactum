@@ -722,3 +722,71 @@ fn test_reputation_aggregates_multiple_commitments() {
     assert_eq!(rep.late_count, 1);      // Comm 2
     assert_eq!(rep.breached_count, 1);  // Comm 3
 }
+
+// -----------------------------------------------------------------------------
+// Phase 5 - Hardening & Edge Cases
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_create_commitment_fails_if_due_at_is_current_timestamp() {
+    let (env, client, issuer, counterparty) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let due_at = 1000; // Exactly current timestamp
+
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    assert_eq!(res, Err(Ok(Error::DueAtInPast.into())));
+}
+
+#[test]
+fn test_dispute_fails_if_already_resolved() {
+    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    
+    // Attest, dispute, resolve
+    client.attest(&issuer, &id, &CommitmentStatus::Late);
+    client.dispute(&counterparty, &id);
+    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+
+    // Try disputing again after final resolution
+    let res = client.try_dispute(&counterparty, &id);
+    
+    // We expect this to fail.
+    // However, if the current contract logic allows a second dispute because `attested_at` is still within the window,
+    // we need to fix the contract. Let's see if the test passes with an error. 
+    // Wait, the test expects an error. The user requirement:
+    // "repeated dispute attempts on an already-resolved dispute"
+    assert_eq!(res, Err(Ok(Error::InvalidTransition.into())));
+}
+
+#[test]
+fn test_realistic_sequence() {
+    // create -> attest late -> dispute -> resolve fulfilled -> verify reputation
+    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    
+    env.ledger().with_mut(|l| l.timestamp = 2500); // Late
+    client.attest(&issuer, &id, &CommitmentStatus::Late);
+    
+    let rep_after_attest = client.get_reputation(&issuer);
+    assert_eq!(rep_after_attest.late_count, 1);
+    
+    client.dispute(&counterparty, &id);
+    let rep_after_dispute = client.get_reputation(&issuer);
+    assert_eq!(rep_after_dispute.late_count, 0); // Decremented
+    
+    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+    
+    let rep_final = client.get_reputation(&issuer);
+    assert_eq!(rep_final.fulfilled_count, 1);
+    assert_eq!(rep_final.late_count, 0);
+    assert_eq!(rep_final.breached_count, 0);
+    
+    let comm = client.get_commitment(&id);
+    assert_eq!(comm.status, CommitmentStatus::Fulfilled);
+}

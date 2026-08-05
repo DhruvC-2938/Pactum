@@ -4,6 +4,12 @@ use soroban_sdk::{contracttype, Address, BytesN};
 /// A party may raise a dispute within this duration after an attestation occurs.
 pub const DISPUTE_WINDOW_SECONDS: u64 = 7 * 24 * 60 * 60;
 
+/// The threshold in ledgers below which we extend the TTL. (Approx 14 days at 5s/ledger = 241,920)
+pub const TTL_THRESHOLD_LEDGERS: u32 = 14 * 17280;
+
+/// The amount in ledgers to extend the TTL to. (Approx 30 days at 5s/ledger = 518,400)
+pub const TTL_EXTEND_LEDGERS: u32 = 30 * 17280;
+
 /// Represents the current lifecycle state of a commitment.
 ///
 /// # Variants

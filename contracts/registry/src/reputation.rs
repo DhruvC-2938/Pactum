@@ -23,14 +23,24 @@ pub enum ReputationKey {
 
 /// Helper function to get the reputation for an address.
 pub fn get_reputation(env: &Env, address: Address) -> Reputation {
-    env.storage()
+    let rep = env.storage()
         .persistent()
-        .get(&ReputationKey::Reputation(address))
+        .get(&ReputationKey::Reputation(address.clone()))
         .unwrap_or(Reputation {
             fulfilled_count: 0,
             late_count: 0,
             breached_count: 0,
-        })
+        });
+
+    if env.storage().persistent().has(&ReputationKey::Reputation(address.clone())) {
+        env.storage().persistent().extend_ttl(
+            &ReputationKey::Reputation(address),
+            crate::commitments::TTL_THRESHOLD_LEDGERS,
+            crate::commitments::TTL_EXTEND_LEDGERS,
+        );
+    }
+    
+    rep
 }
 
 /// Helper function to update the reputation for an address.
@@ -71,5 +81,11 @@ pub fn update_reputation(
 
     env.storage()
         .persistent()
-        .set(&ReputationKey::Reputation(issuer), &rep);
+        .set(&ReputationKey::Reputation(issuer.clone()), &rep);
+    
+    env.storage().persistent().extend_ttl(
+        &ReputationKey::Reputation(issuer),
+        crate::commitments::TTL_THRESHOLD_LEDGERS,
+        crate::commitments::TTL_EXTEND_LEDGERS,
+    );
 }
