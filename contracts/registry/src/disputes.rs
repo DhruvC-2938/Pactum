@@ -47,15 +47,21 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
         panic_with_error!(env, Error::DisputeWindowExpired);
     }
 
-    // 6. Transition status to Disputed.
+    // 6. Store old status for reputation adjustment.
+    let old_status = commitment.status;
+
+    // 7. Transition status to Disputed.
     commitment.status = CommitmentStatus::Disputed;
 
-    // 7. Save updated commitment to storage.
+    // 8. Save updated commitment to storage.
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
 
-    // 8. Emit commitment_disputed event.
+    // 9. Update reputation (decrement previous outcome).
+    crate::reputation::update_reputation(env, commitment.issuer.clone(), old_status, false);
+
+    // 10. Emit commitment_disputed event.
     events::commitment_disputed(env, id);
 }
 
@@ -113,6 +119,9 @@ pub fn resolve_dispute(
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
 
-    // 8. Emit dispute_resolved event.
+    // 8. Update reputation (increment with final outcome).
+    crate::reputation::update_reputation(env, commitment.issuer.clone(), final_outcome, true);
+
+    // 9. Emit dispute_resolved event.
     events::dispute_resolved(env, id, final_outcome);
 }

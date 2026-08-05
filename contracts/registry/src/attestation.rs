@@ -53,7 +53,10 @@ pub fn attest(
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
 
-    // 8. Emit commitment_attested event.
+    // 8. Update reputation (increment).
+    crate::reputation::update_reputation(env, commitment.issuer, outcome, true);
+
+    // 9. Emit commitment_attested event.
     events::commitment_attested(env, id, outcome);
 }
 

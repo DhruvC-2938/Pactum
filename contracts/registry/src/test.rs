@@ -596,3 +596,129 @@ fn test_initialize_requires_auth() {
     client.initialize(&arbitrator);
 }
 
+// -----------------------------------------------------------------------------
+// Phase 4 - Reputation Tests
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_get_reputation_zeroed_for_new_address() {
+    let (env, client, _issuer, _counterparty) = setup_test();
+    let new_issuer = Address::generate(&env);
+
+    let rep = client.get_reputation(&new_issuer);
+    assert_eq!(rep.fulfilled_count, 0);
+    assert_eq!(rep.late_count, 0);
+    assert_eq!(rep.breached_count, 0);
+}
+
+#[test]
+fn test_reputation_increments_direct_attestation() {
+    let (env, client, issuer, counterparty) = setup_test();
+    
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let due_at = 2000;
+    
+    // Create and fulfill first commitment
+    let id1 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &due_at);
+    client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
+    
+    let rep1 = client.get_reputation(&issuer);
+    assert_eq!(rep1.fulfilled_count, 1);
+    assert_eq!(rep1.late_count, 0);
+    assert_eq!(rep1.breached_count, 0);
+    
+    // Create and late second commitment
+    let id2 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[2u8; 32]), &due_at);
+    client.attest(&issuer, &id2, &CommitmentStatus::Late);
+    
+    let rep2 = client.get_reputation(&issuer);
+    assert_eq!(rep2.fulfilled_count, 1);
+    assert_eq!(rep2.late_count, 1);
+    assert_eq!(rep2.breached_count, 0);
+    
+    // Create and breach third commitment
+    let id3 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[3u8; 32]), &due_at);
+    client.attest(&issuer, &id3, &CommitmentStatus::Breached);
+    
+    let rep3 = client.get_reputation(&issuer);
+    assert_eq!(rep3.fulfilled_count, 1);
+    assert_eq!(rep3.late_count, 1);
+    assert_eq!(rep3.breached_count, 1);
+}
+
+#[test]
+fn test_reputation_not_incremented_when_disputed() {
+    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    
+    // Initial attestation increments it
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    let rep_before = client.get_reputation(&issuer);
+    assert_eq!(rep_before.fulfilled_count, 1);
+    
+    // Dispute decrements it back to 0
+    client.dispute(&counterparty, &id);
+    let rep_after = client.get_reputation(&issuer);
+    assert_eq!(rep_after.fulfilled_count, 0);
+    assert_eq!(rep_after.late_count, 0);
+    assert_eq!(rep_after.breached_count, 0);
+}
+
+#[test]
+fn test_reputation_reflects_final_outcome_after_dispute() {
+    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    
+    // 1. Attest as Breached
+    client.attest(&issuer, &id, &CommitmentStatus::Breached);
+    let rep1 = client.get_reputation(&issuer);
+    assert_eq!(rep1.breached_count, 1);
+    
+    // 2. Dispute
+    client.dispute(&counterparty, &id);
+    let rep2 = client.get_reputation(&issuer);
+    assert_eq!(rep2.breached_count, 0); // Decr old outcome
+    
+    // 3. Resolve as Fulfilled
+    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+    let rep3 = client.get_reputation(&issuer);
+    
+    // Most important check: ONLY final outcome is counted
+    assert_eq!(rep3.fulfilled_count, 1);
+    assert_eq!(rep3.breached_count, 0);
+    assert_eq!(rep3.late_count, 0);
+}
+
+#[test]
+fn test_reputation_aggregates_multiple_commitments() {
+    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    
+    // Comm 1: Fulfilled (direct)
+    let id1 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
+    
+    // Comm 2: Late (disputed, resolved as Late)
+    let id2 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[2u8; 32]), &2000);
+    client.attest(&issuer, &id2, &CommitmentStatus::Fulfilled); // Attested as Fulfilled initially
+    client.dispute(&counterparty, &id2);
+    client.resolve_dispute(&arbitrator, &id2, &CommitmentStatus::Late); // Overturned to Late
+    
+    // Comm 3: Breached (direct)
+    let id3 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[3u8; 32]), &2000);
+    client.attest(&issuer, &id3, &CommitmentStatus::Breached);
+    
+    // Comm 4: Fulfilled (direct)
+    let id4 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[4u8; 32]), &2000);
+    client.attest(&issuer, &id4, &CommitmentStatus::Fulfilled);
+    
+    let rep = client.get_reputation(&issuer);
+    assert_eq!(rep.fulfilled_count, 2); // Comm 1, Comm 4
+    assert_eq!(rep.late_count, 1);      // Comm 2
+    assert_eq!(rep.breached_count, 1);  // Comm 3
+}

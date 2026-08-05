@@ -214,5 +214,17 @@ impl RegistryContract {
     ) {
         disputes::resolve_dispute(&env, arbitrator, id, final_outcome);
     }
+
+    /// Retrieves the aggregate reputation for a given address.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `address` - The address to query.
+    ///
+    /// # Returns
+    /// * `Reputation` - The accumulated fulfilled, late, and breached counts for the address as an issuer.
+    pub fn get_reputation(env: Env, address: Address) -> reputation::Reputation {
+        reputation::get_reputation(&env, address)
+    }
 }
 
