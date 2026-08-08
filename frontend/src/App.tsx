@@ -1,10 +1,10 @@
 
 import { useState } from 'react'
-import { PullToRefresh } from './components/motion/pull-to-refresh'
+
 import './app.css'
 
 export default function App() {
-  const [refreshing, setRefreshing] = useState(false);
+
   const [activePage, setActivePage] = useState('dashboard');
   
   return (
@@ -209,14 +209,7 @@ export default function App() {
             <button className="btn btn-ghost btn-sm" onClick={() => {}}>View All</button>
           </div>
           <div className="card-body" style={{ padding: 0 }}>
-            <PullToRefresh
-              className="h-[340px]"
-              onRefresh={async () => {
-                await new Promise((resolve) => setTimeout(resolve, 900));
-                setRefreshing(!refreshing);
-              }}
-            >
-              <div className="commitment-list" style={{ padding: '16px' }}>
+              <div className="commitment-list h-[340px] overflow-auto" style={{ padding: '16px' }}>
                 <div className="commitment-item">
                   <div className="commitment-avatar" style={{background: '#e8e4f3', color: '#5b4d8a'}}>G</div>
                   <div className="commitment-info">
@@ -253,7 +246,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            </PullToRefresh>
           </div>
         </div>
 
@@ -403,14 +395,14 @@ export default function App() {
             <div className="form-group">
               <label className="form-label" htmlFor="create-issuer">Issuer Address</label>
               <input type="text" className="form-input" id="create-issuer"
-                     placeholder="G..." autocomplete="off" spellcheck="false" />
+                     placeholder="G..." autoComplete="off" spellCheck="false" />
               <div className="form-hint">The Stellar address making the promise. Must authorize the transaction.</div>
             </div>
 
             <div className="form-group">
               <label className="form-label" htmlFor="create-counterparty">Counterparty Address</label>
               <input type="text" className="form-input" id="create-counterparty"
-                     placeholder="G..." autocomplete="off" spellcheck="false" />
+                     placeholder="G..." autoComplete="off" spellCheck="false" />
               <div className="form-hint">The address to whom the commitment is owed.</div>
             </div>
 
@@ -549,7 +541,7 @@ export default function App() {
             <div className="form-group">
               <label className="form-label" htmlFor="attest-caller">Your Address (Caller)</label>
               <input type="text" className="form-input" id="attest-caller"
-                     placeholder="G..." autocomplete="off" spellcheck="false" />
+                     placeholder="G..." autoComplete="off" spellCheck="false" />
               <div className="form-hint">Must be the issuer or counterparty of this commitment.</div>
             </div>
 
@@ -630,7 +622,7 @@ export default function App() {
             <div className="form-group">
               <label className="form-label" htmlFor="dispute-caller">Your Address (Caller)</label>
               <input type="text" className="form-input" id="dispute-caller"
-                     placeholder="G..." autocomplete="off" spellcheck="false" />
+                     placeholder="G..." autoComplete="off" spellCheck="false" />
             </div>
 
             <div className="form-group">
@@ -719,7 +711,7 @@ export default function App() {
             <div className="form-group">
               <label className="form-label" htmlFor="resolve-arbitrator">Arbitrator Address</label>
               <input type="text" className="form-input" id="resolve-arbitrator"
-                     placeholder="G..." autocomplete="off" spellcheck="false" />
+                     placeholder="G..." autoComplete="off" spellCheck="false" />
             </div>
 
             <div className="form-group">
@@ -805,7 +797,7 @@ export default function App() {
               <div className="form-group">
                 <label className="form-label" htmlFor="rep-address">Stellar Address</label>
                 <input type="text" className="form-input" id="rep-address"
-                       placeholder="G..." autocomplete="off" spellcheck="false" />
+                       placeholder="G..." autoComplete="off" spellCheck="false" />
                 <div className="form-hint">Enter any address to see their fulfillment track record as an issuer.</div>
               </div>
               <button className="btn btn-primary btn-full" id="btn-rep" onClick={() => {}}>
@@ -990,7 +982,7 @@ export default function App() {
             <div className="form-group">
               <label className="form-label" htmlFor="init-arbitrator">Arbitrator Address</label>
               <input type="text" className="form-input" id="init-arbitrator"
-                     placeholder="G..." autocomplete="off" spellcheck="false" />
+                     placeholder="G..." autoComplete="off" spellCheck="false" />
               <div className="form-hint">This address will be the sole entity able to resolve disputed commitments. It must authorize this transaction.</div>
             </div>
 
