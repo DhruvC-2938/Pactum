@@ -2,11 +2,21 @@
 import { useState } from 'react'
 
 import './App.css'
+import LandingPage from './components/LandingPage'
+import DocsPage from './components/DocsPage'
 
 export default function App() {
 
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState('landing');
   
+  if (activePage === 'landing') {
+    return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
+  }
+
+  if (activePage === 'docs') {
+    return <DocsPage onBack={() => setActivePage('landing')} onLaunchApp={() => setActivePage('dashboard')} />;
+  }
+
   return (
     <>
       <div className="app-shell">
@@ -126,6 +136,18 @@ export default function App() {
     </nav>
 
     <div className="sidebar-footer">
+      <button
+        className="nav-item"
+        style={{ width: '100%', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}
+        onClick={() => setActivePage('landing')}
+      >
+        <span className="nav-icon">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 6.5L8 1l7 5.5V14a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6.5z" />
+          </svg>
+        </span>
+        Home
+      </button>
       <div className="sidebar-network">
         <span className="network-dot"></span>
         <span className="network-name">Stellar Testnet</span>
@@ -133,6 +155,7 @@ export default function App() {
       </div>
     </div>
   </aside>
+
 
   {/* ── Main Content ── */}
   <main className="main-content">
