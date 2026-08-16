@@ -82,7 +82,7 @@ jobs:
       - name: Run backend linter
         if: steps.check_backend.outputs.ready == 'true'
         working-directory: backend
-        run: --if-present npm run lint
+        run: npm run --if-present lint
 
       - name: Run backend test suite
         if: steps.check_backend.outputs.ready == 'true'
