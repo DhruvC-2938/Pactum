@@ -61,6 +61,7 @@ Pactum is a lightweight registry, not a payment or custody system. It doesn't ho
 pactum/
 ├── contracts/registry/     # Soroban smart contract (Rust)
 ├── backend/                # REST API + on-chain event indexer (TypeScript)
+├── zk/                     # Zero-knowledge Trust Score threshold proofs (Circom + snarkjs)
 ├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
 ├── evm/                    # Pactum EVM Oracle: cross-chain trust score bridge PoC (Solidity)
 ├── docs/                   # Architecture, contract & API reference, integration guide
@@ -81,7 +82,8 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Indexer | Soroban RPC event listener |
 | Database | PostgreSQL + TimescaleDB (time-series analytics) |
 | SDK | TypeScript, published as `@pactum/sdk` |
-| Testing | Cargo test (contract) · Jest (backend) |
+| ZK proofs | Circom 2 + snarkjs (Groth16 over BN254) |
+| Testing | Cargo test (contract) · Jest (backend) · `node --test` (zk) |
 | CI/CD | GitHub Actions |
 
 ---
@@ -181,6 +183,8 @@ The frontend is built to call the API on its own origin, and nginx proxies `/api
 - [ ] Marketplace integration example (check a counterparty's history before a deal)
 - [ ] Rate limiting & spam-commitment protections
 - [ ] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Verifiable reputation export — prove `Trust Score > threshold` in zero knowledge
+      ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
 
 Open an issue if you'd like to pick up any of these — contributions welcome.
 
