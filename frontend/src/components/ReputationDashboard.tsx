@@ -34,6 +34,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [fetchError, setFetchError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   const itemsPerPage = 50;
 
@@ -51,29 +52,30 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   };
 
   const triggerAddressChange = (addr: string) => {
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
     setIsLoading(true);
     setActiveAddress(addr);
     setSearchQuery(addr);
+    setReputation(null);
     setCommitments([]);
     setPage(1);
     setHasMore(true);
     if (onNavigateAddress) {
       onNavigateAddress(addr);
     }
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 250);
   };
 
-  const loadCommitments = React.useCallback(async (pageNum: number, isAppend = false) => {
+  const loadCommitments = React.useCallback(async (pageNum: number, isAppend = false, signal?: AbortSignal) => {
     const filters: any = {
       address: activeAddress,
       status: statusFilter === 'All' ? undefined : statusFilter,
       page: pageNum,
       limit: itemsPerPage
     };
-    const data = await fetchCommitments(filters);
+    const data = await fetchCommitments(filters, signal);
 
+    if (signal?.aborted) return;
     setCommitments(prev => isAppend ? [...prev, ...data] : data);
     setHasMore(data.length === itemsPerPage);
     return data;
@@ -88,7 +90,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
     try {
       const nextPage = page + 1;
-      await loadCommitments(nextPage, true);
+      await loadCommitments(nextPage, true, abortRef.current?.signal);
       setPage(nextPage);
     } catch (error) {
       setFetchError('Failed to load more commitments. Please try again.');
@@ -100,18 +102,18 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   }, [page, hasMore, loadCommitments]);
 
   useEffect(() => {
-    const abortController = new AbortController();
+    const signal = abortRef.current?.signal;
 
     const initializeData = async () => {
       setIsLoading(true);
       setFetchError(null);
       try {
         const [repData] = await Promise.all([
-          fetchReputation(activeAddress),
-          loadCommitments(1, false)
+          fetchReputation(activeAddress, signal),
+          loadCommitments(1, false, signal)
         ]);
 
-        if (!abortController.signal.aborted) {
+        if (!signal?.aborted) {
           setReputation(repData);
         }
       } catch (error: any) {
@@ -120,7 +122,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           setFetchError('Failed to initialize dashboard data.');
         }
       } finally {
-        if (!abortController.signal.aborted) {
+        if (!signal?.aborted) {
           setIsLoading(false);
         }
       }
@@ -128,7 +130,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
     initializeData();
 
-    return () => abortController.abort();
+    return () => abortRef.current?.abort();
   }, [activeAddress, statusFilter, loadCommitments]);
 
   useEffect(() => {

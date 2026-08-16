@@ -27,8 +27,8 @@ export interface CommitmentFilters {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000'
 
-async function request<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`)
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, options)
 
   if (!res.ok) {
     throw new Error(`Request failed: ${res.status} ${res.statusText}`)
@@ -37,11 +37,11 @@ async function request<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export function fetchReputation(address: string): Promise<Reputation> {
-  return request<Reputation>(`/reputation/${encodeURIComponent(address)}`)
+export function fetchReputation(address: string, signal?: AbortSignal): Promise<Reputation> {
+  return request<Reputation>(`/reputation/${encodeURIComponent(address)}`, { signal })
 }
 
-export function fetchCommitments(filters: CommitmentFilters = {}): Promise<Commitment[]> {
+export function fetchCommitments(filters: CommitmentFilters = {}, signal?: AbortSignal): Promise<Commitment[]> {
   const params = new URLSearchParams()
 
   if (filters.status) params.set('status', filters.status)
@@ -50,5 +50,5 @@ export function fetchCommitments(filters: CommitmentFilters = {}): Promise<Commi
   if (filters.limit) params.set('limit', filters.limit.toString())
 
   const query = params.toString()
-  return request<Commitment[]>(`/commitments${query ? `?${query}` : ''}`)
+  return request<Commitment[]>(`/commitments${query ? `?${query}` : ''}`, { signal })
 }
