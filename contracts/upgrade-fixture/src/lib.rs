@@ -86,6 +86,9 @@ pub struct Commitment {
     pub created_at: u64,
     pub attested_at: Option<u64>,
     pub resolver_address: Address,
+    pub milestone_count: u32,
+    pub milestones_attested: u32,
+    pub late_milestones: u32,
 }
 
 /// Mirror of `registry::commitments::DataKey`.
@@ -93,6 +96,7 @@ pub struct Commitment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Commitment(u64),
+    Milestone(u64, u32),
     NextId,
     Arbitrator,
 }
@@ -138,6 +142,13 @@ impl UpgradeFixture {
     /// Reads a commitment written by the pre-upgrade executable.
     pub fn read_commitment(env: Env, id: u64) -> Option<Commitment> {
         env.storage().persistent().get(&DataKey::Commitment(id))
+    }
+
+    /// Reads a milestone outcome written by the pre-upgrade executable.
+    pub fn read_milestone(env: Env, id: u64, milestone_index: u32) -> Option<CommitmentStatus> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Milestone(id, milestone_index))
     }
 
     /// Reads the commitment id counter, proving it did not reset across the upgrade.
