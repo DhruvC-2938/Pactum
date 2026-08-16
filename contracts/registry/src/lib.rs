@@ -116,60 +116,59 @@ impl RegistryContract {
         due_at: u64,
         resolver_address: Address,
     ) -> u64 {
-        // 0. Enter the reentrancy guard before any external interaction (including
-        //    the require_auth call below, which may invoke a custom account contract).
-        reentrancy::enter(&env);
-
-        // 1. Require authorization from the issuer.
-        issuer.require_auth();
-
-        // 2. Validate due_at is in the future relative to the current ledger timestamp.
-        let now = env.ledger().timestamp();
-        if due_at <= now {
-            panic_with_error!(&env, Error::DueAtInPast);
-        }
-
-        // 3. Assign the next available ID.
-        let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
-        let next_id = id
-            .checked_add(1)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
-        env.storage().instance().set(&DataKey::NextId, &next_id);
-        env.storage().instance().extend_ttl(
-            commitments::TTL_THRESHOLD_LEDGERS,
-            commitments::TTL_EXTEND_LEDGERS,
-        );
-
-        // 4. Create the Commitment object with Pending status.
-        let commitment = Commitment {
-            id,
-            issuer: issuer.clone(),
-            counterparty: counterparty.clone(),
+        commitments::create(
+            &env,
+            issuer,
+            counterparty,
             terms_hash,
             due_at,
-            status: CommitmentStatus::Pending,
-            created_at: now,
-            attested_at: None,
             resolver_address,
-        };
+            1,
+        )
+    }
 
-        // 5. Store in persistent storage keyed by id and extend TTL.
-        env.storage()
-            .persistent()
-            .set(&DataKey::Commitment(id), &commitment);
-        env.storage().persistent().extend_ttl(
-            &DataKey::Commitment(id),
-            commitments::TTL_THRESHOLD_LEDGERS,
-            commitments::TTL_EXTEND_LEDGERS,
-        );
-
-        // 6. Emit Created event.
-        events::commitment_created(&env, id, &issuer, &counterparty);
-
-        // 7. Release the reentrancy guard.
-        reentrancy::exit(&env);
-
-        id
+    /// Creates a commitment that is fulfilled across `milestone_count` partial
+    /// attestations rather than a single one.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `issuer` (via `require_auth`).
+    /// * Why: Only the party issuing (promising) the commitment should be able to create
+    ///   and bind themselves to a new commitment on-chain.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `issuer` - The address making the commitment. Must authorize the call.
+    /// * `counterparty` - The address to whom the commitment is owed.
+    /// * `terms_hash` - A 32-byte hash representing the off-chain terms of the commitment.
+    /// * `due_at` - Unix timestamp (seconds) when the commitment is due. Must be in the future.
+    /// * `resolver_address` - The address of the custom resolver delegated to resolve disputes.
+    /// * `milestone_count` - How many milestones the commitment is split into.
+    ///
+    /// # Returns
+    /// * `u64` - The unique identifier assigned to the created commitment.
+    ///
+    /// # Panics
+    /// * Panics with `Error::DueAtInPast` if `due_at` is less than or equal to the current ledger timestamp.
+    /// * Panics with `Error::InvalidMilestoneCount` if `milestone_count` is zero or above
+    ///   `commitments::MAX_MILESTONES`.
+    pub fn create_milestone_commitment(
+        env: Env,
+        issuer: Address,
+        counterparty: Address,
+        terms_hash: BytesN<32>,
+        due_at: u64,
+        resolver_address: Address,
+        milestone_count: u32,
+    ) -> u64 {
+        commitments::create(
+            &env,
+            issuer,
+            counterparty,
+            terms_hash,
+            due_at,
+            resolver_address,
+            milestone_count,
+        )
     }
 
     /// Retrieves an existing commitment by its unique ID.
@@ -229,6 +228,61 @@ impl RegistryContract {
     /// * Panics with `Error::AlreadyResolved` if the commitment is not currently `Pending`.
     pub fn attest(env: Env, caller: Address, id: u64, outcome: CommitmentStatus) {
         attestation::attest(&env, caller, id, outcome);
+    }
+
+    /// Attests a single milestone of a commitment.
+    ///
+    /// The commitment as a whole stays `Pending` until the final milestone is
+    /// attested, at which point it becomes `Fulfilled`, or `Late` if any
+    /// milestone came in late. A `Breached` milestone resolves the whole
+    /// commitment as `Breached` immediately.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `caller` (via `require_auth`), which must be either the
+    ///   commitment's `issuer` or `counterparty`.
+    /// * Why: Only the participating parties involved in the commitment are authorized
+    ///   to attest to its outcome.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `caller` - The address attesting to the milestone. Must authorize the call and be issuer or counterparty.
+    /// * `id` - The unique identifier of the commitment to attest.
+    /// * `milestone_index` - Zero-based index of the milestone. Milestones are attested in order.
+    /// * `outcome` - The milestone status (`Fulfilled`, `Late`, or `Breached`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
+    /// * Panics with `Error::Unauthorized` if `caller` is neither `issuer` nor `counterparty`.
+    /// * Panics with `Error::InvalidOutcome` if `outcome` is `CommitmentStatus::Pending` or `Disputed`.
+    /// * Panics with `Error::AlreadyResolved` if the commitment is not currently `Pending`.
+    /// * Panics with `Error::InvalidMilestoneIndex` if `milestone_index` is outside the commitment's range.
+    /// * Panics with `Error::MilestoneAlreadyAttested` if that milestone was already attested.
+    /// * Panics with `Error::MilestoneOutOfOrder` if an earlier milestone is still pending.
+    pub fn attest_milestone(
+        env: Env,
+        caller: Address,
+        id: u64,
+        milestone_index: u32,
+        outcome: CommitmentStatus,
+    ) {
+        attestation::attest_milestone(&env, caller, id, milestone_index, outcome);
+    }
+
+    /// Retrieves the attested outcome of a single milestone.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `id` - The unique identifier of the commitment.
+    /// * `milestone_index` - Zero-based index of the milestone.
+    ///
+    /// # Returns
+    /// * `Option<CommitmentStatus>` - The milestone's outcome, or `None` while it is pending.
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
+    /// * Panics with `Error::InvalidMilestoneIndex` if `milestone_index` is outside the commitment's range.
+    pub fn get_milestone(env: Env, id: u64, milestone_index: u32) -> Option<CommitmentStatus> {
+        attestation::get_milestone(&env, id, milestone_index)
     }
 
     /// Checks whether a commitment is overdue.
