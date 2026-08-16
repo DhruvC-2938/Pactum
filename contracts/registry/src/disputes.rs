@@ -13,14 +13,15 @@ use soroban_sdk::{panic_with_error, Address, Env};
 /// * Why: Only the participating parties to the commitment have standing to contest
 ///   an attested outcome and initiate a dispute.
 pub fn dispute(env: &Env, caller: Address, id: u64) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
     // 1. Require authorization from the caller.
     caller.require_auth();
 
-    // 2. Load commitment from persistent storage.
-    let mut commitment: Commitment = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))
+    // 2. Load commitment from persistent storage (with legacy record migration).
+    let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
     // 3. Verify caller is either issuer or counterparty.
@@ -30,9 +31,7 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
 
     // 4. Verify commitment is currently Fulfilled, Late, or Breached (i.e. already attested).
     match commitment.status {
-        CommitmentStatus::Fulfilled
-        | CommitmentStatus::Late
-        | CommitmentStatus::Breached => {}
+        CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
         _ => panic_with_error!(env, Error::InvalidTransition),
     }
 
@@ -66,50 +65,50 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
     // 9. Update reputation (decrement previous outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), old_status, false);
 
-    // 10. Emit commitment_disputed event.
+    // 10. Update trust history (decrement previous outcome).
+    crate::trust_score::update_trust_history(env, commitment.issuer.clone(), old_status, false);
+
+    // 11. Emit commitment_disputed event.
     events::commitment_disputed(env, id);
+
+    // 12. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }
 
 /// Resolves a disputed commitment to a final outcome.
 ///
 /// # Authorization
-/// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
-///   the designated arbitrator address stored at contract initialization.
-/// * Why: Only the mutually trusted, designated arbitrator is authorized to adjudicate
-///   and resolve contested commitments.
+/// * Authorized caller: `caller` (via `require_auth`), which must exactly match
+///   the commitment's designated `resolver_address`.
+/// * Why: Dispute resolution authority is delegated strictly to the custom resolver
+///   address chosen for this commitment at creation time.
 pub fn resolve_dispute(
     env: &Env,
-    arbitrator: Address,
+    caller: Address,
     id: u64,
     final_outcome: CommitmentStatus,
 ) {
-    // 1. Require authorization from the arbitrator.
-    arbitrator.require_auth();
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
 
-    // 2. Verify caller matches the stored arbitrator address exactly.
-    let stored_arbitrator: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Arbitrator)
-        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized));
-    if arbitrator != stored_arbitrator {
-        panic_with_error!(env, Error::NotArbitrator);
-    }
+    // 1. Require authorization from the caller.
+    caller.require_auth();
 
-    // 3. Reject Pending or Disputed as final_outcome. Must be Fulfilled, Late, or Breached.
+    // 2. Reject Pending or Disputed as final_outcome. Must be Fulfilled, Late, or Breached.
     match final_outcome {
-        CommitmentStatus::Fulfilled
-        | CommitmentStatus::Late
-        | CommitmentStatus::Breached => {}
+        CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
         _ => panic_with_error!(env, Error::InvalidOutcome),
     }
 
-    // 4. Load commitment from persistent storage.
-    let mut commitment: Commitment = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))
+    // 3. Load commitment from persistent storage (with legacy record migration).
+    let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
+
+    // 4. Verify caller matches the commitment's designated resolver_address exactly.
+    if caller != commitment.resolver_address {
+        panic_with_error!(env, Error::NotArbitrator);
+    }
 
     // 5. Verify commitment is currently Disputed.
     if commitment.status != CommitmentStatus::Disputed {
@@ -133,6 +132,12 @@ pub fn resolve_dispute(
     // 8. Update reputation (increment with final outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), final_outcome, true);
 
-    // 9. Emit dispute_resolved event.
+    // 9. Update trust history (increment with final outcome).
+    crate::trust_score::update_trust_history(env, commitment.issuer.clone(), final_outcome, true);
+
+    // 10. Emit dispute_resolved event.
     events::dispute_resolved(env, id, final_outcome);
+
+    // 11. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }

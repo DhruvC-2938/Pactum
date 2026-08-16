@@ -60,11 +60,20 @@ Pactum is a lightweight registry, not a payment or custody system. It doesn't ho
 ```
 pactum/
 ├── contracts/registry/     # Soroban smart contract (Rust)
+├── contracts/timelock/     # DAO-owned 7-day timelock gating contract upgrades
+├── contracts/scripts/      # Upgrade proposal, review, execution & migration scripts
 ├── backend/                # REST API + on-chain event indexer (TypeScript)
+├── zk/                     # Zero-knowledge Trust Score threshold proofs (Circom + snarkjs)
 ├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
+├── evm/                    # Pactum EVM Oracle: cross-chain trust score bridge PoC (Solidity)
 ├── docs/                   # Architecture, contract & API reference, integration guide
 └── examples/                # Minimal integration demo
 ```
+
+The registry is upgradeable in place: its logic can be replaced while its address and
+all stored Trust Scores are preserved, and every upgrade must pass a 7-day public
+review window enforced by the timelock. See
+[`docs/upgradeability.md`](./docs/upgradeability.md).
 
 See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
@@ -78,9 +87,11 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Contract network | Stellar Testnet |
 | Backend API | Node.js + TypeScript + Express |
 | Indexer | Soroban RPC event listener |
-| Database | PostgreSQL |
+| Database | PostgreSQL + TimescaleDB (time-series analytics) |
+| Cache | Redis (optional read cache for reputation lookups) |
 | SDK | TypeScript, published as `@pactum/sdk` |
-| Testing | Cargo test (contract) · Jest (backend) |
+| ZK proofs | Circom 2 + snarkjs (Groth16 over BN254) |
+| Testing | Cargo test (contract) · Jest (backend) · `node --test` (zk) |
 | CI/CD | GitHub Actions |
 
 ---
@@ -116,7 +127,7 @@ The contract is currently deployed on the Stellar Testnet for testing and integr
 
 ## Getting started (local dev)
 
-**Prerequisites:** Rust + Cargo, `soroban-cli`, Node.js 18+, PostgreSQL
+**Prerequisites:** Rust + Cargo, `soroban-cli`, Node.js 18+, PostgreSQL, Docker (for TimescaleDB)
 
 ```bash
 # 1. Clone
@@ -126,13 +137,43 @@ cd pactum
 # 2. Build & test the contract
 cd contracts && cargo test
 
-# 3. Set up the backend
+# 3. Set up TimescaleDB (for time-series analytics)
+docker run -d \
+  --name pactum-timescaledb \
+  -p 5432:5432 \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=pactum_timeseries \
+  timescale/timescaledb:latest-pg16
+
+# 4. Set up the backend
 cd ../backend
 npm install
-cp .env.example .env      # fill in DATABASE_URL, SOROBAN_RPC_URL, etc.
-npm run migrate:latest
+cp .env.example .env      # fill in DATABASE_URL, SOROBAN_RPC_URL, TIMESCALEDB_* config, etc.
+npm run build
+npm run migrate:timescale  # Run TimescaleDB migrations
 npm run dev
+
+# 5. Start analytics worker (optional, for background data processing)
+npm run analytics:worker
 ```
+
+### Running the whole stack with Docker
+
+**Prerequisites:** Docker with Compose v2.
+
+```bash
+docker compose up --build
+```
+
+That boots TimescaleDB, the backend (which applies `backend/src/db/migrations/*.sql` on startup) and an nginx-served frontend build.
+
+| Service | URL | Override |
+|---|---|---|
+| Frontend | http://localhost | `FRONTEND_PORT` |
+| Backend | http://localhost:3000 | `BACKEND_PORT` |
+| TimescaleDB | `localhost:5432` | `TIMESCALEDB_PORT` |
+
+The frontend is built to call the API on its own origin, and nginx proxies `/api`, `/reputation`, `/commitments` and `/health` to the backend container. Database credentials and Soroban settings come from the same `TIMESCALEDB_*` / `SOROBAN_*` variables as `backend/.env.example`; set them in a root `.env` to override the defaults.
 
 ---
 
@@ -142,11 +183,13 @@ npm run dev
 - [ ] Per-address reputation aggregation
 - [ ] Oracle-based auto-attestation for measurable commitments (e.g. uptime feeds)
 - [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
-- [ ] Public reputation lookup API
+- [x] Public reputation lookup API
 - [ ] JS/TS SDK (`@pactum/sdk`)
 - [ ] Marketplace integration example (check a counterparty's history before a deal)
 - [ ] Rate limiting & spam-commitment protections
-- [ ] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Verifiable reputation export — prove `Trust Score > threshold` in zero knowledge
+      ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
 
 Open an issue if you'd like to pick up any of these — contributions welcome.
 

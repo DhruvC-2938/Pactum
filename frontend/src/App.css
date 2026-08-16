@@ -842,6 +842,85 @@ body {
 .two-col { display: grid; grid-template-columns: 1fr 360px; gap: 18px; align-items: start; }
 .three-col { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
 
+/* ── Form Error ── */
+.form-input.has-error,
+.form-textarea.has-error { border-color: var(--red); background: #fffafa; }
+.form-error { font-size: 12px; font-weight: 600; color: var(--red); margin-top: 6px; }
+
+/* ── Create Commitment Wizard ── */
+.wizard { max-width: 640px; }
+.wizard-steps {
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.wizard-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--separator-opaque);
+  background: var(--bg-card);
+  opacity: 0.55;
+  transition: opacity var(--transition), border-color var(--transition), background var(--transition);
+}
+.wizard-step.active { opacity: 1; border-color: var(--text-primary); }
+.wizard-step.done  { opacity: 1; border-color: var(--green); }
+.wizard-step-dot {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--bg-tag);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.wizard-step.active .wizard-step-dot { background: var(--text-primary); color: #fff; }
+.wizard-step.done   .wizard-step-dot { background: var(--green); color: #fff; }
+.wizard-step-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.wizard-progress {
+  height: 4px;
+  background: var(--bg-tag);
+  border-radius: 100px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.wizard-progress-fill {
+  height: 100%;
+  background: var(--text-primary);
+  border-radius: 100px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.wizard-nav {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+.wizard-review { margin-top: 4px; }
+.wizard-review-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-label);
+  margin-bottom: 10px;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 640px) {
+  .wizard-step-label { display: none; }
+  .wizard-step { justify-content: center; }
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
