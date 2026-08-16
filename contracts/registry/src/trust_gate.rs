@@ -27,7 +27,7 @@ use soroban_sdk::{contractclient, Address, Env};
 /// Read-only cross-contract interface for querying an address's trust score.
 #[contractclient(name = "TrustGateReaderClient")]
 pub trait TrustGateReader {
-    fn get_trust_score(env: Env, address: Address) -> i64;
+    fn get_trust_score(env: Env, address: Address) -> u32;
 }
 
 /// State-mutating cross-contract interface, kept strictly separate from
@@ -40,7 +40,7 @@ pub trait TrustGateWriter {
 }
 
 impl TrustGateReader for RegistryContract {
-    fn get_trust_score(env: Env, address: Address) -> i64 {
+    fn get_trust_score(env: Env, address: Address) -> u32 {
         RegistryContract::get_trust_score(env, address)
     }
 }
