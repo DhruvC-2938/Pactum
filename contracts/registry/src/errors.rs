@@ -32,5 +32,17 @@ pub enum Error {
     /// A state-mutating registry function was re-entered while a call to
     /// another state-mutating registry function was already in progress.
     ReentrantCall = 13,
+    /// No upgrade admin has been installed, so no upgrade path exists.
+    UpgradeAdminNotSet = 14,
+    /// The bootstrap upgrade-admin path is closed; use the timelocked transfer.
+    UpgradeAdminAlreadySet = 15,
+    /// The requested schema version is lower than the version currently in force.
+    SchemaDowngrade = 16,
+    /// The requested schema version is not understood by this executable.
+    UnsupportedSchemaVersion = 17,
+    /// Reputation migration was requested while the contract is still on schema V1.
+    MigrationNotEnabled = 18,
+    /// The requested migration batch exceeds the maximum batch size.
+    BatchTooLarge = 19,
 }
 

@@ -2,6 +2,8 @@
 members = [
     "registry",
     "mock_resolver",
+    "timelock",
+    "upgrade-fixture",
 ]
 resolver = "2"
 
