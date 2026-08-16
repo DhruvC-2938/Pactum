@@ -19,7 +19,7 @@ export interface LedgerCheckpoint {
 
 export interface LedgerSource {
   getLatestLedger(): Promise<{ sequence: number }>;
-  getLedger(sequence: number): Promise<LedgerSnapshot>;
+  getLedger(sequence: number): Promise<LedgerSnapshot | null>;
 }
 
 export interface IndexerStore {

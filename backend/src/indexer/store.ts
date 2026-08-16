@@ -1,6 +1,8 @@
 import { Pool, PoolClient } from 'pg';
 import { IndexerStore, LedgerCheckpoint, LedgerSnapshot } from './types';
 
+const INDEXER_ADVISORY_LOCK_KEY = 1_347_378_541;
+
 function copyLedger(ledger: LedgerSnapshot): LedgerSnapshot {
   return {
     ...ledger,
@@ -87,8 +89,6 @@ function rowToLedger(row: LedgerRow): LedgerSnapshot {
 }
 
 export class PostgresIndexerStore implements IndexerStore {
-  private readonly schema: string;
-
   private readonly indexedLedgersTable: string;
 
   private readonly checkpointTable: string;
@@ -97,32 +97,9 @@ export class PostgresIndexerStore implements IndexerStore {
     private readonly pool: Pool,
     options: PostgresIndexerStoreOptions = {},
   ) {
-    this.schema = options.schema ?? 'public';
-    const schemaIdentifier = quoteIdentifier(this.schema);
+    const schemaIdentifier = quoteIdentifier(options.schema ?? 'public');
     this.indexedLedgersTable = `${schemaIdentifier}."indexed_ledgers"`;
     this.checkpointTable = `${schemaIdentifier}."indexer_checkpoint"`;
-  }
-
-  async ensureSchema(): Promise<void> {
-    if (this.schema !== 'public') {
-      await this.pool.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(this.schema)}`);
-    }
-
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS ${this.indexedLedgersTable} (
-        sequence BIGINT PRIMARY KEY,
-        ledger_hash TEXT NOT NULL,
-        previous_hash TEXT,
-        closed_at TIMESTAMPTZ NOT NULL,
-        events JSONB NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS ${this.checkpointTable} (
-        singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
-        sequence BIGINT NOT NULL,
-        ledger_hash TEXT NOT NULL
-      );
-    `);
   }
 
   async getCheckpoint(): Promise<LedgerCheckpoint | null> {
@@ -148,6 +125,9 @@ export class PostgresIndexerStore implements IndexerStore {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock($1)', [
+        INDEXER_ADVISORY_LOCK_KEY,
+      ]);
       const checkpointResult = await client.query<{
         sequence: string;
         ledger_hash: string;
@@ -213,7 +193,11 @@ export class PostgresIndexerStore implements IndexerStore {
       );
       await client.query('COMMIT');
     } catch (error) {
-      await client.query('ROLLBACK');
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Keep the append failure as the error reported to the indexer.
+      }
       throw error;
     } finally {
       client.release();
@@ -224,6 +208,9 @@ export class PostgresIndexerStore implements IndexerStore {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock($1)', [
+        INDEXER_ADVISORY_LOCK_KEY,
+      ]);
       await client.query(
         `SELECT sequence
          FROM ${this.checkpointTable}
@@ -257,7 +244,11 @@ export class PostgresIndexerStore implements IndexerStore {
 
       await client.query('COMMIT');
     } catch (error) {
-      await client.query('ROLLBACK');
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Keep the rollback engine's original failure.
+      }
       throw error;
     } finally {
       client.release();

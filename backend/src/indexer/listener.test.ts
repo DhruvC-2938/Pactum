@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { test } from 'node:test';
 import { Pool } from 'pg';
-import { FinalityIndexer, LedgerLinkageError } from './listener';
+import {
+  FinalityIndexer,
+  LedgerLinkageError,
+  NoCommonAncestorError,
+} from './listener';
 import { SorobanLedgerSource } from './rpc-source';
 import { InMemoryIndexerStore, PostgresIndexerStore } from './store';
 import { LedgerSnapshot, LedgerSource } from './types';
@@ -20,10 +26,8 @@ class SimulatedLedgerSource implements LedgerSource {
     return { sequence: this.latestSequence };
   }
 
-  async getLedger(sequence: number): Promise<LedgerSnapshot> {
-    const ledger = this.chain.get(sequence);
-    if (!ledger) throw new Error(`Missing simulated ledger ${sequence}`);
-    return ledger;
+  async getLedger(sequence: number): Promise<LedgerSnapshot | null> {
+    return this.chain.get(sequence) ?? null;
   }
 }
 
@@ -56,6 +60,37 @@ test('keeps the newest ledgers out of the active store until finality depth is r
   assert.equal(await store.getLedger(5), null);
 });
 
+test('does not commit before the chain reaches the configured finality depth', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 2));
+  const store = new InMemoryIndexerStore();
+  const indexer = new FinalityIndexer({ source, store, finalityDepth: 2 });
+
+  const result = await indexer.sync();
+
+  assert.equal(result.finalizedSequence, 0);
+  assert.equal(result.committed, 0);
+  assert.equal(result.checkpoint, null);
+});
+
+test('limits each sync to the configured maximum batch size', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 8));
+  const store = new InMemoryIndexerStore();
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 1,
+    maxBatchSize: 3,
+  });
+
+  const result = await indexer.sync();
+
+  assert.equal(result.committed, 3);
+  assert.deepEqual(result.checkpoint, { sequence: 3, hash: 'main-3' });
+  assert.equal(await store.getLedger(4), null);
+});
+
 test('rolls back to the last common ledger and replays the canonical fork', async () => {
   const source = new SimulatedLedgerSource();
   const mainChain = makeChain('main', 6);
@@ -82,6 +117,58 @@ test('rolls back to the last common ledger and replays the canonical fork', asyn
   assert.deepEqual(await store.getCheckpoint(), { sequence: 5, hash: 'fork-5' });
 });
 
+test('recovers when a reorganization shortens the canonical chain', async () => {
+  const source = new SimulatedLedgerSource();
+  const mainChain = makeChain('main', 7);
+  source.replaceChain(mainChain);
+  const store = new InMemoryIndexerStore();
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 1,
+    maxRollbackDepth: 5,
+  });
+
+  await indexer.sync();
+  source.replaceChain(makeChain('fork', 5, mainChain.slice(0, 2)));
+
+  const result = await indexer.sync();
+
+  assert.equal(result.rolledBackFrom, 6);
+  assert.equal(result.committed, 2);
+  assert.deepEqual(result.checkpoint, { sequence: 4, hash: 'fork-4' });
+  assert.equal(await store.getLedger(5), null);
+  assert.equal(await store.getLedger(6), null);
+});
+
+test('preserves the checkpoint when RPC retention hides every ancestor', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 5));
+  const store = new InMemoryIndexerStore();
+  const indexer = new FinalityIndexer({ source, store, finalityDepth: 0 });
+  await indexer.sync();
+
+  const unavailableSource: LedgerSource = {
+    async getLatestLedger() {
+      return { sequence: 8 };
+    },
+    async getLedger() {
+      return null;
+    },
+  };
+  const unavailableIndexer = new FinalityIndexer({
+    source: unavailableSource,
+    store,
+    finalityDepth: 0,
+  });
+
+  await assert.rejects(
+    unavailableIndexer.sync(),
+    (error: unknown) => error instanceof NoCommonAncestorError,
+  );
+  assert.deepEqual(await store.getCheckpoint(), { sequence: 5, hash: 'main-5' });
+});
+
 test(
   'rolls back and replays the canonical fork in PostgreSQL',
   { skip: !process.env.DATABASE_URL },
@@ -92,7 +179,18 @@ test(
     try {
       const source = new SimulatedLedgerSource();
       const store = new PostgresIndexerStore(pool, { schema });
-      await store.ensureSchema();
+      await pool.query(`CREATE SCHEMA "${schema}"`);
+      const migration = await readFile(
+        path.join(process.cwd(), 'src/db/migrations/003_deterministic_indexer.sql'),
+        'utf8',
+      );
+      const client = await pool.connect();
+      try {
+        await client.query(`SET search_path TO "${schema}"`);
+        await client.query(migration);
+      } finally {
+        client.release();
+      }
 
       const mainChain = makeChain('main', 6);
       source.replaceChain(mainChain);
@@ -131,6 +229,19 @@ test(
         ],
       );
       assert.equal(await store.getLedger(6), null);
+
+      const extendedFork = makeChain('fork', 8, mainChain.slice(0, 2));
+      source.replaceChain(extendedFork);
+      const competingIndexer = new FinalityIndexer({
+        source,
+        store: new PostgresIndexerStore(pool, { schema }),
+        finalityDepth: 1,
+      });
+      await Promise.all([indexer.sync(), competingIndexer.sync()]);
+      assert.deepEqual(await store.getCheckpoint(), {
+        sequence: 7,
+        hash: 'fork-7',
+      });
     } finally {
       await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await pool.end();
@@ -167,6 +278,13 @@ test('rejects a canonical source that breaks the committed parent link', async (
 });
 
 test('maps Soroban RPC ledger headers and events into the indexer model', async () => {
+  const firstPageEvents = Array.from({ length: 100 }, (_, index) => ({
+    id: `event-2-${index}`,
+    type: 'contract',
+    ledger: 2,
+    value: { toXDR: () => `value-xdr-${index}` },
+  }));
+  const eventRequests: unknown[] = [];
   const source = new SorobanLedgerSource({
     async getLatestLedger() {
       return { sequence: 2 };
@@ -188,34 +306,59 @@ test('maps Soroban RPC ledger headers and events into the indexer model', async 
       };
     },
     async getEvents(request) {
-      assert.deepEqual(request, {
-        filters: [],
-        startLedger: 2,
-        endLedger: 3,
-      });
+      eventRequests.push(request);
+      if ('startLedger' in request) {
+        return { events: firstPageEvents, cursor: 'page-2' };
+      }
       return {
-        events:
-          request.startLedger <= 2 && 2 < request.endLedger
-            ? [{
-                id: 'event-2',
-                type: 'contract',
-                ledger: 2,
-                value: { toXDR: () => 'value-xdr' },
-              }]
-            : [],
+        events: [{
+          id: 'event-2-final',
+          type: 'contract',
+          ledger: 2,
+          value: { toXDR: () => 'value-xdr-final' },
+          ignored: undefined,
+        }],
+        cursor: 'page-2-final',
       };
     },
   });
 
-  assert.deepEqual(await source.getLedger(2), {
-    sequence: 2,
-    hash: 'ledger-2',
-    previousHash: Buffer.from('ledger-1').toString('hex'),
-    closedAt: '2026-08-16T00:00:02.000Z',
-    events: [{
-      id: 'event-2',
+  const ledger = await source.getLedger(2);
+  assert.ok(ledger);
+  assert.equal(ledger.events.length, 101);
+  assert.deepEqual(ledger.events[ledger.events.length - 1], {
+    id: 'event-2-final',
+    type: 'contract',
+    payload: {
+      id: 'event-2-final',
       type: 'contract',
-      payload: { id: 'event-2', type: 'contract', ledger: 2, value: 'value-xdr' },
-    }],
+      ledger: 2,
+      value: 'value-xdr-final',
+    },
   });
+  assert.deepEqual(eventRequests, [
+    { filters: [], startLedger: 2, endLedger: 3, limit: 100 },
+    { filters: [], cursor: 'page-2', limit: 100 },
+  ]);
+});
+
+test('treats a ledger outside Soroban RPC retention as unavailable', async () => {
+  const source = new SorobanLedgerSource({
+    async getLatestLedger() {
+      return { sequence: 200 };
+    },
+    async getLedgers() {
+      throw Object.assign(
+        new Error(
+          'start ledger (1) must be between the oldest ledger: 100 and the latest ledger: 200 for this rpc instance',
+        ),
+        { code: -32600 },
+      );
+    },
+    async getEvents() {
+      throw new Error('getEvents should not be called');
+    },
+  });
+
+  assert.equal(await source.getLedger(1), null);
 });

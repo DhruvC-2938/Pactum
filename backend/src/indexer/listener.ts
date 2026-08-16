@@ -2,7 +2,6 @@ import {
   IndexerStore,
   LedgerCheckpoint,
   LedgerSource,
-  LedgerSnapshot,
 } from './types';
 
 export interface FinalityIndexerOptions {
@@ -11,6 +10,7 @@ export interface FinalityIndexerOptions {
   finalityDepth: number;
   startSequence?: number;
   maxBatchSize?: number;
+  maxRollbackDepth?: number;
 }
 
 export interface SyncResult {
@@ -46,6 +46,8 @@ export class FinalityIndexer {
 
   private readonly maxBatchSize: number;
 
+  private readonly maxRollbackDepth: number;
+
   constructor(private readonly options: FinalityIndexerOptions) {
     if (!Number.isInteger(options.finalityDepth) || options.finalityDepth < 0) {
       throw new Error('finalityDepth must be a non-negative integer');
@@ -53,27 +55,42 @@ export class FinalityIndexer {
 
     this.startSequence = options.startSequence ?? 1;
     this.maxBatchSize = options.maxBatchSize ?? 100;
+    this.maxRollbackDepth = options.maxRollbackDepth
+      ?? Math.max(100, options.finalityDepth * 2);
     if (!Number.isInteger(this.startSequence) || this.startSequence < 1) {
       throw new Error('startSequence must be a positive integer');
     }
     if (!Number.isInteger(this.maxBatchSize) || this.maxBatchSize < 1) {
       throw new Error('maxBatchSize must be a positive integer');
     }
+    if (!Number.isInteger(this.maxRollbackDepth) || this.maxRollbackDepth < 1) {
+      throw new Error('maxRollbackDepth must be a positive integer');
+    }
   }
 
   async sync(): Promise<SyncResult> {
     const latest = await this.options.source.getLatestLedger();
-    const finalizedSequence = latest.sequence - this.options.finalityDepth;
+    const finalizedSequence = Math.max(
+      0,
+      latest.sequence - this.options.finalityDepth,
+    );
     let checkpoint = await this.options.store.getCheckpoint();
     let rolledBackFrom: number | null = null;
 
     if (checkpoint) {
-      const canonicalCheckpoint = await this.options.source.getLedger(checkpoint.sequence);
-      if (canonicalCheckpoint.hash !== checkpoint.hash) {
-        const ancestor = await this.findCommonAncestor(checkpoint.sequence);
-        if (!ancestor) throw new NoCommonAncestorError(checkpoint.sequence);
+      const canonicalCheckpoint = checkpoint.sequence <= latest.sequence
+        ? await this.options.source.getLedger(checkpoint.sequence)
+        : null;
+      if (!canonicalCheckpoint || canonicalCheckpoint.hash !== checkpoint.hash) {
+        const ancestorSequence = await this.findCommonAncestor(
+          checkpoint.sequence,
+          Math.min(latest.sequence, finalizedSequence),
+        );
+        if (ancestorSequence === null) {
+          throw new NoCommonAncestorError(checkpoint.sequence);
+        }
 
-        await this.options.store.rollbackTo(ancestor.sequence);
+        await this.options.store.rollbackTo(ancestorSequence);
         rolledBackFrom = checkpoint.sequence;
         checkpoint = await this.options.store.getCheckpoint();
       }
@@ -88,6 +105,9 @@ export class FinalityIndexer {
 
     while (nextSequence <= endSequence) {
       const ledger = await this.options.source.getLedger(nextSequence);
+      if (!ledger) {
+        throw new Error(`Canonical source did not return ledger ${nextSequence}`);
+      }
       if (checkpoint && ledger.previousHash !== checkpoint.hash) {
         throw new LedgerLinkageError(nextSequence, checkpoint.hash, ledger.previousHash);
       }
@@ -100,22 +120,30 @@ export class FinalityIndexer {
 
     return {
       latestSequence: latest.sequence,
-      finalizedSequence: Math.max(0, finalizedSequence),
+      finalizedSequence,
       committed,
       rolledBackFrom,
       checkpoint,
     };
   }
 
-  private async findCommonAncestor(sequence: number): Promise<LedgerSnapshot | null> {
-    for (let candidate = sequence; candidate >= this.startSequence; candidate -= 1) {
+  private async findCommonAncestor(
+    sequence: number,
+    canonicalCeiling: number,
+  ): Promise<number | null> {
+    const firstCandidate = Math.min(sequence - 1, canonicalCeiling);
+    const floor = Math.max(this.startSequence, sequence - this.maxRollbackDepth);
+    let sawCanonicalCandidate = false;
+
+    for (let candidate = firstCandidate; candidate >= floor; candidate -= 1) {
       const stored = await this.options.store.getLedger(candidate);
       if (!stored) continue;
 
       const canonical = await this.options.source.getLedger(candidate);
-      if (canonical.hash === stored.hash) return canonical;
+      if (canonical) sawCanonicalCandidate = true;
+      if (canonical?.hash === stored.hash) return candidate;
     }
 
-    return null;
+    return floor === this.startSequence && sawCanonicalCandidate ? 0 : null;
   }
 }

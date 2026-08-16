@@ -1,6 +1,8 @@
 import type { rpc } from '@stellar/stellar-sdk' with { "resolution-mode": "import" };
 import { LedgerEvent, LedgerSource, LedgerSnapshot } from './types';
 
+const EVENT_PAGE_LIMIT = 100;
+
 interface RpcLedger {
   sequence: number;
   hash: string;
@@ -32,25 +34,40 @@ function unixTimestampToIso(value: string): string {
   return new Date(seconds * 1000).toISOString();
 }
 
+function isLedgerOutsideRetention(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return candidate.code === -32600
+    && typeof candidate.message === 'string'
+    && /start ledger .* must be between the oldest ledger:/i.test(candidate.message);
+}
+
 export interface SorobanRpcLedgerClient {
   getLatestLedger(): Promise<{ sequence: number }>;
   getLedgers(request: {
     startLedger: number;
     pagination: { limit: number };
   }): Promise<{ ledgers: RpcLedger[] }>;
-  getEvents(request: {
-    filters: [];
-    startLedger: number;
-    endLedger: number;
-  }): Promise<{ events: RpcEvent[] }>;
+  getEvents(request:
+    | {
+        filters: [];
+        startLedger: number;
+        endLedger: number;
+        limit: number;
+      }
+    | {
+        filters: [];
+        cursor: string;
+        limit: number;
+      }
+  ): Promise<{ events: RpcEvent[]; cursor?: string }>;
 }
 
 export function createSorobanRpcLedgerClient(server: rpc.Server): SorobanRpcLedgerClient {
   return {
     getLatestLedger: () => server.getLatestLedger(),
     getLedgers: (request) => server.getLedgers(request),
-    getEvents: ({ startLedger, endLedger }) =>
-      server.getEvents({ filters: [], startLedger, endLedger }),
+    getEvents: (request) => server.getEvents(request),
   };
 }
 
@@ -66,14 +83,19 @@ function previousHashFromHeader(headerXdr: unknown): string | null {
   return null;
 }
 
-function toSerializable(value: unknown): unknown {
+function toSerializable(value: unknown): unknown | undefined {
   if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
     return value;
   }
   if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'function' || typeof value === 'undefined') return undefined;
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Uint8Array) return Buffer.from(value).toString('hex');
-  if (Array.isArray(value)) return value.map((item) => toSerializable(item));
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => toSerializable(item))
+      .filter((item) => item !== undefined);
+  }
 
   if (typeof value === 'object') {
     const candidate = value as {
@@ -88,14 +110,14 @@ function toSerializable(value: unknown): unknown {
     }
 
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
-        key,
-        toSerializable(nested),
-      ]),
+      Object.entries(value as Record<string, unknown>).flatMap(([key, nested]) => {
+        const serialized = toSerializable(nested);
+        return serialized === undefined ? [] : [[key, serialized]];
+      }),
     );
   }
 
-  return String(value);
+  return undefined;
 }
 
 function toEvents(sequence: number, events: RpcEvent[]): LedgerEvent[] {
@@ -119,13 +141,19 @@ export class SorobanLedgerSource implements LedgerSource {
     return this.rpc.getLatestLedger();
   }
 
-  async getLedger(sequence: number): Promise<LedgerSnapshot> {
-    const response = await this.rpc.getLedgers({
-      startLedger: sequence,
-      pagination: { limit: 1 },
-    });
+  async getLedger(sequence: number): Promise<LedgerSnapshot | null> {
+    let response: Awaited<ReturnType<SorobanRpcLedgerClient['getLedgers']>>;
+    try {
+      response = await this.rpc.getLedgers({
+        startLedger: sequence,
+        pagination: { limit: 1 },
+      });
+    } catch (error) {
+      if (isLedgerOutsideRetention(error)) return null;
+      throw error;
+    }
     const ledger = response.ledgers.find((candidate) => candidate.sequence === sequence);
-    if (!ledger) throw new Error(`Soroban RPC did not return ledger ${sequence}`);
+    if (!ledger) return null;
 
     const previousHash =
       ledger.previousHash ?? previousHashFromHeader(ledger.headerXdr);
@@ -133,18 +161,32 @@ export class SorobanLedgerSource implements LedgerSource {
       throw new Error(`Soroban RPC ledger ${sequence} did not include its parent hash`);
     }
 
-    const eventResponse = await this.rpc.getEvents({
+    let eventResponse = await this.rpc.getEvents({
       filters: [],
       startLedger: sequence,
       endLedger: sequence + 1,
+      limit: EVENT_PAGE_LIMIT,
     });
+    const events = [...eventResponse.events];
+    let cursor = eventResponse.cursor;
+
+    while (eventResponse.events.length === EVENT_PAGE_LIMIT && cursor) {
+      eventResponse = await this.rpc.getEvents({
+        filters: [],
+        cursor,
+        limit: EVENT_PAGE_LIMIT,
+      });
+      events.push(...eventResponse.events);
+      if (!eventResponse.cursor || eventResponse.cursor === cursor) break;
+      cursor = eventResponse.cursor;
+    }
 
     return {
       sequence: ledger.sequence,
       hash: ledger.hash,
       previousHash,
       closedAt: unixTimestampToIso(ledger.ledgerCloseTime),
-      events: toEvents(sequence, eventResponse.events),
+      events: toEvents(sequence, events),
     };
   }
 }
