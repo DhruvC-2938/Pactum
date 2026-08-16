@@ -89,3 +89,13 @@ pub fn update_reputation(
         crate::commitments::TTL_EXTEND_LEDGERS,
     );
 }
+
+/// Helper function to compute a single weighted trust score for an address,
+/// derived from its `Reputation` counts. Fulfilled commitments contribute
+/// positively, late commitments are penalized lightly, and breached
+/// commitments are penalized heavily. Read-only; safe to call from other
+/// contracts (see `trust_gate`).
+pub fn get_trust_score(env: &Env, address: Address) -> i64 {
+    let rep = get_reputation(env, address);
+    (rep.fulfilled_count as i64) * 2 - (rep.late_count as i64) - (rep.breached_count as i64) * 3
+}

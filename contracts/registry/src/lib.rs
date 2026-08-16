@@ -5,10 +5,15 @@ pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+mod reentrancy;
 pub mod reputation;
+pub mod trust_gate;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod attacker_gate;
 
 pub use commitments::DISPUTE_WINDOW_SECONDS;
 use commitments::{Commitment, CommitmentStatus, DataKey};
@@ -35,15 +40,23 @@ impl RegistryContract {
         if env.storage().instance().has(&DataKey::Arbitrator) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+
+        // Enter the reentrancy guard before any external interaction (including
+        // the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
         arbitrator.require_auth();
         env.storage()
             .instance()
             .set(&DataKey::Arbitrator, &arbitrator);
-        
+
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
+
+        // Release the reentrancy guard.
+        reentrancy::exit(&env);
     }
 
     /// Retrieves the designated arbitrator address.
@@ -90,6 +103,10 @@ impl RegistryContract {
         terms_hash: BytesN<32>,
         due_at: u64,
     ) -> u64 {
+        // 0. Enter the reentrancy guard before any external interaction (including
+        //    the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
         // 1. Require authorization from the issuer.
         issuer.require_auth();
 
@@ -138,6 +155,9 @@ impl RegistryContract {
 
         // 6. Emit Created event.
         events::commitment_created(&env, id, &issuer, &counterparty);
+
+        // 7. Release the reentrancy guard.
+        reentrancy::exit(&env);
 
         id
     }
@@ -254,6 +274,54 @@ impl RegistryContract {
     /// * `Reputation` - The accumulated fulfilled, late, and breached counts for the address as an issuer.
     pub fn get_reputation(env: Env, address: Address) -> reputation::Reputation {
         reputation::get_reputation(&env, address)
+    }
+
+    /// Retrieves a single weighted trust score for a given address, derived from
+    /// its reputation counts. This is the read-only entry point intended for
+    /// cross-contract composability (see `trust_gate`): it performs no storage
+    /// writes and is safe to call from any external contract, including
+    /// mid-transaction while a registry mutation is in progress.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `address` - The address to query.
+    ///
+    /// # Returns
+    /// * `i64` - The weighted trust score (2 per fulfilled, -1 per late, -3 per breached).
+    pub fn get_trust_score(env: Env, address: Address) -> i64 {
+        reputation::get_trust_score(&env, address)
+    }
+    /// Upgrades the contract to a new WASM binary.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
+    ///   the designated arbitrator address stored at contract initialization.
+    /// * Why: Only the designated arbitrator (admin) is authorized to upgrade the contract
+    ///   to fix bugs or add features post-launch.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `arbitrator` - The designated arbitrator address initiating the upgrade. Must authorize the call.
+    /// * `new_wasm_hash` - The 32-byte hash of the new WASM binary to deploy.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if the caller is not the designated arbitrator.
+    pub fn upgrade(env: Env, arbitrator: Address, new_wasm_hash: BytesN<32>) {
+        // Verify the caller is the designated arbitrator
+        let stored_arbitrator: Address = env.storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        
+        if stored_arbitrator != arbitrator {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+        
+        arbitrator.require_auth();
+        
+        // Upgrade the contract to the new WASM binary
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
 

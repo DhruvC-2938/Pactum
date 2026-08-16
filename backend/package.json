@@ -1,14 +1,18 @@
 {
   "name": "pactum-backend",
   "version": "1.0.0",
-  "description": "Backend for Pactum",
+  "description": "Backend API and Indexer for Pactum Trust Layer",
   "main": "dist/index.js",
-  "license": "MIT",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "build": "tsc"
+    "dev": "nodemon src/index.ts",
+    "build": "tsc",
+    "analytics:worker": "node dist/workers/analyticsWorker.js",
+    "migrate:timescale": "node -e \"require('./dist/db/timescale').runMigrations()\""
   },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
     "@stellar/stellar-sdk": "^16.2.0",
     "cors": "^2.8.6",
