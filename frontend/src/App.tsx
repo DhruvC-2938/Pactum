@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
+import CreateCommitmentWizard from './components/CreateCommitmentWizard'
 import ReputationDashboard from './components/ReputationDashboard'
 import { useCommitments } from './hooks/useCommitments'
 import type { Commitment, CommitmentStatus } from './lib/api'
@@ -482,138 +483,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="two-col">
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Commitment Details</div>
-          </div>
-          <div className="card-body">
-            <div className="inline-alert info">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="8" cy="8" r="6"/><path d="M8 6v4M8 11.5v.5"/>
-              </svg>
-              The issuer must authorize this transaction via their Stellar wallet. The commitment will be immediately visible on-chain.
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-issuer">Issuer Address</label>
-              <input type="text" className="form-input" id="create-issuer"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-              <div className="form-hint">The Stellar address making the promise. Must authorize the transaction.</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-counterparty">Counterparty Address</label>
-              <input type="text" className="form-input" id="create-counterparty"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-              <div className="form-hint">The address to whom the commitment is owed.</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-terms">Terms / Description</label>
-              <textarea className="form-textarea" id="create-terms"
-                        placeholder="Describe the commitment terms in plain language. This will be hashed (SHA-256) before being stored on-chain."></textarea>
-              <div className="form-hint">Stored as a SHA-256 hash on-chain. Keep a copy of the original off-chain.</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-dueat">Due Date</label>
-              <input type="datetime-local" className="form-input" id="create-dueat" />
-              <div className="form-hint">Must be a future date. Stored as a Unix timestamp on Stellar.</div>
-            </div>
-
-            <div style={{display: "flex", gap: "10px", marginTop: "4px"}}>
-              <button className="btn btn-secondary" onClick={() => {}}>Clear</button>
-              <button className="btn btn-primary" style={{flex: "1"}} id="btn-create" onClick={() => {}}>
-                <div className="spinner"></div>
-                <span className="btn-text">Create Commitment</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Preview */}
-        <div style={{display: "flex", flexDirection: "column", gap: "14px"}}>
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Preview</div>
-            </div>
-            <div className="card-body">
-              <div className="detail-panel" id="create-preview">
-                <div className="detail-row">
-                  <span className="detail-key">Status</span>
-                  <span className="detail-val"><span className="badge pending"><span className="badge-dot"></span>Pending</span></span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Issuer</span>
-                  <span className="detail-val mono" id="preview-issuer">—</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Counterparty</span>
-                  <span className="detail-val mono" id="preview-counterparty">—</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Terms Hash</span>
-                  <span className="detail-val mono" id="preview-hash">—</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Due At</span>
-                  <span className="detail-val" id="preview-dueat">—</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">How it works</div>
-            </div>
-            <div className="card-body" style={{paddingTop: "14px"}}>
-              <div className="timeline">
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot"></div>
-                    <div className="timeline-line"></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Create</div>
-                    <div className="timeline-date">Register the commitment on Stellar</div>
-                  </div>
-                </div>
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot" style={{background: "#d1d1d6", boxShadow: "none"}}></div>
-                    <div className="timeline-line"></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Due Date Arrives</div>
-                    <div className="timeline-date">Commitment becomes attestable</div>
-                  </div>
-                </div>
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot" style={{background: "#d1d1d6", boxShadow: "none"}}></div>
-                    <div className="timeline-line"></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Attest</div>
-                    <div className="timeline-date">Either party attests the outcome</div>
-                  </div>
-                </div>
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot" style={{background: "#d1d1d6", boxShadow: "none"}}></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Reputation Updated</div>
-                    <div className="timeline-date">Outcome recorded on issuer's history</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CreateCommitmentWizard onSubmit={(payload) => console.log('commitment payload', payload)} />
     </section>
 
 
