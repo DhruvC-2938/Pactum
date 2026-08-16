@@ -6,6 +6,7 @@ target/
 # Node / TypeScript
 node_modules/
 dist/
+dist-indexer-test/
 .env
 .env.local
 .env.*.local
