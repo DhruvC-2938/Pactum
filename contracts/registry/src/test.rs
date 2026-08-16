@@ -1468,7 +1468,7 @@ fn test_upgrade_authorization_logic() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id1 = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id1 = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &Vec::new(&env), &0);
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
 
     // Verify that non-arbitrator cannot upgrade

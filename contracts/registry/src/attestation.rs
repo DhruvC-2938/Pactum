@@ -70,11 +70,9 @@ pub fn attest(
     );
 
     // 9. Update reputation (increment).
-    crate::reputation::update_reputation(env, commitment.issuer, outcome, true);
-    // 8. Update reputation (increment).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), outcome, true);
 
-    // 9. Update trust history (increment).
+    // 10. Update trust history (increment).
     crate::trust_score::update_trust_history(env, commitment.issuer.clone(), outcome, true);
 
     // 10. Emit commitment_attested event.

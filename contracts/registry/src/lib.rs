@@ -154,12 +154,6 @@ impl RegistryContract {
         }
 
         // 4. Assign the next available ID.
-        let id: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::NextId)
-            .unwrap_or(1);
-        // 3. Assign the next available ID.
         let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
         let next_id = id
             .checked_add(1)
