@@ -65,5 +65,7 @@ pub enum DataKey {
     NextId,
     /// Instance storage key for the designated Arbitrator address.
     Arbitrator,
+    /// Instance storage key for the protocol paused (emergency halt) flag.
+    Paused,
 }
 

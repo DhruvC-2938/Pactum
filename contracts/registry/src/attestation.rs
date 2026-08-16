@@ -18,41 +18,44 @@ pub fn attest(
     id: u64,
     outcome: CommitmentStatus,
 ) {
-    // 0. Enter the reentrancy guard before any external interaction (including
+    // 0. Fail fast if the protocol has been paused (emergency halt).
+    crate::pausable::require_not_paused(env);
+
+    // 1. Enter the reentrancy guard before any external interaction (including
     //    the require_auth call below, which may invoke a custom account contract).
     crate::reentrancy::enter(env);
 
-    // 1. Require authorization from the caller.
+    // 2. Require authorization from the caller.
     caller.require_auth();
 
-    // 2. Reject Pending or Disputed as an outcome value.
+    // 3. Reject Pending or Disputed as an outcome value.
     if outcome == CommitmentStatus::Pending || outcome == CommitmentStatus::Disputed {
         panic_with_error!(env, Error::InvalidOutcome);
     }
 
-    // 3. Load commitment from persistent storage.
+    // 4. Load commitment from persistent storage.
     let mut commitment: Commitment = env
         .storage()
         .persistent()
         .get(&DataKey::Commitment(id))
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 4. Verify caller is either issuer or counterparty.
+    // 5. Verify caller is either issuer or counterparty.
     if caller != commitment.issuer && caller != commitment.counterparty {
         panic_with_error!(env, Error::Unauthorized);
     }
 
-    // 5. Verify commitment is currently Pending.
+    // 6. Verify commitment is currently Pending.
     if commitment.status != CommitmentStatus::Pending {
         panic_with_error!(env, Error::AlreadyResolved);
     }
 
-    // 6. Update status and attested_at timestamp.
+    // 7. Update status and attested_at timestamp.
     let now = env.ledger().timestamp();
     commitment.status = outcome;
     commitment.attested_at = Some(now);
 
-    // 7. Save updated commitment to storage.
+    // 8. Save updated commitment to storage.
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
@@ -62,16 +65,16 @@ pub fn attest(
         crate::commitments::TTL_EXTEND_LEDGERS,
     );
 
-    // 8. Update reputation (increment).
+    // 9. Update reputation (increment).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), outcome, true);
 
-    // 9. Update trust history (increment).
+    // 10. Update trust history (increment).
     crate::trust_score::update_trust_history(env, commitment.issuer.clone(), outcome, true);
 
-    // 10. Emit commitment_attested event.
+    // 11. Emit commitment_attested event.
     events::commitment_attested(env, id, outcome);
 
-    // 11. Release the reentrancy guard.
+    // 12. Release the reentrancy guard.
     crate::reentrancy::exit(env);
 }
 

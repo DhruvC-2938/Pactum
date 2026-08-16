@@ -49,3 +49,13 @@ pub fn dispute_resolved(
     );
 }
 
+/// Publishes an event when the protocol is paused (emergency halt) by the admin.
+pub fn protocol_paused(env: &Env) {
+    env.events().publish((symbol_short!("paused"),), ());
+}
+
+/// Publishes an event when the protocol is unpaused by the admin.
+pub fn protocol_unpaused(env: &Env) {
+    env.events().publish((symbol_short!("unpaused"),), ());
+}
+

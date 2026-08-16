@@ -5,6 +5,7 @@ pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+mod pausable;
 mod reentrancy;
 pub mod reputation;
 pub mod trust_gate;
@@ -111,20 +112,23 @@ impl RegistryContract {
         terms_hash: BytesN<32>,
         due_at: u64,
     ) -> u64 {
-        // 0. Enter the reentrancy guard before any external interaction (including
+        // 0. Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
+        // 1. Enter the reentrancy guard before any external interaction (including
         //    the require_auth call below, which may invoke a custom account contract).
         reentrancy::enter(&env);
 
-        // 1. Require authorization from the issuer.
+        // 2. Require authorization from the issuer.
         issuer.require_auth();
 
-        // 2. Validate due_at is in the future relative to the current ledger timestamp.
+        // 3. Validate due_at is in the future relative to the current ledger timestamp.
         let now = env.ledger().timestamp();
         if due_at <= now {
             panic_with_error!(&env, Error::DueAtInPast);
         }
 
-        // 3. Assign the next available ID.
+        // 4. Assign the next available ID.
         let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
         let next_id = id
             .checked_add(1)
@@ -135,7 +139,7 @@ impl RegistryContract {
             commitments::TTL_EXTEND_LEDGERS,
         );
 
-        // 4. Create the Commitment object with Pending status.
+        // 5. Create the Commitment object with Pending status.
         let commitment = Commitment {
             id,
             issuer: issuer.clone(),
@@ -147,7 +151,7 @@ impl RegistryContract {
             attested_at: None,
         };
 
-        // 5. Store in persistent storage keyed by id and extend TTL.
+        // 6. Store in persistent storage keyed by id and extend TTL.
         env.storage()
             .persistent()
             .set(&DataKey::Commitment(id), &commitment);
@@ -157,10 +161,10 @@ impl RegistryContract {
             commitments::TTL_EXTEND_LEDGERS,
         );
 
-        // 6. Emit Created event.
+        // 7. Emit Created event.
         events::commitment_created(&env, id, &issuer, &counterparty);
 
-        // 7. Release the reentrancy guard.
+        // 8. Release the reentrancy guard.
         reentrancy::exit(&env);
 
         id
@@ -279,6 +283,104 @@ impl RegistryContract {
     /// * `Reputation` - The accumulated fulfilled, late, and breached counts for the address as an issuer.
     pub fn get_reputation(env: Env, address: Address) -> reputation::Reputation {
         reputation::get_reputation(&env, address)
+    }
+
+    /// Returns whether the protocol is currently paused (emergency halt).
+    ///
+    /// Read functions remain fully operational while paused; only
+    /// state-mutating entry points are halted.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the protocol is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        pausable::is_paused(&env)
+    }
+
+    /// Pauses the protocol, halting all state-mutating entry points
+    /// (e.g. `create_commitment`, `attest`, `dispute`, `resolve_dispute`) with
+    /// `Error::ProtocolPaused` while leaving reads fully operational.
+    ///
+    /// This is the emergency kill-switch used in the event of a zero-day exploit.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), which must exactly match
+    ///   the designated arbitrator address stored at contract initialization.
+    /// * Why: Only the designated admin is authorized to trigger the emergency halt.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `admin` - The designated admin address pausing the protocol. Must authorize the call.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if `admin` is not the designated arbitrator.
+    pub fn pause(env: Env, admin: Address) {
+        // 0. Enter the reentrancy guard before any external interaction (including
+        //    the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
+        // 1. Require authorization from the admin.
+        admin.require_auth();
+
+        // 2. Verify the admin is the designated arbitrator.
+        let stored_arbitrator: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        if stored_arbitrator != admin {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+
+        // 3. Flip the paused flag and emit the event.
+        pausable::set_paused(&env, true);
+        events::protocol_paused(&env);
+
+        // 4. Release the reentrancy guard.
+        reentrancy::exit(&env);
+    }
+
+    /// Unpauses the protocol, restoring state-mutating entry points.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), which must exactly match
+    ///   the designated arbitrator address stored at contract initialization.
+    /// * Why: Only the designated admin is authorized to end the emergency halt.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `admin` - The designated admin address unpausing the protocol. Must authorize the call.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if `admin` is not the designated arbitrator.
+    pub fn unpause(env: Env, admin: Address) {
+        // 0. Enter the reentrancy guard before any external interaction (including
+        //    the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
+        // 1. Require authorization from the admin.
+        admin.require_auth();
+
+        // 2. Verify the admin is the designated arbitrator.
+        let stored_arbitrator: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        if stored_arbitrator != admin {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+
+        // 3. Flip the paused flag and emit the event.
+        pausable::set_paused(&env, false);
+        events::protocol_unpaused(&env);
+
+        // 4. Release the reentrancy guard.
+        reentrancy::exit(&env);
     }
 
     /// Retrieves the 0..=100 trust score for a given address as an issuer.

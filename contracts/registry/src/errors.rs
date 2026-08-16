@@ -32,5 +32,8 @@ pub enum Error {
     /// A state-mutating registry function was re-entered while a call to
     /// another state-mutating registry function was already in progress.
     ReentrantCall = 13,
+    /// The protocol has been paused by the admin and is not accepting
+    /// state-mutating calls (emergency halt). Read functions remain available.
+    ProtocolPaused = 14,
 }
 
