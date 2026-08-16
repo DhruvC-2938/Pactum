@@ -72,7 +72,7 @@ Raises a dispute on an attested commitment within the dispute window (7 days).
   - `caller: Address`: The participant raising the dispute.
   - `id: u64`
 - **Authorization**: Requires authorization from `caller`.
-- **Panics**: `Error::DisputeWindowExpired` if called after the 7-day dispute window, `Error::InvalidTransition` if the commitment is already disputed or not yet attested.
+- **Panics**: `Error::DisputeWindowExpired` if called after the 7-day dispute window, `Error::InvalidTransition` if the commitment is already disputed, not yet attested, or has already been resolved (see [Re-dispute prevention](#re-dispute-prevention-intentional-invariant) below).
 
 ### `resolve_dispute`
 Resolves a disputed commitment to a final outcome.
@@ -83,6 +83,16 @@ Resolves a disputed commitment to a final outcome.
   - `final_outcome: CommitmentStatus`: The final adjudicated outcome.
 - **Authorization**: Requires authorization from the designated `arbitrator`.
 - **Panics**: `Error::NotArbitrator` if the caller is not the initialized arbitrator.
+
+#### Re-dispute prevention (intentional invariant)
+
+On a ruling, `resolve_dispute` writes `commitment.attested_at = None` alongside the final status (see `contracts/registry/src/disputes.rs`). This is a deliberate invariant, not an omission:
+
+- `resolve_dispute` sets `attested_at = None` after it applies the final outcome.
+- `dispute()` requires `attested_at` to compute the window deadline (`deadline = attested_at + DISPUTE_WINDOW_SECONDS`); without it, the call panics with `Error::InvalidTransition`. Once cleared, a resolved commitment has no anchor from which to open a dispute window, so re-disputing it is *structurally* impossible — no party, and not even the arbitrator, can route it back into `Disputed`.
+- This is intentional: after arbitration, the commitment is **permanently finalized**. `Disputed` is a single, one-shot lifecycle phase, and `attested_at` is only meaningful as the marker that opened the (one) dispute window.
+
+> Integrators reading `dispute()` alone will not see why a resolved commitment can never be disputed again. Treat any commitment whose `status` is `Fulfilled`/`Late`/`Breached` **and** whose `attested_at` is `None` as final, regardless of how much of the nominal 7-day window remains.
 
 ### `get_reputation`
 Retrieves the aggregate reputation for a given address.
