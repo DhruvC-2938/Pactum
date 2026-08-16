@@ -5,10 +5,15 @@ pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+mod reentrancy;
 pub mod reputation;
+pub mod trust_gate;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod attacker_gate;
 
 pub use commitments::DISPUTE_WINDOW_SECONDS;
 use commitments::{Commitment, CommitmentStatus, DataKey};
@@ -35,15 +40,23 @@ impl RegistryContract {
         if env.storage().instance().has(&DataKey::Arbitrator) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+
+        // Enter the reentrancy guard before any external interaction (including
+        // the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
         arbitrator.require_auth();
         env.storage()
             .instance()
             .set(&DataKey::Arbitrator, &arbitrator);
-        
+
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
+
+        // Release the reentrancy guard.
+        reentrancy::exit(&env);
     }
 
     /// Retrieves the designated arbitrator address.
@@ -90,6 +103,10 @@ impl RegistryContract {
         terms_hash: BytesN<32>,
         due_at: u64,
     ) -> u64 {
+        // 0. Enter the reentrancy guard before any external interaction (including
+        //    the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
         // 1. Require authorization from the issuer.
         issuer.require_auth();
 
@@ -138,6 +155,9 @@ impl RegistryContract {
 
         // 6. Emit Created event.
         events::commitment_created(&env, id, &issuer, &counterparty);
+
+        // 7. Release the reentrancy guard.
+        reentrancy::exit(&env);
 
         id
     }
@@ -254,6 +274,22 @@ impl RegistryContract {
     /// * `Reputation` - The accumulated fulfilled, late, and breached counts for the address as an issuer.
     pub fn get_reputation(env: Env, address: Address) -> reputation::Reputation {
         reputation::get_reputation(&env, address)
+    }
+
+    /// Retrieves a single weighted trust score for a given address, derived from
+    /// its reputation counts. This is the read-only entry point intended for
+    /// cross-contract composability (see `trust_gate`): it performs no storage
+    /// writes and is safe to call from any external contract, including
+    /// mid-transaction while a registry mutation is in progress.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `address` - The address to query.
+    ///
+    /// # Returns
+    /// * `i64` - The weighted trust score (2 per fulfilled, -1 per late, -3 per breached).
+    pub fn get_trust_score(env: Env, address: Address) -> i64 {
+        reputation::get_trust_score(&env, address)
     }
 }
 
