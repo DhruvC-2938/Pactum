@@ -108,3 +108,41 @@ jobs:
           else
             echo "No valid test script defined in backend/package.json yet. Skipping test execution."
           fi
+
+  sdk-tests:
+    name: SDK Tests (@pactum/sdk)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.x (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-sdk-node-${{ hashFiles('sdk/js/package-lock.json', 'sdk/js/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-sdk-node-
+
+      - name: Install SDK dependencies
+        working-directory: sdk/js
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build SDK
+        working-directory: sdk/js
+        run: npm run build
+
+      - name: Run SDK tests
+        working-directory: sdk/js
+        run: npm test
