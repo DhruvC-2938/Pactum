@@ -21,6 +21,8 @@ export interface Commitment {
 export interface CommitmentFilters {
   status?: CommitmentStatus
   address?: string
+  page?: number
+  limit?: number
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000'
@@ -44,6 +46,8 @@ export function fetchCommitments(filters: CommitmentFilters = {}): Promise<Commi
 
   if (filters.status) params.set('status', filters.status)
   if (filters.address) params.set('address', filters.address)
+  if (filters.page) params.set('page', filters.page.toString())
+  if (filters.limit) params.set('limit', filters.limit.toString())
 
   const query = params.toString()
   return request<Commitment[]>(`/commitments${query ? `?${query}` : ''}`)
