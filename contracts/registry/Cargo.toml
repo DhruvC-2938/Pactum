@@ -9,5 +9,11 @@ crate-type = ["lib", "cdylib"]
 [dependencies]
 soroban-sdk = { workspace = true }
 
+[features]
+# Enables the tests that perform a real Wasm executable swap. They embed the
+# compiled artifacts, so `cargo build --target wasm32-unknown-unknown --release`
+# must run first: `make -C registry test-upgrade` does both.
+wasm-tests = []
+
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

@@ -1,5 +1,3 @@
-extern crate alloc;
-
 use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, TryFromVal, TryIntoVal, Val};
 
 /// The default dispute window in seconds (7 days = 604,800 seconds).
@@ -36,152 +34,131 @@ pub enum CommitmentStatus {
 }
 
 /// Classifies the type of a Commitment for machine-readable tooling.
-/// `Freeform` preserves full backward compatibility with existing commitments
-/// that have no template; all other variants require a matching off-chain
-/// JSON schema hashed into `terms_hash`.
+#[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TemplateType {
-    /// Current behavior — no schema constraint on terms_hash.
     Freeform,
-    /// Rental or payment deposit with a defined refund condition.
     RefundDeposit,
-    /// Service-level agreement with uptime/response-time guarantees.
     SLAGuarantee,
-    /// Milestone-based check-in for a project deliverable.
     MilestoneCheckIn,
 }
 
-impl soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val> for TemplateType {
-    type Error = soroban_sdk::ConversionError;
-    #[inline(always)]
-    fn try_from_val(env: &soroban_sdk::Env, val: &soroban_sdk::Val) -> Result<Self, Self::Error> {
-        use soroban_sdk::{EnvBase, TryIntoVal};
-        const CASES: &[&str] = &[
-            "Freeform",
-            "RefundDeposit",
-            "SLAGuarantee",
-            "MilestoneCheckIn",
-        ];
-        let vec: soroban_sdk::Vec<soroban_sdk::Val> = val.try_into_val(env)?;
-        let mut iter = vec.try_iter();
-        let discriminant: soroban_sdk::Symbol = iter
-            .next()
-            .ok_or(soroban_sdk::ConversionError)??
-            .try_into_val(env)
-            .map_err(|_| soroban_sdk::ConversionError)?;
-        let idx = env.symbol_index_in_strs(discriminant.to_symbol_val(), CASES)?;
-        Ok(match u32::from(idx) as usize {
-            0 => {
-                if iter.len() > 0 {
-                    return Err(soroban_sdk::ConversionError);
-                }
-                Self::Freeform
-            }
-            1 => {
-                if iter.len() > 0 {
-                    return Err(soroban_sdk::ConversionError);
-                }
-                Self::RefundDeposit
-            }
-            2 => {
-                if iter.len() > 0 {
-                    return Err(soroban_sdk::ConversionError);
-                }
-                Self::SLAGuarantee
-            }
-            3 => {
-                if iter.len() > 0 {
-                    return Err(soroban_sdk::ConversionError);
-                }
-                Self::MilestoneCheckIn
-            }
-            _ => return Err(soroban_sdk::ConversionError),
-        })
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OptTemplate(pub Option<TemplateType>);
+
+impl core::ops::Deref for OptTemplate {
+    type Target = Option<TemplateType>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl soroban_sdk::TryFromVal<soroban_sdk::Env, TemplateType> for soroban_sdk::Val {
+impl PartialEq<Option<TemplateType>> for OptTemplate {
+    fn eq(&self, other: &Option<TemplateType>) -> bool {
+        &self.0 == other
+    }
+}
+
+impl PartialEq<OptTemplate> for Option<TemplateType> {
+    fn eq(&self, other: &OptTemplate) -> bool {
+        self == &other.0
+    }
+}
+
+impl soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::Val> for OptTemplate {
     type Error = soroban_sdk::ConversionError;
-    #[inline(always)]
-    fn try_from_val(env: &soroban_sdk::Env, val: &TemplateType) -> Result<Self, Self::Error> {
-        use soroban_sdk::{IntoVal, TryIntoVal};
-        let mut vec = soroban_sdk::Vec::<soroban_sdk::Val>::new(env);
+    fn try_from_val(env: &soroban_sdk::Env, val: &soroban_sdk::Val) -> Result<Self, soroban_sdk::ConversionError> {
+        let opt: Option<TemplateType> = Option::<TemplateType>::try_from_val(env, val)?;
+        Ok(OptTemplate(opt))
+    }
+}
+
+impl soroban_sdk::TryFromVal<soroban_sdk::Env, OptTemplate> for soroban_sdk::Val {
+    type Error = soroban_sdk::ConversionError;
+    fn try_from_val(env: &soroban_sdk::Env, val: &OptTemplate) -> Result<Self, soroban_sdk::ConversionError> {
+        val.0.try_into_val(env)
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::xdr::ScVal> for OptTemplate {
+    type Error = soroban_sdk::xdr::Error;
+    fn try_from_val(env: &soroban_sdk::Env, val: &soroban_sdk::xdr::ScVal) -> Result<Self, soroban_sdk::xdr::Error> {
         match val {
-            TemplateType::Freeform => {
-                vec.push_back(soroban_sdk::Symbol::new(env, "Freeform").into_val(env));
-            }
-            TemplateType::RefundDeposit => {
-                vec.push_back(soroban_sdk::Symbol::new(env, "RefundDeposit").into_val(env));
-            }
-            TemplateType::SLAGuarantee => {
-                vec.push_back(soroban_sdk::Symbol::new(env, "SLAGuarantee").into_val(env));
-            }
-            TemplateType::MilestoneCheckIn => {
-                vec.push_back(soroban_sdk::Symbol::new(env, "MilestoneCheckIn").into_val(env));
+            soroban_sdk::xdr::ScVal::Void => Ok(OptTemplate(None)),
+            _ => {
+                let v: Val = val.try_into_val(env).map_err(|_| soroban_sdk::xdr::Error::Invalid)?;
+                let t = TemplateType::try_from_val(env, &v).map_err(|_| soroban_sdk::xdr::Error::Invalid)?;
+                Ok(OptTemplate(Some(t)))
             }
         }
-        vec.try_into_val(env)
     }
 }
 
-impl From<TemplateType> for soroban_sdk::xdr::ScVal {
-    fn from(val: TemplateType) -> Self {
-        (&val).into()
-    }
-}
-
-impl From<&TemplateType> for soroban_sdk::xdr::ScVal {
-    fn from(val: &TemplateType) -> Self {
-        extern crate alloc;
-        let sym = match val {
-            TemplateType::Freeform => "Freeform",
-            TemplateType::RefundDeposit => "RefundDeposit",
-            TemplateType::SLAGuarantee => "SLAGuarantee",
-            TemplateType::MilestoneCheckIn => "MilestoneCheckIn",
-        };
-        let symbol_scval =
-            soroban_sdk::xdr::ScVal::Symbol(soroban_sdk::xdr::ScSymbol(sym.try_into().unwrap()));
-        soroban_sdk::xdr::ScVal::Vec(Some(soroban_sdk::xdr::ScVec(
-            alloc::vec![symbol_scval].try_into().unwrap(),
-        )))
-    }
-}
-
-impl TryFrom<&soroban_sdk::xdr::ScVal> for TemplateType {
+#[cfg(not(target_family = "wasm"))]
+impl soroban_sdk::TryFromVal<soroban_sdk::Env, OptTemplate> for soroban_sdk::xdr::ScVal {
     type Error = soroban_sdk::xdr::Error;
-    fn try_from(val: &soroban_sdk::xdr::ScVal) -> Result<Self, Self::Error> {
-        if let soroban_sdk::xdr::ScVal::Vec(Some(vec)) = val {
-            if let Some(soroban_sdk::xdr::ScVal::Symbol(sym)) = vec.first() {
-                use alloc::string::ToString;
-                let s = sym.to_string();
-                return match s.as_str() {
-                    "Freeform" => Ok(TemplateType::Freeform),
-                    "RefundDeposit" => Ok(TemplateType::RefundDeposit),
-                    "SLAGuarantee" => Ok(TemplateType::SLAGuarantee),
-                    "MilestoneCheckIn" => Ok(TemplateType::MilestoneCheckIn),
-                    _ => Err(soroban_sdk::xdr::Error::Invalid),
-                };
+    fn try_from_val(_env: &soroban_sdk::Env, val: &OptTemplate) -> Result<Self, soroban_sdk::xdr::Error> {
+        match &val.0 {
+            Some(t) => {
+                let scval: soroban_sdk::xdr::ScVal = (*t).try_into().unwrap();
+                Ok(scval)
             }
+            None => Ok(soroban_sdk::xdr::ScVal::Void),
         }
-        Err(soroban_sdk::xdr::Error::Invalid)
     }
 }
 
-impl TryFrom<soroban_sdk::xdr::ScVal> for TemplateType {
+#[cfg(not(target_family = "wasm"))]
+impl TryFrom<&soroban_sdk::xdr::ScVal> for OptTemplate {
     type Error = soroban_sdk::xdr::Error;
-    fn try_from(val: soroban_sdk::xdr::ScVal) -> Result<Self, Self::Error> {
+    fn try_from(val: &soroban_sdk::xdr::ScVal) -> Result<Self, soroban_sdk::xdr::Error> {
+        match val {
+            soroban_sdk::xdr::ScVal::Void => Ok(OptTemplate(None)),
+            soroban_sdk::xdr::ScVal::Vec(Some(vec)) => {
+                if let Some(soroban_sdk::xdr::ScVal::Symbol(sym)) = vec.first() {
+                    let s = core::str::from_utf8(sym.0.as_ref()).map_err(|_| soroban_sdk::xdr::Error::Invalid)?;
+                    let t = match s {
+                        "Freeform" => TemplateType::Freeform,
+                        "RefundDeposit" => TemplateType::RefundDeposit,
+                        "SLAGuarantee" => TemplateType::SLAGuarantee,
+                        "MilestoneCheckIn" => TemplateType::MilestoneCheckIn,
+                        _ => return Err(soroban_sdk::xdr::Error::Invalid),
+                    };
+                    Ok(OptTemplate(Some(t)))
+                } else {
+                    Err(soroban_sdk::xdr::Error::Invalid)
+                }
+            }
+            _ => Err(soroban_sdk::xdr::Error::Invalid),
+        }
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl TryFrom<soroban_sdk::xdr::ScVal> for OptTemplate {
+    type Error = soroban_sdk::xdr::Error;
+    fn try_from(val: soroban_sdk::xdr::ScVal) -> Result<Self, soroban_sdk::xdr::Error> {
         (&val).try_into()
     }
 }
 
-impl soroban_sdk::TryFromVal<soroban_sdk::Env, soroban_sdk::xdr::ScVal> for TemplateType {
+#[cfg(not(target_family = "wasm"))]
+impl TryFrom<&OptTemplate> for soroban_sdk::xdr::ScVal {
     type Error = soroban_sdk::xdr::Error;
-    #[inline(always)]
-    fn try_from_val(
-        _env: &soroban_sdk::Env,
-        val: &soroban_sdk::xdr::ScVal,
-    ) -> Result<Self, Self::Error> {
-        val.try_into()
+    fn try_from(val: &OptTemplate) -> Result<Self, soroban_sdk::xdr::Error> {
+        match &val.0 {
+            Some(t) => Ok((*t).try_into().unwrap()),
+            None => Ok(soroban_sdk::xdr::ScVal::Void),
+        }
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl TryFrom<OptTemplate> for soroban_sdk::xdr::ScVal {
+    type Error = soroban_sdk::xdr::Error;
+    fn try_from(val: OptTemplate) -> Result<Self, soroban_sdk::xdr::Error> {
+        (&val).try_into()
     }
 }
 
@@ -198,22 +175,27 @@ const _: () = {
         MilestoneCheckIn,
     }
 
-    impl soroban_sdk::testutils::arbitrary::SorobanArbitrary for TemplateType {
-        type Prototype = ArbitraryTemplateType;
+    #[derive(arbitrary::Arbitrary, Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+    pub struct ArbitraryOptTemplate(pub Option<ArbitraryTemplateType>);
+
+    impl soroban_sdk::testutils::arbitrary::SorobanArbitrary for OptTemplate {
+        type Prototype = ArbitraryOptTemplate;
     }
 
-    impl soroban_sdk::TryFromVal<soroban_sdk::Env, ArbitraryTemplateType> for TemplateType {
+    impl soroban_sdk::TryFromVal<soroban_sdk::Env, ArbitraryOptTemplate> for OptTemplate {
         type Error = soroban_sdk::ConversionError;
         fn try_from_val(
             _env: &soroban_sdk::Env,
-            v: &ArbitraryTemplateType,
+            v: &ArbitraryOptTemplate,
         ) -> Result<Self, Self::Error> {
-            Ok(match v {
-                ArbitraryTemplateType::Freeform => TemplateType::Freeform,
-                ArbitraryTemplateType::RefundDeposit => TemplateType::RefundDeposit,
-                ArbitraryTemplateType::SLAGuarantee => TemplateType::SLAGuarantee,
-                ArbitraryTemplateType::MilestoneCheckIn => TemplateType::MilestoneCheckIn,
-            })
+            let opt = match &v.0 {
+                Some(ArbitraryTemplateType::Freeform) => Some(TemplateType::Freeform),
+                Some(ArbitraryTemplateType::RefundDeposit) => Some(TemplateType::RefundDeposit),
+                Some(ArbitraryTemplateType::SLAGuarantee) => Some(TemplateType::SLAGuarantee),
+                Some(ArbitraryTemplateType::MilestoneCheckIn) => Some(TemplateType::MilestoneCheckIn),
+                None => None,
+            };
+            Ok(OptTemplate(opt))
         }
     }
 };
@@ -241,7 +223,7 @@ pub struct Commitment {
     /// The address of the custom resolver delegated to resolve disputes for this commitment.
     pub resolver_address: Address,
     /// Optional template type classifying this commitment for tooling.
-    pub template: Option<TemplateType>,
+    pub template: OptTemplate,
 }
 
 /// Legacy representation of a Commitment prior to custom resolver support.
@@ -343,7 +325,7 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
         created_at,
         attested_at,
         resolver_address: fallback_resolver,
-        template: None,
+        template: OptTemplate(None),
     };
 
     env.storage()

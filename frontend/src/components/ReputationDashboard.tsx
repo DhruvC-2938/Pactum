@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import UserProfile from './UserProfile';
-import { fetchCommitments, fetchReputation, Commitment, Reputation } from '../lib/api';
+import { fetchCommitments, fetchReputation } from '../lib/api';
+import type { Commitment, Reputation } from '../lib/api';
 
 export interface ReputationDashboardProps {
   initialAddress?: string;
