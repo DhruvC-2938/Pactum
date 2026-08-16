@@ -53,7 +53,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
   const triggerAddressChange = (addr: string) => {
     abortRef.current?.abort();
-    abortRef.current = new AbortController();
     setIsLoading(true);
     setActiveAddress(addr);
     setSearchQuery(addr);
@@ -102,7 +101,9 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   }, [page, hasMore, loadCommitments]);
 
   useEffect(() => {
-    const signal = abortRef.current?.signal;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const signal = controller.signal;
 
     const initializeData = async () => {
       setIsLoading(true);
@@ -113,7 +114,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           loadCommitments(1, false, signal)
         ]);
 
-        if (!signal?.aborted) {
+        if (!signal.aborted) {
           setReputation(repData);
         }
       } catch (error: any) {
@@ -122,7 +123,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           setFetchError('Failed to initialize dashboard data.');
         }
       } finally {
-        if (!signal?.aborted) {
+        if (!signal.aborted) {
           setIsLoading(false);
         }
       }
@@ -130,7 +131,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
     initializeData();
 
-    return () => abortRef.current?.abort();
+    return () => controller.abort();
   }, [activeAddress, statusFilter, loadCommitments]);
 
   useEffect(() => {
