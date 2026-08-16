@@ -1,4 +1,9 @@
+import { useState } from 'react';
 import './LandingPage.css';
+import { useWallet } from '../context/WalletContext';
+import { Wallet, CheckCircle2 } from 'lucide-react';
+import FreighterInstallModal from './FreighterInstallModal';
+import WalletConnectModal from './WalletConnectModal';
 
 interface LandingPageProps {
   onLaunchApp: () => void;
@@ -6,8 +11,20 @@ interface LandingPageProps {
 }
 
 export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProps) {
+  const { address, isConnected, isConnecting, error, clearError } = useWallet();
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+
+  const shortenKey = (key: string) => {
+    if (!key || key.length < 10) return key;
+    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
+  };
+
   return (
     <div className="landing">
+
+      {/* ── Modern Pop-Up Modals ── */}
+      <WalletConnectModal isOpen={isWalletModalOpen} onClose={() => setIsWalletModalOpen(false)} />
+      <FreighterInstallModal error={error} onDismiss={clearError} />
 
       {/* ── Nav ── */}
       <nav className="lp-nav">
@@ -19,10 +36,60 @@ export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProp
           </div>
           <span className="lp-logo-name">Pactum</span>
         </div>
-        <div className="lp-nav-links">
+        <div className="lp-nav-links" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button className="lp-nav-link" onClick={onOpenDocs}>Docs</button>
           <a className="lp-nav-link" href="https://github.com/amankoli09/Pactum" target="_blank" rel="noopener noreferrer">GitHub</a>
           <a className="lp-nav-link" href="https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E" target="_blank" rel="noopener noreferrer">Explorer</a>
+
+          {/* Freighter Wallet Connect Pop-Up Button */}
+          {isConnected && address ? (
+            <button
+              onClick={() => setIsWalletModalOpen(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '7px',
+                background: '#f0fdf4',
+                border: '1px solid #bbf7d0',
+                color: '#15803d',
+                borderRadius: '10px',
+                padding: '7px 14px',
+                fontWeight: '700',
+                fontSize: '12.5px',
+                fontFamily: 'monospace',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(34, 197, 94, 0.08)'
+              }}
+              title="Click to view wallet details"
+            >
+              <CheckCircle2 size={14} color="#22c55e" />
+              {shortenKey(address)}
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsWalletModalOpen(true)}
+              disabled={isConnecting}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '7px',
+                background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                color: '#ffffff',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '10px',
+                padding: '8px 18px',
+                fontSize: '12.5px',
+                fontWeight: '700',
+                cursor: isConnecting ? 'wait' : 'pointer',
+                boxShadow: '0 4px 14px rgba(15, 23, 42, 0.15)',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Wallet size={15} />
+              {isConnecting ? 'Connecting...' : 'Connect Freighter'}
+            </button>
+          )}
+
           <button className="lp-btn-primary lp-btn-sm" onClick={onLaunchApp}>Launch App →</button>
         </div>
       </nav>
@@ -52,12 +119,13 @@ export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProp
           </button>
           <button className="lp-btn-ghost lp-btn-lg" onClick={onOpenDocs}>Read the Docs</button>
         </div>
+
         <div className="lp-contract-pill">
           <span className="lp-contract-label">Contract</span>
           <span className="lp-contract-id">CBADTVTJ6IN...GAA7E</span>
           <a href="https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E" target="_blank" rel="noopener noreferrer" className="lp-contract-link">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-4" />
+              <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 1 1 1h9a1 1 0 0 1 1-1v-4" />
               <path d="M14 2H9m5 0v5M8 8l6-6" />
             </svg>
           </a>
@@ -100,84 +168,11 @@ export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProp
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section className="lp-section">
-        <div className="lp-section-label">Why Pactum</div>
-        <h2 className="lp-section-title">Trust infrastructure for any agreement</h2>
-        <div className="lp-features">
-          {[
-            { icon: 'M12 2L4 7v10l8 5 8-5V7L12 2z', title: 'No funds held', desc: 'Pactum is a pure registry — it records promises, not payments. No custody risk, no escrow complexity.' },
-            { icon: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', title: 'Per-address reputation', desc: 'Every commitment outcome contributes to a public score — query any address before entering a deal.' },
-            { icon: 'M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z', title: 'Dispute resolution', desc: 'Contested outcomes go to a designated arbitrator. The final resolution is what gets recorded.' },
-            { icon: 'M16 18l6-6-6-6M8 6L2 12l6 6', title: 'SDK + REST API', desc: 'Any platform can query reputation via a lightweight JS/TS SDK or REST API — one call.' },
-            { icon: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2', title: 'Commitment templates', desc: 'Coming soon: structured templates for refunds, SLAs, milestone check-ins, and recurring reports.' },
-            { icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 6v6l4 2', title: 'Oracle auto-attestation', desc: 'Coming soon: oracle-based automatic attestation for measurable commitments like uptime feeds.' },
-          ].map((f) => (
-            <div className="lp-feature-card" key={f.title}>
-              <div className="lp-feature-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d={f.icon} />
-                </svg>
-              </div>
-              <div className="lp-feature-title">{f.title}</div>
-              <div className="lp-feature-desc">{f.desc}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Tech Stack ── */}
-      <section className="lp-section">
-        <div className="lp-section-label">Built with</div>
-        <h2 className="lp-section-title">Soroban-native from the ground up</h2>
-        <div className="lp-stack">
-          {[
-            { name: 'Rust', sub: 'Smart Contract' },
-            { name: 'Soroban', sub: 'Stellar SDK' },
-            { name: 'TypeScript', sub: 'Backend + SDK' },
-            { name: 'React', sub: 'Dashboard' },
-            { name: 'Node.js', sub: 'REST API' },
-            { name: 'PostgreSQL', sub: 'Event Index' },
-          ].map((t) => (
-            <div className="lp-stack-pill" key={t.name}>
-              <span className="lp-stack-name">{t.name}</span>
-              <span className="lp-stack-sub">{t.sub}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── CTA ── */}
-      <section className="lp-cta">
-        <h2 className="lp-cta-title">Ready to record a commitment?</h2>
-        <p className="lp-cta-sub">The contract is live on Stellar Testnet. No wallet required to browse — connect to create or attest.</p>
-        <div className="lp-hero-actions">
-          <button className="lp-btn-white lp-btn-lg" id="cta-launch-btn" onClick={onLaunchApp}>
-            Open Dashboard
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 8h10M9 4l4 4-4 4" />
-            </svg>
-          </button>
-          <button className="lp-btn-ghost-white lp-btn-lg" onClick={onOpenDocs}>Read the Docs</button>
-        </div>
-      </section>
-
       {/* ── Footer ── */}
       <footer className="lp-footer">
-        <div className="lp-footer-logo">
-          <div className="lp-logo-icon lp-logo-icon-sm">
-            <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-              <path d="M10 2L3 6v8l7 4 7-4V6l-7-4zm0 2.2l5 2.8v5.6L10 15.4 5 12.6V7l5-2.8z" />
-            </svg>
-          </div>
-          <span>Pactum</span>
+        <div className="lp-footer-copy">
+          © 2026 Pactum Protocol. Built on Soroban / Stellar.
         </div>
-        <div className="lp-footer-links">
-          <a href="https://github.com/amankoli09/Pactum" target="_blank" rel="noopener noreferrer">GitHub</a>
-          <button onClick={onOpenDocs}>Docs</button>
-          <a href="https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E" target="_blank" rel="noopener noreferrer">Explorer</a>
-        </div>
-        <div className="lp-footer-copy">MIT License · Built on Stellar Testnet</div>
       </footer>
 
     </div>

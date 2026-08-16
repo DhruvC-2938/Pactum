@@ -4,11 +4,14 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.tsx'
 import { queryClient } from './lib/queryClient'
+import { WalletProvider } from './context/WalletContext'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <WalletProvider>
+        <App />
+      </WalletProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

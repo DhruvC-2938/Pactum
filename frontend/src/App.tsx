@@ -6,8 +6,12 @@ import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
 import CreateCommitmentWizard from './components/CreateCommitmentWizard'
 import ReputationDashboard from './components/ReputationDashboard'
+import FreighterInstallModal from './components/FreighterInstallModal'
+import WalletConnectModal from './components/WalletConnectModal'
 import { useCommitments } from './hooks/useCommitments'
 import type { Commitment, CommitmentStatus } from './lib/api'
+import { useWallet } from './context/WalletContext'
+import { Wallet, CheckCircle2 } from 'lucide-react'
 
 function renderCommitmentItem(commitment: Commitment) {
   return (
@@ -30,6 +34,64 @@ function renderCommitmentItem(commitment: Commitment) {
       </div>
     </div>
   )
+}
+
+function WalletButton() {
+  const { address, isConnected, isConnecting } = useWallet();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const shortenKey = (key: string) => {
+    if (!key || key.length < 10) return key;
+    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
+  };
+
+  return (
+    <>
+      <WalletConnectModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+
+      {isConnected && address ? (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="btn btn-secondary btn-sm"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: '#f0fdf4',
+            borderColor: '#bbf7d0',
+            color: '#15803d',
+            fontWeight: '700',
+            fontFamily: 'monospace'
+          }}
+          title="Click to view wallet details"
+        >
+          <CheckCircle2 size={13} color="#22c55e" />
+          {shortenKey(address)}
+        </button>
+      ) : (
+        <button
+          onClick={() => setIsOpen(true)}
+          disabled={isConnecting}
+          className="btn btn-secondary btn-sm"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontWeight: '700',
+            borderColor: '#cbd5e1'
+          }}
+        >
+          <Wallet size={14} />
+          {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+        </button>
+      )}
+    </>
+  );
+}
+
+function InlineWalletError() {
+  const { error, clearError } = useWallet();
+  return <FreighterInstallModal error={error} onDismiss={clearError} />;
 }
 
 export default function App() {
@@ -226,7 +288,7 @@ export default function App() {
          activePage === 'lookup' ? 'Get Commitment' :
          activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
       </span>
-      <div className="topbar-actions">
+      <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div className="search-bar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <circle cx="6.5" cy="6.5" r="4.5"/>
@@ -234,7 +296,11 @@ export default function App() {
           </svg>
           <input type="text" placeholder="Search commitments..." id="global-search" />
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => {}}>
+
+        {/* Topbar Wallet Connect Component */}
+        <WalletButton />
+
+        <button className="btn btn-primary btn-sm" onClick={() => setActivePage('create')}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M8 2v12M2 8h12"/>
           </svg>
@@ -242,6 +308,9 @@ export default function App() {
         </button>
       </div>
     </header>
+
+    {/* Inline On-Screen Wallet Error / Installation Alert Banner */}
+    <InlineWalletError />
 
     {/* Toast Container */}
     <div className="toast-container" id="toast-container"></div>
