@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "npm run test:indexer",
+    "test:indexer": "tsc -p tsconfig.indexer-test.json && node --test dist-indexer-test/src/indexer/listener.test.js"
   },
   "keywords": [],
   "author": "",
