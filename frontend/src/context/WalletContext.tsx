@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { isConnected as checkIsConnected, requestAccess, getAddress } from '@stellar/freighter-api';
+import { isConnected as checkIsConnected, requestAccess, setAllowed, getAddress } from '@stellar/freighter-api';
 
 export interface WalletContextType {
   address: string | null;
@@ -56,9 +56,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       let installed = false;
       try {
         const connRes = await checkIsConnected();
-        installed = Boolean(connRes && connRes.isConnected);
+        if (connRes && typeof connRes.isConnected === 'boolean') {
+          installed = connRes.isConnected;
+        }
       } catch (e) {
-        installed = Boolean(typeof window !== 'undefined' && (window as any).freighter);
+        // Fallback check
       }
 
       if (!installed && typeof window !== 'undefined' && (window as any).freighter) {
@@ -74,26 +76,45 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
       setIsInstalled(true);
 
-      // 2. Trigger Freighter requestAccess pop-up & retrieve Stellar address
+      // 2. Multi-tiered resolution: requestAccess() -> setAllowed() + getAddress() -> window.freighter
       let userAddr = '';
-      const accessRes = await requestAccess();
 
-      if (accessRes && accessRes.address) {
-        userAddr = accessRes.address;
-      } else if (accessRes && accessRes.error) {
-        // Fallback to getAddress if already allowed
-        const addrRes = await getAddress();
-        if (addrRes && addrRes.address && !addrRes.error) {
-          userAddr = addrRes.address;
-        } else {
-          setError(typeof accessRes.error === 'string' ? accessRes.error : 'Connection request denied in Freighter.');
-          setIsConnecting(false);
-          return;
+      // Method A: Official requestAccess()
+      try {
+        const accessRes = await requestAccess();
+        if (accessRes && accessRes.address) {
+          userAddr = accessRes.address;
+        } else if (typeof accessRes === 'string') {
+          userAddr = accessRes;
         }
-      } else {
-        const addrRes = await getAddress();
-        if (addrRes && addrRes.address && !addrRes.error) {
-          userAddr = addrRes.address;
+      } catch (e) {
+        console.warn('[WalletContext] requestAccess failed, trying setAllowed/getAddress:', e);
+      }
+
+      // Method B: setAllowed() + getAddress()
+      if (!userAddr) {
+        try {
+          await setAllowed();
+          const addrRes = await getAddress();
+          if (addrRes && addrRes.address && !addrRes.error) {
+            userAddr = addrRes.address;
+          } else if (typeof addrRes === 'string') {
+            userAddr = addrRes;
+          }
+        } catch (e) {
+          console.warn('[WalletContext] setAllowed/getAddress error:', e);
+        }
+      }
+
+      // Method C: Direct window.freighter injection fallback
+      if (!userAddr && typeof window !== 'undefined' && (window as any).freighter) {
+        try {
+          const directAddr = await (window as any).freighter.getAddress();
+          if (directAddr) {
+            userAddr = typeof directAddr === 'string' ? directAddr : directAddr.address || '';
+          }
+        } catch (e) {
+          console.warn('[WalletContext] window.freighter fallback error:', e);
         }
       }
 
@@ -101,7 +122,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setAddress(userAddr);
         localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
       } else {
-        setError('Unable to retrieve account address from Freighter.');
+        setError('Connection request was denied or canceled in Freighter.');
       }
     } catch (err: any) {
       console.error('[WalletContext] Connection error:', err);

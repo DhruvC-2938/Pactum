@@ -21,11 +21,15 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
     };
 
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      // Delay listener slightly to prevent immediate close on button click
+      const timer = setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside);
+      }, 50);
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
     }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -38,7 +42,9 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleConnectFreighter = async () => {
+  const handleConnectFreighter = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
     await connectWallet();
   };
 
@@ -50,6 +56,8 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
   return (
     <div
       ref={dropdownRef}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
       style={{
         position: 'absolute',
         top: 'calc(100% + 8px)',
@@ -74,7 +82,10 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
         </div>
 
         <button
-          onClick={onClose}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
           style={{
             background: '#f8fafc',
             border: '1px solid #e2e8f0',
@@ -135,7 +146,8 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
           </div>
 
           <button
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               disconnectWallet();
               onClose();
             }}
@@ -204,7 +216,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
             </div>
 
             <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#6366f1' }}>
-              {isConnecting ? '...' : 'Connect →'}
+              {isConnecting ? 'Connecting...' : 'Connect →'}
             </span>
           </button>
 
