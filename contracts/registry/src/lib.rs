@@ -10,12 +10,15 @@ mod reentrancy;
 pub mod reputation;
 pub mod trust_gate;
 pub mod trust_score;
+pub mod upgrade;
 
 #[cfg(test)]
 mod test_trust_score;
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_upgrade;
 
 #[cfg(test)]
 mod attacker_gate;
@@ -24,8 +27,9 @@ mod attacker_gate;
 mod demo;
 
 pub use commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
+pub use upgrade::{SCHEMA_VERSION_V1, SCHEMA_VERSION_V2};
 use errors::Error;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Vec};
 
 /// The Pactum Registry contract for recording and tracking recurring commitments.
 #[contract]
@@ -296,105 +300,115 @@ impl RegistryContract {
         reputation::get_reputation(&env, address)
     }
 
-    /// Returns whether the protocol is currently paused (emergency halt).
+    // ---------------------------------------------------------------------
+    // Upgradeability and governance
+    //
+    // Soroban upgrades a contract by replacing its executable in place; the
+    // contract ID and all persistent storage survive. There is therefore no proxy
+    // contract in this design — see `upgrade.rs` and `docs/upgradeability.md` for
+    // why the EVM proxy/implementation split is neither available nor needed here.
+    // ---------------------------------------------------------------------
+
+    /// Retrieves the reputation storage schema version currently in force.
     ///
-    /// Read functions remain fully operational while paused; only
-    /// state-mutating entry points are halted.
+    /// Returns [`SCHEMA_VERSION_V1`] for a contract that has never been upgraded.
+    pub fn schema_version(env: Env) -> u32 {
+        upgrade::schema_version(&env)
+    }
+
+    /// Retrieves the address permitted to upgrade this contract, if one is installed.
+    pub fn get_upgrade_admin(env: Env) -> Option<Address> {
+        upgrade::upgrade_admin(&env)
+    }
+
+    /// Installs the initial upgrade admin — in production, the Timelock contract.
+    ///
+    /// # Authorization
+    /// * Authorized caller: the `arbitrator` recorded by `initialize` (via `require_auth`).
+    /// * Why: at bootstrap no upgrade admin exists yet to authorize its own creation,
+    ///   and the arbitrator is the only authority the contract already trusts. The path
+    ///   closes permanently once used; later changes go through `set_upgrade_admin`,
+    ///   which only the timelock can call.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::UpgradeAdminAlreadySet` if an upgrade admin is installed.
+    pub fn init_upgrade_admin(env: Env, admin: Address) {
+        upgrade::init_upgrade_admin(&env, admin);
+    }
+
+    /// Transfers upgrade authority to a different address.
+    ///
+    /// # Authorization
+    /// * Authorized caller: the current upgrade admin (via `require_auth`).
+    /// * Why: rotating the owner of every future upgrade is as consequential as an
+    ///   upgrade, so it is subject to the same timelocked authority and therefore to
+    ///   the same 7-day public review window.
+    ///
+    /// # Panics
+    /// * Panics with `Error::UpgradeAdminNotSet` if no upgrade admin is installed.
+    pub fn set_upgrade_admin(env: Env, new_admin: Address) {
+        upgrade::set_upgrade_admin(&env, new_admin);
+    }
+
+    /// Replaces this contract's executable and moves the storage schema forward,
+    /// atomically and without changing the contract ID or touching stored state.
+    ///
+    /// # Authorization
+    /// * Authorized caller: the upgrade admin (via `require_auth`) — the Timelock.
+    /// * Why: this entrypoint can change the behaviour of every other entrypoint, so
+    ///   it is restricted to the one authority that cannot act without a 7-day delay.
     ///
     /// # Arguments
-    /// * `env` - The Soroban execution environment.
+    /// * `new_wasm_hash` - Hash of an already-uploaded Wasm blob. Pinned by the
+    ///   timelock at proposal time, so the code reviewed during the delay is the code
+    ///   that executes.
+    /// * `new_schema_version` - Schema version to move to in the same transaction.
+    ///   Pass the current version to swap the executable without a schema change.
+    ///
+    /// # Panics
+    /// * Panics with `Error::UpgradeAdminNotSet` if no upgrade admin is installed.
+    /// * Panics with `Error::SchemaDowngrade` if `new_schema_version` is below the
+    ///   version currently in force.
+    /// * Panics with `Error::UnsupportedSchemaVersion` if `new_schema_version` is
+    ///   above what this executable understands.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>, new_schema_version: u32) {
+        upgrade::upgrade(&env, new_wasm_hash, new_schema_version);
+    }
+
+    /// Retrieves the Attestor-enabled (V2) reputation for an address.
+    ///
+    /// Serves correct V2 data whether or not the address's row has physically been
+    /// migrated, and reads as all-zero for an address that has never been scored.
+    pub fn get_reputation_v2(env: Env, address: Address) -> reputation::ReputationV2 {
+        reputation::get_reputation_v2(&env, address)
+    }
+
+    /// Returns true if `address` still holds a V1 row awaiting rewrite as V2.
+    ///
+    /// Always false while the contract is on schema V1.
+    pub fn migration_pending(env: Env, address: Address) -> bool {
+        reputation::migration_pending(&env, address)
+    }
+
+    /// Rewrites a bounded batch of V1 reputation rows into the V2 layout.
+    ///
+    /// # Authorization
+    /// * Authorized caller: none — permissionless by design.
+    /// * Why: migration is idempotent, cannot alter any counter's value, and the
+    ///   caller pays the fees, so opening it prevents the DAO from being a liveness
+    ///   bottleneck for the backlog.
     ///
     /// # Returns
-    /// * `bool` - `true` if the protocol is currently paused.
-    pub fn is_paused(env: Env) -> bool {
-        pausable::is_paused(&env)
-    }
-
-    /// Pauses the protocol, halting protocol state-mutating entry points
-    /// (`create_commitment`, `attest`, `dispute`, `resolve_dispute`) with
-    /// `Error::ProtocolPaused` while leaving reads fully operational.
-    ///
-    /// This is the emergency kill-switch used in the event of a zero-day exploit.
-    /// Admin lifecycle operations (`pause`, `unpause`, `upgrade`) are exempt from
-    /// the pause so the admin always retains control: they can unpause the
-    /// protocol or deploy an emergency patch via `upgrade` while it is halted.
-    ///
-    /// # Authorization
-    /// * Authorized caller: `admin` (via `require_auth`), which must exactly match
-    ///   the designated arbitrator address stored at contract initialization.
-    /// * Why: Only the designated admin is authorized to trigger the emergency halt.
-    ///
-    /// # Arguments
-    /// * `env` - The Soroban execution environment.
-    /// * `admin` - The designated admin address pausing the protocol. Must authorize the call.
+    /// * `u32` - How many rows were actually rewritten. Addresses already on V2, and
+    ///   addresses with no live row (never scored, or archived), count as zero.
     ///
     /// # Panics
-    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
-    /// * Panics with `Error::NotArbitrator` if `admin` is not the designated arbitrator.
-    pub fn pause(env: Env, admin: Address) {
-        // 0. Enter the reentrancy guard before any external interaction (including
-        //    the require_auth call below, which may invoke a custom account contract).
-        reentrancy::enter(&env);
-
-        // 1. Require authorization from the admin.
-        admin.require_auth();
-
-        // 2. Verify the admin is the designated arbitrator.
-        let stored_arbitrator: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Arbitrator)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
-        if stored_arbitrator != admin {
-            panic_with_error!(&env, Error::NotArbitrator);
-        }
-
-        // 3. Flip the paused flag and emit the event.
-        pausable::set_paused(&env, true);
-        events::protocol_paused(&env);
-
-        // 4. Release the reentrancy guard.
-        reentrancy::exit(&env);
-    }
-
-    /// Unpauses the protocol, restoring state-mutating entry points.
-    ///
-    /// # Authorization
-    /// * Authorized caller: `admin` (via `require_auth`), which must exactly match
-    ///   the designated arbitrator address stored at contract initialization.
-    /// * Why: Only the designated admin is authorized to end the emergency halt.
-    ///
-    /// # Arguments
-    /// * `env` - The Soroban execution environment.
-    /// * `admin` - The designated admin address unpausing the protocol. Must authorize the call.
-    ///
-    /// # Panics
-    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
-    /// * Panics with `Error::NotArbitrator` if `admin` is not the designated arbitrator.
-    pub fn unpause(env: Env, admin: Address) {
-        // 0. Enter the reentrancy guard before any external interaction (including
-        //    the require_auth call below, which may invoke a custom account contract).
-        reentrancy::enter(&env);
-
-        // 1. Require authorization from the admin.
-        admin.require_auth();
-
-        // 2. Verify the admin is the designated arbitrator.
-        let stored_arbitrator: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Arbitrator)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
-        if stored_arbitrator != admin {
-            panic_with_error!(&env, Error::NotArbitrator);
-        }
-
-        // 3. Flip the paused flag and emit the event.
-        pausable::set_paused(&env, false);
-        events::protocol_unpaused(&env);
-
-        // 4. Release the reentrancy guard.
-        reentrancy::exit(&env);
+    /// * Panics with `Error::MigrationNotEnabled` if the contract is still on schema V1.
+    /// * Panics with `Error::BatchTooLarge` if the batch exceeds
+    ///   `upgrade::MAX_MIGRATION_BATCH` addresses.
+    pub fn migrate_reputation_batch(env: Env, addresses: Vec<Address>) -> u32 {
+        reputation::migrate_reputation_batch(&env, addresses)
     }
 
     /// Retrieves the 0..=100 trust score for a given address as an issuer.
@@ -412,42 +426,5 @@ impl RegistryContract {
     /// * `u32` - The trust score in the range 0..=100 (50 = neutral baseline).
     pub fn get_trust_score(env: Env, address: Address) -> u32 {
         trust_score::get_trust_score(&env, address)
-    }
-    /// Upgrades the contract to a new WASM binary.
-    ///
-    /// This is an admin lifecycle operation and is deliberately exempt from the
-    /// protocol pause: while the protocol is halted, the admin may still deploy
-    /// a patched WASM binary to remediate the underlying issue.
-    ///
-    /// # Authorization
-    /// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
-    ///   the designated arbitrator address stored at contract initialization.
-    /// * Why: Only the designated arbitrator (admin) is authorized to upgrade the contract
-    ///   to fix bugs or add features post-launch.
-    ///
-    /// # Arguments
-    /// * `env` - The Soroban execution environment.
-    /// * `arbitrator` - The designated arbitrator address initiating the upgrade. Must authorize the call.
-    /// * `new_wasm_hash` - The 32-byte hash of the new WASM binary to deploy.
-    ///
-    /// # Panics
-    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
-    /// * Panics with `Error::NotArbitrator` if the caller is not the designated arbitrator.
-    pub fn upgrade(env: Env, arbitrator: Address, new_wasm_hash: BytesN<32>) {
-        // Verify the caller is the designated arbitrator
-        let stored_arbitrator: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Arbitrator)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
-
-        if stored_arbitrator != arbitrator {
-            panic_with_error!(&env, Error::NotArbitrator);
-        }
-
-        arbitrator.require_auth();
-
-        // Upgrade the contract to the new WASM binary
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }

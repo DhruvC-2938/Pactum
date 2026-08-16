@@ -362,3 +362,41 @@ test('treats a ledger outside Soroban RPC retention as unavailable', async () =>
 
   assert.equal(await source.getLedger(1), null);
 });
+
+test('reports every committed ledger to the commit hook', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 5));
+  const store = new InMemoryIndexerStore();
+  const committed: number[] = [];
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 2,
+    onLedgerCommitted: (ledger) => {
+      committed.push(ledger.sequence);
+    },
+  });
+
+  await indexer.sync();
+
+  assert.deepEqual(committed, [1, 2, 3]);
+});
+
+test('keeps indexing when the commit hook throws', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 4));
+  const store = new InMemoryIndexerStore();
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 1,
+    onLedgerCommitted: async () => {
+      throw new Error('cache is down');
+    },
+  });
+
+  const result = await indexer.sync();
+
+  assert.equal(result.committed, 3);
+  assert.deepEqual(await store.getCheckpoint(), { sequence: 3, hash: 'main-3' });
+});

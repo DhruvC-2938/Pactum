@@ -60,6 +60,8 @@ Pactum is a lightweight registry, not a payment or custody system. It doesn't ho
 ```
 pactum/
 ├── contracts/registry/     # Soroban smart contract (Rust)
+├── contracts/timelock/     # DAO-owned 7-day timelock gating contract upgrades
+├── contracts/scripts/      # Upgrade proposal, review, execution & migration scripts
 ├── backend/                # REST API + on-chain event indexer (TypeScript)
 ├── zk/                     # Zero-knowledge Trust Score threshold proofs (Circom + snarkjs)
 ├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
@@ -67,6 +69,11 @@ pactum/
 ├── docs/                   # Architecture, contract & API reference, integration guide
 └── examples/                # Minimal integration demo
 ```
+
+The registry is upgradeable in place: its logic can be replaced while its address and
+all stored Trust Scores are preserved, and every upgrade must pass a 7-day public
+review window enforced by the timelock. See
+[`docs/upgradeability.md`](./docs/upgradeability.md).
 
 See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
@@ -81,6 +88,7 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Backend API | Node.js + TypeScript + Express |
 | Indexer | Soroban RPC event listener |
 | Database | PostgreSQL + TimescaleDB (time-series analytics) |
+| Cache | Redis (optional read cache for reputation lookups) |
 | SDK | TypeScript, published as `@pactum/sdk` |
 | ZK proofs | Circom 2 + snarkjs (Groth16 over BN254) |
 | Testing | Cargo test (contract) · Jest (backend) · `node --test` (zk) |
@@ -149,6 +157,24 @@ npm run dev
 npm run analytics:worker
 ```
 
+### Running the whole stack with Docker
+
+**Prerequisites:** Docker with Compose v2.
+
+```bash
+docker compose up --build
+```
+
+That boots TimescaleDB, the backend (which applies `backend/src/db/migrations/*.sql` on startup) and an nginx-served frontend build.
+
+| Service | URL | Override |
+|---|---|---|
+| Frontend | http://localhost | `FRONTEND_PORT` |
+| Backend | http://localhost:3000 | `BACKEND_PORT` |
+| TimescaleDB | `localhost:5432` | `TIMESCALEDB_PORT` |
+
+The frontend is built to call the API on its own origin, and nginx proxies `/api`, `/reputation`, `/commitments` and `/health` to the backend container. Database credentials and Soroban settings come from the same `TIMESCALEDB_*` / `SOROBAN_*` variables as `backend/.env.example`; set them in a root `.env` to override the defaults.
+
 ---
 
 ## Roadmap
@@ -157,11 +183,11 @@ npm run analytics:worker
 - [ ] Per-address reputation aggregation
 - [ ] Oracle-based auto-attestation for measurable commitments (e.g. uptime feeds)
 - [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
-- [ ] Public reputation lookup API
+- [x] Public reputation lookup API
 - [ ] JS/TS SDK (`@pactum/sdk`)
 - [ ] Marketplace integration example (check a counterparty's history before a deal)
 - [ ] Rate limiting & spam-commitment protections
-- [ ] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Dashboard endpoint (commitments created/fulfilled over time)
 - [x] Verifiable reputation export — prove `Trust Score > threshold` in zero knowledge
       ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
 
