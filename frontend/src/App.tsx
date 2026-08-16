@@ -46,12 +46,10 @@ function WalletButton() {
   };
 
   return (
-    <>
-      <WalletConnectModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
-
+    <div style={{ position: 'relative', display: 'inline-block' }}>
       {isConnected && address ? (
         <button
-          onClick={() => setIsOpen(true)}
+          onClick={() => setIsOpen((prev) => !prev)}
           className="btn btn-secondary btn-sm"
           style={{
             display: 'inline-flex',
@@ -70,7 +68,7 @@ function WalletButton() {
         </button>
       ) : (
         <button
-          onClick={() => setIsOpen(true)}
+          onClick={() => setIsOpen((prev) => !prev)}
           disabled={isConnecting}
           className="btn btn-secondary btn-sm"
           style={{
@@ -85,7 +83,10 @@ function WalletButton() {
           {isConnecting ? 'Connecting...' : 'Connect Wallet'}
         </button>
       )}
-    </>
+
+      {/* Dropping Banner Popover Dropdown */}
+      <WalletConnectModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+    </div>
   );
 }
 
@@ -139,7 +140,7 @@ export default function App() {
 
   {/* ── Sidebar ── */}
   <aside className="sidebar">
-    <div className="sidebar-logo">
+    <div className="sidebar-logo" onClick={() => setActivePage('landing')} style={{ cursor: 'pointer' }} title="Go to Home Page">
       <div className="logo-mark">
         <div className="logo-icon">
           <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
@@ -277,17 +278,41 @@ export default function App() {
   <main className="main-content">
 
     {/* Topbar */}
-    <header className="topbar">
-      <span className="topbar-title" id="topbar-title">
-        {activePage === 'reputation' ? 'Reputation Lookup' :
-         activePage === 'commitments' ? 'Commitments' :
-         activePage === 'create' ? 'Create Commitment' :
-         activePage === 'attest' ? 'Attest' :
-         activePage === 'dispute' ? 'Raise Dispute' :
-         activePage === 'resolve' ? 'Resolve Dispute' :
-         activePage === 'lookup' ? 'Get Commitment' :
-         activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
-      </span>
+    <header className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <button
+          onClick={() => setActivePage('landing')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
+            padding: '6px 12px',
+            fontSize: '12.5px',
+            fontWeight: '700',
+            color: '#475569',
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            transition: 'all 0.15s ease'
+          }}
+          title="Back to Landing Page"
+        >
+          ← Home
+        </button>
+
+        <span className="topbar-title" id="topbar-title" style={{ margin: 0 }}>
+          {activePage === 'reputation' ? 'Reputation Lookup' :
+           activePage === 'commitments' ? 'Commitments' :
+           activePage === 'create' ? 'Create Commitment' :
+           activePage === 'attest' ? 'Attest' :
+           activePage === 'dispute' ? 'Raise Dispute' :
+           activePage === 'resolve' ? 'Resolve Dispute' :
+           activePage === 'lookup' ? 'Get Commitment' :
+           activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
+        </span>
+      </div>
       <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div className="search-bar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
