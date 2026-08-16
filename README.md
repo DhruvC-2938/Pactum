@@ -161,7 +161,7 @@ npm run analytics:worker
 - [ ] JS/TS SDK (`@pactum/sdk`)
 - [ ] Marketplace integration example (check a counterparty's history before a deal)
 - [ ] Rate limiting & spam-commitment protections
-- [ ] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Dashboard endpoint (commitments created/fulfilled over time)
 - [x] Verifiable reputation export — prove `Trust Score > threshold` in zero knowledge
       ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
 
