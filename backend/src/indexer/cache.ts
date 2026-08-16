@@ -10,7 +10,17 @@ const STELLAR_ADDRESS = /^[GC][A-Z2-7]{55}$/;
 let client: RedisClient | null = null;
 let available = false;
 
-const connectTimeoutMs = (): number => Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 2000);
+// A malformed override would otherwise reach Redis as NaN or a non-positive
+// EX/timeout, which it rejects, silently turning every write into a miss.
+const positiveInt = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const connectTimeoutMs = (): number => positiveInt(process.env.REDIS_CONNECT_TIMEOUT_MS, 2000);
+
+export const cacheTtlSeconds = (): number =>
+  positiveInt(process.env.REPUTATION_CACHE_TTL_SECONDS, DEFAULT_TTL_SECONDS);
 
 const afterConnectTimeout = (): Promise<void> =>
   new Promise((resolve) => {
@@ -96,7 +106,7 @@ export const readCache = async <T>(key: string): Promise<T | null> => {
 export const writeCache = async (
   key: string,
   value: unknown,
-  ttlSeconds = Number(process.env.REPUTATION_CACHE_TTL_SECONDS || DEFAULT_TTL_SECONDS),
+  ttlSeconds = cacheTtlSeconds(),
 ): Promise<void> => {
   if (!client || !available) return;
 

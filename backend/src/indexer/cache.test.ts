@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { addressesInLedger, invalidateLedger, isCacheAvailable, reputationKey } from './cache';
+import {
+  addressesInLedger,
+  cacheTtlSeconds,
+  invalidateLedger,
+  isCacheAvailable,
+  reputationKey,
+} from './cache';
 import { LedgerSnapshot } from './types';
 
 const ISSUER = 'GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR';
@@ -72,4 +78,20 @@ test('invalidating a ledger is a no-op while Redis is unavailable', async () => 
 test('namespaces cache keys per address', () => {
   assert.equal(reputationKey(ISSUER), `reputation:${ISSUER}`);
   assert.notEqual(reputationKey(ISSUER), reputationKey(COUNTERPARTY));
+});
+
+test('falls back to the default TTL when the override is not a positive integer', () => {
+  const previous = process.env.REPUTATION_CACHE_TTL_SECONDS;
+  try {
+    for (const bad of ['not-a-number', '0', '-5', '1.5', '']) {
+      process.env.REPUTATION_CACHE_TTL_SECONDS = bad;
+      assert.equal(cacheTtlSeconds(), 60, `expected the default for "${bad}"`);
+    }
+
+    process.env.REPUTATION_CACHE_TTL_SECONDS = '300';
+    assert.equal(cacheTtlSeconds(), 300);
+  } finally {
+    if (previous === undefined) delete process.env.REPUTATION_CACHE_TTL_SECONDS;
+    else process.env.REPUTATION_CACHE_TTL_SECONDS = previous;
+  }
 });
