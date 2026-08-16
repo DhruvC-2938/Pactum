@@ -944,20 +944,21 @@ fn test_get_trust_score_reflects_outcomes() {
 
 #[test]
 fn test_pause_blocks_write_functions() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
     client.pause(&arbitrator);
     assert!(client.is_paused());
 
     // create_commitment reverts with ProtocolPaused
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &3000);
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &3000, &resolver);
     assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
 
     // attest reverts with ProtocolPaused
@@ -979,7 +980,8 @@ fn test_pause_blocks_write_functions() {
 
 #[test]
 fn test_read_functions_succeed_while_paused() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let id = client.create_commitment(
@@ -987,6 +989,7 @@ fn test_read_functions_succeed_while_paused() {
         &counterparty,
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
+        &resolver,
     );
 
     client.pause(&arbitrator);
@@ -1016,7 +1019,8 @@ fn test_read_functions_succeed_while_paused() {
 
 #[test]
 fn test_pause_requires_arbitrator() {
-    let (_env, client, _issuer, _counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (_env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
 
     let stranger = Address::generate(&_env);
     let res = client.try_pause(&stranger);
@@ -1026,11 +1030,12 @@ fn test_pause_requires_arbitrator() {
     assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
 
     assert!(!client.is_paused());
+    let _ = arbitrator; // suppress unused warning
 }
 
 #[test]
 fn test_pause_fails_if_not_initialized() {
-    let (env, client, _issuer, _counterparty) = setup_test();
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test();
     let admin = Address::generate(&env);
 
     let res = client.try_pause(&admin);
@@ -1042,19 +1047,20 @@ fn test_pause_fails_if_not_initialized() {
 
 #[test]
 fn test_unpause_restores_write_functions() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     client.pause(&arbitrator);
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &2000);
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
     assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
 
     client.unpause(&arbitrator);
     assert!(!client.is_paused());
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
     assert_eq!(id, 1);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     let commitment = client.get_commitment(&id);
@@ -1097,7 +1103,8 @@ fn test_pause_and_unpause_events_emitted() {
     use soroban_sdk::testutils::Events;
     use soroban_sdk::{symbol_short, IntoVal, Val, Vec};
 
-    let (env, client, _issuer, _counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
 
     client.pause(&arbitrator);
 
@@ -1116,7 +1123,8 @@ fn test_pause_and_unpause_events_emitted() {
 
 #[test]
 fn test_admin_lifecycle_operations_exempt_from_pause() {
-    let (env, client, _issuer, _counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
 
     client.pause(&arbitrator);
     assert!(client.is_paused());
@@ -1134,7 +1142,6 @@ fn test_admin_lifecycle_operations_exempt_from_pause() {
     assert!(client.is_paused());
     client.unpause(&arbitrator);
     assert!(!client.is_paused());
-}
 }
 
 // -----------------------------------------------------------------------------
