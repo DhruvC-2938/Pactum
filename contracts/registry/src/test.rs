@@ -929,6 +929,7 @@ fn test_get_trust_score_reflects_weighted_outcomes() {
     assert_eq!(client.get_trust_score(&issuer), -2);
 
     let _ = arbitrator;
+}
 // Phase 6 - Contract Upgrade Tests
 // -----------------------------------------------------------------------------
 

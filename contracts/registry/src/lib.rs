@@ -290,6 +290,7 @@ impl RegistryContract {
     /// * `i64` - The weighted trust score (2 per fulfilled, -1 per late, -3 per breached).
     pub fn get_trust_score(env: Env, address: Address) -> i64 {
         reputation::get_trust_score(&env, address)
+    }
     /// Upgrades the contract to a new WASM binary.
     ///
     /// # Authorization
