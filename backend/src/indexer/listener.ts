@@ -1,6 +1,7 @@
 import {
   IndexerStore,
   LedgerCheckpoint,
+  LedgerSnapshot,
   LedgerSource,
 } from './types';
 
@@ -11,6 +12,12 @@ export interface FinalityIndexerOptions {
   startSequence?: number;
   maxBatchSize?: number;
   maxRollbackDepth?: number;
+  /**
+   * Invoked after each ledger is committed, so downstream caches can be
+   * invalidated for the addresses it touched. Failures are logged and
+   * swallowed: a committed ledger is canonical whether or not a cache noticed.
+   */
+  onLedgerCommitted?: (ledger: LedgerSnapshot) => void | Promise<void>;
 }
 
 export interface SyncResult {
@@ -116,6 +123,14 @@ export class FinalityIndexer {
       checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
       nextSequence += 1;
       committed += 1;
+
+      if (this.options.onLedgerCommitted) {
+        try {
+          await this.options.onLedgerCommitted(ledger);
+        } catch (error) {
+          console.error(`[indexer] Ledger ${ledger.sequence} commit hook failed:`, error);
+        }
+      }
     }
 
     return {
