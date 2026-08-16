@@ -1,0 +1,40 @@
+{
+  "name": "@pactum/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Pactum.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": {
+        "import": "./dist/browser/index.mjs"
+      },
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --environment node && vitest run --environment jsdom",
+    "ci": "npm run build && npm test"
+  },
+  "sideEffects": false,
+  "devDependencies": {
+    "@types/node": "^20.19.10",
+    "jsdom": "^26.1.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

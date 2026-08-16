@@ -290,6 +290,37 @@ impl RegistryContract {
     /// * `i64` - The weighted trust score (2 per fulfilled, -1 per late, -3 per breached).
     pub fn get_trust_score(env: Env, address: Address) -> i64 {
         reputation::get_trust_score(&env, address)
+    /// Upgrades the contract to a new WASM binary.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
+    ///   the designated arbitrator address stored at contract initialization.
+    /// * Why: Only the designated arbitrator (admin) is authorized to upgrade the contract
+    ///   to fix bugs or add features post-launch.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `arbitrator` - The designated arbitrator address initiating the upgrade. Must authorize the call.
+    /// * `new_wasm_hash` - The 32-byte hash of the new WASM binary to deploy.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if the caller is not the designated arbitrator.
+    pub fn upgrade(env: Env, arbitrator: Address, new_wasm_hash: BytesN<32>) {
+        // Verify the caller is the designated arbitrator
+        let stored_arbitrator: Address = env.storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        
+        if stored_arbitrator != arbitrator {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+        
+        arbitrator.require_auth();
+        
+        // Upgrade the contract to the new WASM binary
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
 
