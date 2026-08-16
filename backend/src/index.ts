@@ -49,12 +49,18 @@ app.use((req, res, next) => {
 
 // Health check route
 app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: 'ok',
+    cache: isCacheAvailable(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Mount the routers
 app.use('/commitments', commitmentsRouter);
 app.use('/reputation', reputationRouter);
+// Also mounted here because that is where the placeholder handler used to live.
+app.use('/api/reputation', reputationRouter);
 app.use('/api/analytics', analyticsRoutes);
 
 // Metrics endpoint for Prometheus scraping
