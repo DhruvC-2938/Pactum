@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import UserProfile from './UserProfile';
 
 export interface CommitmentItem {
   id: number;
@@ -86,7 +87,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const [copied, setCopied] = useState(false);
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const itemsPerPage = 3;
 
@@ -116,12 +116,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     }, 250);
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
-  };
-
   const addressCommitments = DEMO_COMMITMENTS.filter(
     (c) => c.issuer === activeAddress || c.counterparty === activeAddress
   );
@@ -144,11 +138,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
-
-  const shortenAddr = (addr: string) => {
-    if (!addr || addr.length < 12) return addr;
-    return `${addr.substring(0, 6)}...${addr.substring(addr.length - 6)}`;
-  };
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleDateString('en-US', {
@@ -269,25 +258,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
-          {/* Avatar Icon */}
-          <div style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '16px',
-            background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: '900',
-            fontSize: '22px',
-            boxShadow: '0 6px 16px rgba(99, 102, 241, 0.3)'
-          }}>
-            {activeAddress.charAt(0)}
-          </div>
-
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
               <span style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#6366f1' }}>
                 Stellar Account Record
               </span>
@@ -297,29 +269,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
-              <span style={{ fontFamily: 'monospace', fontSize: '15px', fontWeight: '800', color: '#0f172a', wordBreak: 'break-all' }}>
-                {activeAddress}
-              </span>
-              <button
-                onClick={() => copyToClipboard(activeAddress)}
-                style={{
-                  background: '#f1f5f9',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: '8px',
-                  padding: '4px 10px',
-                  fontSize: '11.5px',
-                  color: '#334155',
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  transition: 'all 0.15s ease'
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#e2e8f0')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = '#f1f5f9')}
-              >
-                {copied ? '✓ Copied' : 'Copy'}
-              </button>
-            </div>
+            <UserProfile address={activeAddress} avatarSize={44} showDomain={true} />
           </div>
         </div>
 
@@ -572,8 +522,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                             {isIssuer ? 'Issuer' : 'Counterparty'}
                           </span>
                         </td>
-                        <td style={{ padding: '18px 24px', color: '#334155', fontWeight: '600' }} title={counterpartyAddr}>
-                          {shortenAddr(counterpartyAddr)}
+                        <td style={{ padding: '18px 24px' }}>
+                          <UserProfile address={counterpartyAddr} avatarSize={24} showDomain={false} />
                         </td>
                         <td style={{ padding: '18px 24px', color: '#64748b', fontSize: '12px' }} title={c.terms_hash}>
                           {c.terms_hash.substring(0, 14)}...
