@@ -79,7 +79,7 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Contract network | Stellar Testnet |
 | Backend API | Node.js + TypeScript + Express |
 | Indexer | Soroban RPC event listener |
-| Database | PostgreSQL |
+| Database | PostgreSQL + TimescaleDB (time-series analytics) |
 | SDK | TypeScript, published as `@pactum/sdk` |
 | Testing | Cargo test (contract) · Jest (backend) |
 | CI/CD | GitHub Actions |
@@ -117,7 +117,7 @@ The contract is currently deployed on the Stellar Testnet for testing and integr
 
 ## Getting started (local dev)
 
-**Prerequisites:** Rust + Cargo, `soroban-cli`, Node.js 18+, PostgreSQL
+**Prerequisites:** Rust + Cargo, `soroban-cli`, Node.js 18+, PostgreSQL, Docker (for TimescaleDB)
 
 ```bash
 # 1. Clone
@@ -127,12 +127,24 @@ cd pactum
 # 2. Build & test the contract
 cd contracts && cargo test
 
-# 3. Set up the backend
+# 3. Set up TimescaleDB (for time-series analytics)
+docker run -d \
+  --name pactum-timescaledb \
+  -p 5432:5432 \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=pactum_timeseries \
+  timescale/timescaledb:latest-pg16
+
+# 4. Set up the backend
 cd ../backend
 npm install
-cp .env.example .env      # fill in DATABASE_URL, SOROBAN_RPC_URL, etc.
-npm run migrate:latest
+cp .env.example .env      # fill in DATABASE_URL, SOROBAN_RPC_URL, TIMESCALEDB_* config, etc.
+npm run build
+npm run migrate:timescale  # Run TimescaleDB migrations
 npm run dev
+
+# 5. Start analytics worker (optional, for background data processing)
+npm run analytics:worker
 ```
 
 ---

@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "nodemon src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "analytics:worker": "node dist/workers/analyticsWorker.js",
+    "migrate:timescale": "node -e \"require('./dist/db/timescale').runMigrations()\""
   },
   "keywords": [],
   "author": "",

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import analyticsRoutes from './routes/analytics';
 
 dotenv.config();
 
@@ -14,6 +15,9 @@ app.use(express.json());
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Analytics routes for time-series data
+app.use('/api/analytics', analyticsRoutes);
 
 // Placeholder for reputation endpoints
 app.get('/api/reputation/:address', (req: Request, res: Response) => {
