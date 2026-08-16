@@ -176,7 +176,20 @@ The frontend is built to call the API on its own origin, and nginx proxies `/api
 - [ ] Per-address reputation aggregation
 - [ ] Oracle-based auto-attestation for measurable commitments (e.g. uptime feeds)
 - [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
-- [ ] Public reputation lookup API
+- [x] Public reputation lookup API
+
+### Reputation cache
+
+`docker compose up --build` starts a six-node Redis Cluster (three primaries and
+three replicas), the API, and the finality-aware indexer. `GET
+/reputation/:address` uses cache-aside reads under `trust_score:<address>` and
+falls back to the latest TimescaleDB snapshot if Redis is unavailable. Finalized
+ledger commits synchronously refresh every affected address before the indexer
+advances.
+
+Run `npm run load:reputation` from `backend/` against a warmed local stack to
+enforce the 10,000 req/s and P99 <15ms SLO. Set `LOAD_TEST_URL`,
+`LOAD_TEST_CONNECTIONS`, or `LOAD_TEST_DURATION_SECONDS` to tune the run.
 - [ ] JS/TS SDK (`@pactum/sdk`)
 - [ ] Marketplace integration example (check a counterparty's history before a deal)
 - [ ] Rate limiting & spam-commitment protections

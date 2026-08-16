@@ -1,58 +1,56 @@
-import { Router, Request, Response, NextFunction } from 'express';
-import { z, ZodError } from 'zod';
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { ReputationCache } from '../cache/reputationCache';
 import { CertificateService } from '../services/CertificateService';
 
-const router = Router();
+const STELLAR_ADDRESS = /^G[A-Z2-7]{55}$/;
 
-// Zod schema for validating the export certificate request
-const exportCertificateSchema = z.object({
-  did: z.string().min(1, "DID is required"),
-  trustScore: z.number().min(0).max(100, "Trust score must be between 0 and 100")
-});
+export function createReputationRouter(cache: ReputationCache): Router {
+  const router = Router();
 
-const validateExportRequest = (req: Request, res: Response, next: NextFunction): void => {
-  try {
-    const validatedData = exportCertificateSchema.parse(req.body);
-    req.body = validatedData;
-    next();
-  } catch (error) {
-    if (error instanceof ZodError) {
-      const formattedErrors = error.errors.map(err => ({
-        field: err.path.join('.'),
-        message: err.message,
-      }));
-      
-      res.status(400).json({
-        error: 'Bad Request',
-        details: formattedErrors,
-      });
+  // Keep the existing certificate API alongside the low-latency read path.
+  router.post('/export/certificate', async (req: Request, res: Response) => {
+    const parsed = z.object({
+      did: z.string().min(1),
+      trustScore: z.number().min(0).max(100),
+    }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Bad Request', details: parsed.error.flatten() });
       return;
     }
-    next(error);
-  }
-};
+    try {
+      const certificate = await CertificateService.generateReputationCertificate(
+        parsed.data.did,
+        parsed.data.trustScore,
+      );
+      res.status(200).json({ message: 'Certificate generated successfully', certificate });
+    } catch (error) {
+      console.error('Error generating certificate', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
 
-// POST /export/certificate - Exports a Reputation Certificate (VC)
-router.post('/export/certificate', validateExportRequest, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { did, trustScore } = req.body;
-    
-    // Generate the Verifiable Credential using our KMS-backed service
-    const token = await CertificateService.generateReputationCertificate(did, trustScore);
+  router.get('/:address', async (req: Request, res: Response) => {
+    const rawAddress = req.params.address;
+    const address = (Array.isArray(rawAddress) ? rawAddress[0] : rawAddress).toUpperCase();
+    if (!STELLAR_ADDRESS.test(address)) {
+      res.status(400).json({ error: 'Invalid Stellar account address' });
+      return;
+    }
 
-    res.status(200).json({
-      message: 'Certificate generated successfully',
-      certificate: token
-    });
-  } catch (error) {
-    console.error('Error generating certificate:', error);
-    res.status(500).json({
-      error: 'Internal Server Error'
-    });
-  }
-});
+    try {
+      const result = await cache.get(address);
+      res.setHeader('X-Cache', result.hit ? 'HIT' : 'MISS');
+      if (!result.value) {
+        res.status(404).json({ error: 'Reputation not found', address });
+        return;
+      }
+      res.status(200).json(result.value);
+    } catch (error) {
+      console.error('Failed to fetch reputation', error);
+      res.status(503).json({ error: 'Reputation service unavailable' });
+    }
+  });
 
-// Using an async wrapper for Express 4 promise handling if needed,
-// but the try/catch inside the route handler catches the errors manually here.
-
-export default router;
+  return router;
+}

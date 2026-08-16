@@ -91,6 +91,25 @@ test('limits each sync to the configured maximum batch size', async () => {
   assert.equal(await store.getLedger(4), null);
 });
 
+test('awaits the cache projector immediately after each finalized commit', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 2));
+  const store = new InMemoryIndexerStore();
+  const projected: number[] = [];
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 0,
+    async onLedgerCommitted(ledger) {
+      assert.deepEqual(await store.getCheckpoint(), { sequence: ledger.sequence, hash: ledger.hash });
+      projected.push(ledger.sequence);
+    },
+  });
+
+  await indexer.sync();
+  assert.deepEqual(projected, [1, 2]);
+});
+
 test('rolls back to the last common ledger and replays the canonical fork', async () => {
   const source = new SimulatedLedgerSource();
   const mainChain = makeChain('main', 6);

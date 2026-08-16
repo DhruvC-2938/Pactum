@@ -2,6 +2,7 @@ import {
   IndexerStore,
   LedgerCheckpoint,
   LedgerSource,
+  LedgerSnapshot,
 } from './types';
 
 export interface FinalityIndexerOptions {
@@ -11,6 +12,7 @@ export interface FinalityIndexerOptions {
   startSequence?: number;
   maxBatchSize?: number;
   maxRollbackDepth?: number;
+  onLedgerCommitted?: (ledger: LedgerSnapshot) => Promise<void>;
 }
 
 export interface SyncResult {
@@ -113,6 +115,9 @@ export class FinalityIndexer {
       }
 
       await this.options.store.appendLedger(ledger);
+      // appendLedger is the finality boundary. Await the projector so stale
+      // values cannot survive beyond the millisecond the ledger is committed.
+      await this.options.onLedgerCommitted?.(ledger);
       checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
       nextSequence += 1;
       committed += 1;
