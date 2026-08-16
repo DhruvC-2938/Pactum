@@ -1,15 +1,68 @@
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import './App.css'
 import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
 import CreateCommitmentWizard from './components/CreateCommitmentWizard'
+import ReputationDashboard from './components/ReputationDashboard'
+import { useCommitments } from './hooks/useCommitments'
+import type { Commitment, CommitmentStatus } from './lib/api'
+
+function renderCommitmentItem(commitment: Commitment) {
+  return (
+    <div className="commitment-item" key={commitment.id}>
+      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
+        {commitment.issuer.charAt(0)}
+      </div>
+      <div className="commitment-info">
+        <div className="commitment-id">Commitment #{commitment.id}</div>
+        <div className="commitment-parties">
+          {commitment.issuer} &rarr; {commitment.counterparty}
+        </div>
+        <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
+      </div>
+      <div className="commitment-status">
+        <span className={`badge ${commitment.status.toLowerCase()}`}>
+          <span className="badge-dot"></span>
+          {commitment.status}
+        </span>
+      </div>
+    </div>
+  )
+}
 
 export default function App() {
 
   const [activePage, setActivePage] = useState('landing');
-  
+  const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
+
+  const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
+
+  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const path = window.location.pathname;
+      if (path.startsWith('/reputation/')) {
+        const addr = path.replace('/reputation/', '').trim();
+        if (addr) {
+          setReputationAddress(addr);
+          setActivePage('reputation');
+        }
+      }
+    };
+
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
+
+  const navigateToReputation = (addr: string) => {
+    setReputationAddress(addr);
+    setActivePage('reputation');
+    window.history.pushState({}, '', `/reputation/${addr}`);
+  };
   if (activePage === 'landing') {
     return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
   }
@@ -163,7 +216,16 @@ export default function App() {
 
     {/* Topbar */}
     <header className="topbar">
-      <span className="topbar-title" id="topbar-title">Dashboard</span>
+      <span className="topbar-title" id="topbar-title">
+        {activePage === 'reputation' ? 'Reputation Lookup' :
+         activePage === 'commitments' ? 'Commitments' :
+         activePage === 'create' ? 'Create Commitment' :
+         activePage === 'attest' ? 'Attest' :
+         activePage === 'dispute' ? 'Raise Dispute' :
+         activePage === 'resolve' ? 'Resolve Dispute' :
+         activePage === 'lookup' ? 'Get Commitment' :
+         activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
+      </span>
       <div className="topbar-actions">
         <div className="search-bar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -375,10 +437,20 @@ export default function App() {
         </div>
         <div style={{display: "flex", gap: "10px", alignItems: "center"}}>
           <div className="tabs" id="filter-tabs">
-            <button className="tab-btn active" onClick={() => {}}>All</button>
-            <button className="tab-btn" onClick={() => {}}>Pending</button>
-            <button className="tab-btn" onClick={() => {}}>Fulfilled</button>
-            <button className="tab-btn" onClick={() => {}}>Breached</button>
+            {[
+              { label: 'All', value: undefined as CommitmentStatus | undefined },
+              { label: 'Pending', value: 'Pending' as CommitmentStatus },
+              { label: 'Fulfilled', value: 'Fulfilled' as CommitmentStatus },
+              { label: 'Breached', value: 'Breached' as CommitmentStatus },
+            ].map((tab) => (
+              <button
+                key={tab.label}
+                className={`tab-btn ${commitmentStatus === tab.value ? 'active' : ''}`}
+                onClick={() => setCommitmentStatus(tab.value)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => {}}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -388,7 +460,15 @@ export default function App() {
           </button>
         </div>
       </div>
-      <div className="commitment-list" id="commitments-list-page"></div>
+      <div className="commitment-list" id="commitments-list-page">
+        {commitmentsQuery.isLoading && (
+          <div className="inline-alert info">Loading commitments...</div>
+        )}
+        {commitmentsQuery.isError && (
+          <div className="inline-alert warning">Failed to load commitments from the backend.</div>
+        )}
+        {commitmentsQuery.data?.map(renderCommitmentItem)}
+      </div>
     </section>
 
 
@@ -673,117 +753,11 @@ export default function App() {
          PAGE: Reputation Lookup
          ────────────────────────────────────────────── */}
     <section className={`page ${activePage === 'reputation' ? 'active' : ''}`} id="page-reputation">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Reputation Lookup</div>
-          <div className="section-sub">Query the on-chain compliance history of any Stellar address</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div>
-          <div className="card" style={{marginBottom: "16px"}}>
-            <div className="card-header">
-              <div className="card-title">Address Lookup</div>
-            </div>
-            <div className="card-body">
-              <div className="form-group">
-                <label className="form-label" htmlFor="rep-address">Stellar Address</label>
-                <input type="text" className="form-input" id="rep-address"
-                       placeholder="G..." autoComplete="off" spellCheck="false" />
-                <div className="form-hint">Enter any address to see their fulfillment track record as an issuer.</div>
-              </div>
-              <button className="btn btn-primary btn-full" id="btn-rep" onClick={() => {}}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="8" cy="5" r="3"/>
-                  <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
-                </svg>
-                <div className="spinner"></div>
-                <span className="btn-text">Get Reputation</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Result Card */}
-          <div className="card" id="rep-result-card" style={{display: "none"}}>
-            <div className="card-header">
-              <div className="card-title">Reputation Score</div>
-            </div>
-            <div className="card-body">
-              <div className="score-ring-wrap">
-                <div className="score-ring">
-                  <svg width="96" height="96" viewBox="0 0 96 96">
-                    <circle className="score-ring-track" cx="48" cy="48" r="40"/>
-                    <circle className="score-ring-fill" id="ring-fill" cx="48" cy="48" r="40"
-                            stroke="var(--green)"
-                            stroke-dasharray="251.2"
-                            stroke-dashoffset="251.2"/>
-                  </svg>
-                  <div className="score-center">
-                    <span className="score-num" id="rep-score-num">0</span>
-                    <span className="score-pct">score</span>
-                  </div>
-                </div>
-                <div className="score-info">
-                  <div className="score-title" id="rep-score-label">—</div>
-                  <div className="score-desc" id="rep-score-desc">Query an address to see their compliance score.</div>
-                </div>
-              </div>
-              <div className="rep-grid">
-                <div className="rep-cell">
-                  <div className="rep-num green" id="rep-fulfilled">0</div>
-                  <div className="rep-lbl">Fulfilled</div>
-                </div>
-                <div className="rep-cell">
-                  <div className="rep-num orange" id="rep-late">0</div>
-                  <div className="rep-lbl">Late</div>
-                </div>
-                <div className="rep-cell">
-                  <div className="rep-num red" id="rep-breached">0</div>
-                  <div className="rep-lbl">Breached</div>
-                </div>
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" id="rep-progress" style={{width: "0%"}}></div>
-              </div>
-              <div style={{display: "flex", justifyContent: "space-between", marginTop: "6px"}}>
-                <span style={{fontSize: "11.5px", color: "var(--text-tertiary)", fontWeight: "500"}}>Fulfillment Rate</span>
-                <span style={{fontSize: "11.5px", fontWeight: "600", color: "var(--text-secondary)"}} id="rep-rate">0%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">How Reputation Works</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="detail-panel">
-              <div className="detail-row">
-                <span className="detail-key">Source</span>
-                <span className="detail-val">On-chain Soroban events indexed by the backend</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Scope</span>
-                <span className="detail-val">Tracks the address as an <strong>issuer</strong> only</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Score</span>
-                <span className="detail-val">Fulfilled / (Fulfilled + Late + Breached) × 100</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Updates</span>
-                <span className="detail-val">Automatically on each attestation or dispute resolution</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Privacy</span>
-                <span className="detail-val">Fully public — anyone can query any address</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ReputationDashboard
+        initialAddress={reputationAddress}
+        onNavigateAddress={(addr) => navigateToReputation(addr)}
+        onLaunchCreate={() => setActivePage('create')}
+      />
     </section>
 
 
