@@ -392,8 +392,15 @@ test(
         path.join(process.cwd(), 'src/db/migrations/004_horizon_sse_cursors.sql'),
         'utf8',
       );
-      await pool.query(`SET search_path TO "${schema}"`);
-      await pool.query(migration);
+      // Run migration on a dedicated client with search_path locked so the
+      // unqualified CREATE TABLE in the SQL lands in the right schema.
+      const migrationClient = await pool.connect();
+      try {
+        await migrationClient.query(`SET search_path TO "${schema}"`);
+        await migrationClient.query(migration);
+      } finally {
+        migrationClient.release();
+      }
 
       const cache1 = new PostgresCursorCache(pool, 'test_stream', schema);
       assert.equal(await cache1.getCursor(), null);
@@ -432,37 +439,48 @@ test(
         path.join(process.cwd(), 'src/db/migrations/004_horizon_sse_cursors.sql'),
         'utf8',
       );
-      await pool.query(`SET search_path TO "${schema}"`);
-      await pool.query(migration);
+      // Run migration on a dedicated client with search_path locked so the
+      // unqualified CREATE TABLE in the SQL lands in the right schema.
+      const migrationClient = await pool.connect();
+      try {
+        await migrationClient.query(`SET search_path TO "${schema}"`);
+        await migrationClient.query(migration);
+      } finally {
+        migrationClient.release();
+      }
 
-      const client = new FakeStreamClient();
+      const streamClient = new FakeStreamClient();
       const cache = new PostgresCursorCache(pool, 'restart_test', schema);
       const received: string[] = [];
 
       const indexer = new HorizonSSEIndexer({
-        streamClient: client,
+        streamClient,
         cursorCache: cache,
         onEvent: async (r) => { received.push(r.paging_token); },
         initialReconnectDelayMs: 10,
       });
       indexer.start();
-      await waitFor(() => client.openCount === 1);
+      await waitFor(() => streamClient.openCount === 1);
 
       // First connection has no cursor.
-      assert.equal(client.streamedCursors[0], undefined);
+      assert.equal(streamClient.streamedCursors[0], undefined);
 
-      client.emit(makeRecord('pg-cursor-1', 'CommitmentCreated'));
-      await waitFor(async () => (await cache.getCursor()) === 'pg-cursor-1');
+      streamClient.emit(makeRecord('pg-cursor-1', 'CommitmentCreated'));
+      // Wait until the cursor is actually persisted to the DB before proceeding.
+      await waitFor(async () => (await cache.getCursor()) === 'pg-cursor-1', 2000);
 
       // Simulate stream drop and reconnect.
-      client.fail();
-      await waitFor(() => client.openCount === 2, 1000);
+      streamClient.fail();
+      await waitFor(() => streamClient.openCount === 2, 1000);
 
       // Reconnection must use the persisted cursor.
-      assert.equal(client.streamedCursors[1], 'pg-cursor-1');
+      assert.equal(streamClient.streamedCursors[1], 'pg-cursor-1');
 
-      client.emit(makeRecord('pg-cursor-2', 'Attested'));
-      await waitFor(() => received.length === 2);
+      streamClient.emit(makeRecord('pg-cursor-2', 'Attested'));
+      // Wait until the second cursor is persisted (not just onEvent fired).
+      await waitFor(async () => (await cache.getCursor()) === 'pg-cursor-2', 2000);
+
+      assert.equal(received.length, 2);
       assert.equal(await cache.getCursor(), 'pg-cursor-2');
 
       indexer.stop();
