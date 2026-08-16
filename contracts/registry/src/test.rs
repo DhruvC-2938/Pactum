@@ -234,16 +234,16 @@ fn test_is_overdue_before_and_after_due_date() {
 
     let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
 
-    assert_eq!(client.is_overdue(&id), false);
+    assert!(!client.is_overdue(&id));
 
     env.ledger().with_mut(|l| l.timestamp = 2000);
-    assert_eq!(client.is_overdue(&id), false);
+    assert!(!client.is_overdue(&id));
 
     env.ledger().with_mut(|l| l.timestamp = 2001);
-    assert_eq!(client.is_overdue(&id), true);
+    assert!(client.is_overdue(&id));
 
     client.attest(&issuer, &id, &CommitmentStatus::Late);
-    assert_eq!(client.is_overdue(&id), false);
+    assert!(!client.is_overdue(&id));
 }
 
 #[test]
@@ -894,12 +894,12 @@ fn test_reentrant_attest_call_is_rejected() {
 }
 
 #[test]
-fn test_get_trust_score_reflects_weighted_outcomes() {
+fn test_get_trust_score_reflects_outcomes() {
     let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
-    assert_eq!(client.get_trust_score(&issuer), 0);
+    assert_eq!(client.get_trust_score(&issuer), 50);
 
     let id1 = client.create_commitment(
         &issuer,
@@ -908,7 +908,7 @@ fn test_get_trust_score_reflects_weighted_outcomes() {
         &2000,
     );
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
-    assert_eq!(client.get_trust_score(&issuer), 2);
+    assert_eq!(client.get_trust_score(&issuer), 60);
 
     let id2 = client.create_commitment(
         &issuer,
@@ -917,7 +917,7 @@ fn test_get_trust_score_reflects_weighted_outcomes() {
         &2000,
     );
     client.attest(&issuer, &id2, &CommitmentStatus::Late);
-    assert_eq!(client.get_trust_score(&issuer), 1);
+    assert_eq!(client.get_trust_score(&issuer), 50);
 
     let id3 = client.create_commitment(
         &issuer,
@@ -926,7 +926,7 @@ fn test_get_trust_score_reflects_weighted_outcomes() {
         &2000,
     );
     client.attest(&issuer, &id3, &CommitmentStatus::Breached);
-    assert_eq!(client.get_trust_score(&issuer), -2);
+    assert_eq!(client.get_trust_score(&issuer), 0);
 
     let _ = arbitrator;
 }

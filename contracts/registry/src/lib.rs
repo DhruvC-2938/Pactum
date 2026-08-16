@@ -8,12 +8,19 @@ pub mod events;
 mod reentrancy;
 pub mod reputation;
 pub mod trust_gate;
+pub mod trust_score;
+
+#[cfg(test)]
+mod test_trust_score;
 
 #[cfg(test)]
 mod test;
 
 #[cfg(test)]
 mod attacker_gate;
+
+#[cfg(test)]
+mod demo;
 
 pub use commitments::DISPUTE_WINDOW_SECONDS;
 use commitments::{Commitment, CommitmentStatus, DataKey};
@@ -64,16 +71,17 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
     pub fn get_arbitrator(env: Env) -> Address {
-        let arbitrator = env.storage()
+        let arbitrator = env
+            .storage()
             .instance()
             .get(&DataKey::Arbitrator)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
-        
+
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
-        
+
         arbitrator
     }
 
@@ -117,11 +125,7 @@ impl RegistryContract {
         }
 
         // 3. Assign the next available ID.
-        let id: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::NextId)
-            .unwrap_or(1);
+        let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
         let next_id = id
             .checked_add(1)
             .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
@@ -174,17 +178,18 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::CommitmentNotFound` if the ID does not exist in storage.
     pub fn get_commitment(env: Env, id: u64) -> Commitment {
-        let commitment = env.storage()
+        let commitment = env
+            .storage()
             .persistent()
             .get(&DataKey::Commitment(id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound));
-        
+
         env.storage().persistent().extend_ttl(
             &DataKey::Commitment(id),
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
-        
+
         commitment
     }
 
@@ -276,20 +281,21 @@ impl RegistryContract {
         reputation::get_reputation(&env, address)
     }
 
-    /// Retrieves a single weighted trust score for a given address, derived from
-    /// its reputation counts. This is the read-only entry point intended for
-    /// cross-contract composability (see `trust_gate`): it performs no storage
-    /// writes and is safe to call from any external contract, including
-    /// mid-transaction while a registry mutation is in progress.
+    /// Retrieves the 0..=100 trust score for a given address as an issuer.
+    ///
+    /// The score weights recent outcomes more heavily than old ones via an
+    /// integer, ledger-bucket-based decay curve (half-life of 64 buckets of
+    /// 10,000 ledgers each, full decay after ~3.2 years). Outcomes are
+    /// aggregated per bucket so this runs in O(1) storage reads.
     ///
     /// # Arguments
     /// * `env` - The Soroban execution environment.
     /// * `address` - The address to query.
     ///
     /// # Returns
-    /// * `i64` - The weighted trust score (2 per fulfilled, -1 per late, -3 per breached).
-    pub fn get_trust_score(env: Env, address: Address) -> i64 {
-        reputation::get_trust_score(&env, address)
+    /// * `u32` - The trust score in the range 0..=100 (50 = neutral baseline).
+    pub fn get_trust_score(env: Env, address: Address) -> u32 {
+        trust_score::get_trust_score(&env, address)
     }
     /// Upgrades the contract to a new WASM binary.
     ///
@@ -309,19 +315,19 @@ impl RegistryContract {
     /// * Panics with `Error::NotArbitrator` if the caller is not the designated arbitrator.
     pub fn upgrade(env: Env, arbitrator: Address, new_wasm_hash: BytesN<32>) {
         // Verify the caller is the designated arbitrator
-        let stored_arbitrator: Address = env.storage()
+        let stored_arbitrator: Address = env
+            .storage()
             .instance()
             .get(&DataKey::Arbitrator)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
-        
+
         if stored_arbitrator != arbitrator {
             panic_with_error!(&env, Error::NotArbitrator);
         }
-        
+
         arbitrator.require_auth();
-        
+
         // Upgrade the contract to the new WASM binary
         env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
-

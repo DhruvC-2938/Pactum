@@ -13,6 +13,7 @@ Soroban implements a Time-To-Live (TTL) model for data storage. The registry con
 ### Persistent Storage
 - **Commitments**: Preserved indefinitely as long as they are queried via `get_commitment` or updated via attest/dispute. Extended up to 30 days upon each access. 
 - **Reputation**: Automatically extended to 30 days on each query or change. It must persist indefinitely as an immutable record of an issuer's reliability.
+- **Trust History**: One entry per address (~52 bytes) holding the bucketed outcome history used by `get_trust_score`. Extended to 30 days on each query or change, mirroring the reputation bump-on-access pattern.
 
 ### Instance Storage
 - **NextId & Arbitrator**: Extended to 30 days every time a new commitment is created or the arbitrator is retrieved. 
@@ -91,11 +92,13 @@ Retrieves the aggregate reputation for a given address.
 - **Returns**: `Reputation` struct (fulfilled, late, breached counts). Returns zeroed counts if the address has no history.
 
 ### `get_trust_score`
-Retrieves a single weighted trust score for a given address, derived from its `Reputation` counts (`2 * fulfilled - late - 3 * breached`). This is the read-only entry point intended for cross-contract composability (see [TrustGate Cross-Contract Interface](#trustgate-cross-contract-interface) below): it performs no storage writes and is safe to call from any external contract, including mid-transaction while a registry mutation is in progress.
+Retrieves the 0..=100 time-decayed trust score for a given address as an issuer.
 - **Parameters**:
   - `env: Env`
   - `address: Address`: The address to query.
-- **Returns**: `i64` (the weighted trust score).
+- **Returns**: `u32` trust score in the range 0..=100. An address with no history scores the neutral baseline of 50.
+- **Decay model**: Outcomes are aggregated into buckets of 10,000 ledgers (≈13.9 hours). Each bucket of age is decayed by a stepwise integer shift with a half-life of 64 buckets (≈37 days); after 2048 buckets (32 steps, ≈3.2 years) an outcome's weight is zero. Score = `clamp(50 + 10·F − 10·L − 50·B, 0, 100)` over the decayed effective counts, so a recent breach tanks the score immediately while its impact mathematically degrades as the ledger advances.
+- **Complexity**: O(1) — a single storage read plus constant integer math; no iteration over historical commitments. Updated on every `attest`, `dispute`, and `resolve_dispute`.
 
 ## TrustGate Cross-Contract Interface
 

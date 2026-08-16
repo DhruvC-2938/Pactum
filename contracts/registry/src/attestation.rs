@@ -63,12 +63,15 @@ pub fn attest(
     );
 
     // 8. Update reputation (increment).
-    crate::reputation::update_reputation(env, commitment.issuer, outcome, true);
+    crate::reputation::update_reputation(env, commitment.issuer.clone(), outcome, true);
 
-    // 9. Emit commitment_attested event.
+    // 9. Update trust history (increment).
+    crate::trust_score::update_trust_history(env, commitment.issuer.clone(), outcome, true);
+
+    // 10. Emit commitment_attested event.
     events::commitment_attested(env, id, outcome);
 
-    // 10. Release the reentrancy guard.
+    // 11. Release the reentrancy guard.
     crate::reentrancy::exit(env);
 }
 
@@ -80,6 +83,5 @@ pub fn is_overdue(env: &Env, id: u64) -> bool {
         .get(&DataKey::Commitment(id))
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    commitment.status == CommitmentStatus::Pending
-        && env.ledger().timestamp() > commitment.due_at
+    commitment.status == CommitmentStatus::Pending && env.ledger().timestamp() > commitment.due_at
 }
