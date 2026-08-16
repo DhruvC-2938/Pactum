@@ -62,6 +62,7 @@ pactum/
 ├── contracts/registry/     # Soroban smart contract (Rust)
 ├── backend/                # REST API + on-chain event indexer (TypeScript)
 ├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
+├── evm/                    # Pactum EVM Oracle: cross-chain trust score bridge PoC (Solidity)
 ├── docs/                   # Architecture, contract & API reference, integration guide
 └── examples/                # Minimal integration demo
 ```
