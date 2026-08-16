@@ -38,6 +38,10 @@ jobs:
   zk-tests:
     name: ZK Circuit Tests
     runs-on: ubuntu-latest
+    # Building circom from source dominates a cold run. The cap is here so a hang in
+    # the proving toolchain fails the job promptly instead of burning the default
+    # six-hour budget.
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository

@@ -117,3 +117,8 @@ console.log(`\nBuild complete. Artifacts in ${buildDir}:`);
 console.log('  trust_threshold_js/trust_threshold.wasm  — witness generator (browser + node)');
 console.log('  trust_threshold_final.zkey               — proving key');
 console.log('  verification_key.json                    — verification key');
+
+// `snarkjs.r1cs.info` above builds a curve backed by a worker pool and caches it on
+// globalThis. Without terminating it the process never exits — every artifact is
+// written, the script just hangs, which in CI means a job that runs until it times out.
+await globalThis.curve_bn128?.terminate();
