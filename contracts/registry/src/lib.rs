@@ -23,8 +23,7 @@ mod attacker_gate;
 #[cfg(test)]
 mod demo;
 
-pub use commitments::DISPUTE_WINDOW_SECONDS;
-use commitments::{Commitment, CommitmentStatus, DataKey};
+pub use commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
 use errors::Error;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
 
@@ -99,6 +98,7 @@ impl RegistryContract {
     /// * `counterparty` - The address to whom the commitment is owed.
     /// * `terms_hash` - A 32-byte hash representing the off-chain terms of the commitment.
     /// * `due_at` - Unix timestamp (seconds) when the commitment is due. Must be in the future.
+    /// * `resolver_address` - The address of the custom resolver delegated to resolve disputes for this commitment.
     ///
     /// # Returns
     /// * `u64` - The unique identifier assigned to the created commitment.
@@ -111,6 +111,7 @@ impl RegistryContract {
         counterparty: Address,
         terms_hash: BytesN<32>,
         due_at: u64,
+        resolver_address: Address,
     ) -> u64 {
         // 0. Fail fast if the protocol has been paused (emergency halt).
         pausable::require_not_paused(&env);
@@ -149,6 +150,7 @@ impl RegistryContract {
             status: CommitmentStatus::Pending,
             created_at: now,
             attested_at: None,
+            resolver_address,
         };
 
         // 6. Store in persistent storage keyed by id and extend TTL.
@@ -182,10 +184,7 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::CommitmentNotFound` if the ID does not exist in storage.
     pub fn get_commitment(env: Env, id: u64) -> Commitment {
-        let commitment = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Commitment(id))
+        let commitment = commitments::get_commitment_record(&env, id)
             .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound));
 
         env.storage().persistent().extend_ttl(
@@ -195,6 +194,18 @@ impl RegistryContract {
         );
 
         commitment
+    }
+
+    /// Explicitly migrates a legacy commitment record to include resolver_address.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `id` - The unique identifier of the commitment to migrate.
+    ///
+    /// # Returns
+    /// * `Commitment` - The migrated commitment.
+    pub fn migrate_commitment(env: Env, id: u64) -> Commitment {
+        Self::get_commitment(env, id)
     }
 
     /// Attests to the lifecycle status of a commitment.
@@ -254,23 +265,23 @@ impl RegistryContract {
     /// Resolves a disputed commitment to a final outcome.
     ///
     /// # Authorization
-    /// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
-    ///   the designated arbitrator address stored at contract initialization.
-    /// * Why: Only the mutually trusted, designated arbitrator is authorized to adjudicate
-    ///   and resolve contested commitments.
+    /// * Authorized caller: `caller` (via `require_auth`), which must exactly match
+    ///   the commitment's designated `resolver_address`.
+    /// * Why: Dispute resolution authority is delegated strictly to the custom resolver
+    ///   address chosen for this commitment at creation time.
     ///
     /// # Arguments
     /// * `env` - The Soroban execution environment.
-    /// * `arbitrator` - The designated arbitrator address resolving the dispute. Must authorize the call.
+    /// * `caller` - The designated resolver address resolving the dispute. Must authorize the call.
     /// * `id` - The unique identifier of the disputed commitment.
     /// * `final_outcome` - The resolution status (`Fulfilled`, `Late`, or `Breached`).
     pub fn resolve_dispute(
         env: Env,
-        arbitrator: Address,
+        caller: Address,
         id: u64,
         final_outcome: CommitmentStatus,
     ) {
-        disputes::resolve_dispute(&env, arbitrator, id, final_outcome);
+        disputes::resolve_dispute(&env, caller, id, final_outcome);
     }
 
     /// Retrieves the aggregate reputation for a given address.

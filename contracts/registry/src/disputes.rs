@@ -23,11 +23,8 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
     // 2. Require authorization from the caller.
     caller.require_auth();
 
-    // 3. Load commitment from persistent storage.
-    let mut commitment: Commitment = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))
+    // 3. Load commitment from persistent storage (with legacy record migration).
+    let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
     // 4. Verify caller is either issuer or counterparty.
@@ -84,13 +81,13 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
 /// Resolves a disputed commitment to a final outcome.
 ///
 /// # Authorization
-/// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
-///   the designated arbitrator address stored at contract initialization.
-/// * Why: Only the mutually trusted, designated arbitrator is authorized to adjudicate
-///   and resolve contested commitments.
+/// * Authorized caller: `caller` (via `require_auth`), which must exactly match
+///   the commitment's designated `resolver_address`.
+/// * Why: Dispute resolution authority is delegated strictly to the custom resolver
+///   address chosen for this commitment at creation time.
 pub fn resolve_dispute(
     env: &Env,
-    arbitrator: Address,
+    caller: Address,
     id: u64,
     final_outcome: CommitmentStatus,
 ) {
@@ -101,33 +98,25 @@ pub fn resolve_dispute(
     //    the require_auth call below, which may invoke a custom account contract).
     crate::reentrancy::enter(env);
 
-    // 2. Require authorization from the arbitrator.
-    arbitrator.require_auth();
+    // 1. Require authorization from the caller.
+    caller.require_auth();
 
-    // 3. Verify caller matches the stored arbitrator address exactly.
-    let stored_arbitrator: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Arbitrator)
-        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized));
-    if arbitrator != stored_arbitrator {
-        panic_with_error!(env, Error::NotArbitrator);
-    }
-
-    // 4. Reject Pending or Disputed as final_outcome. Must be Fulfilled, Late, or Breached.
+    // 2. Reject Pending or Disputed as final_outcome. Must be Fulfilled, Late, or Breached.
     match final_outcome {
         CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
         _ => panic_with_error!(env, Error::InvalidOutcome),
     }
 
-    // 5. Load commitment from persistent storage.
-    let mut commitment: Commitment = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))
+    // 3. Load commitment from persistent storage (with legacy record migration).
+    let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 6. Verify commitment is currently Disputed.
+    // 4. Verify caller matches the commitment's designated resolver_address exactly.
+    if caller != commitment.resolver_address {
+        panic_with_error!(env, Error::NotArbitrator);
+    }
+
+    // 5. Verify commitment is currently Disputed.
     if commitment.status != CommitmentStatus::Disputed {
         panic_with_error!(env, Error::InvalidTransition);
     }

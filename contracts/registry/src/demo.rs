@@ -43,11 +43,13 @@ fn create_and_attest(
         l.timestamp = 1000;
         l.sequence_number = 1000;
     });
+    let resolver = Address::generate(env);
     let id = client.create_commitment(
         issuer,
         counterparty,
         &BytesN::from_array(env, &[terms; 32]),
         &2000,
+        &resolver,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(issuer, &id, &outcome);

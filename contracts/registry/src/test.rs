@@ -6,26 +6,27 @@ use crate::errors::Error;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, BytesN, Env};
 
-fn setup_test() -> (Env, RegistryContractClient<'static>, Address, Address) {
+fn setup_test() -> (Env, RegistryContractClient<'static>, Address, Address, Address) {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
-    (env, client, issuer, counterparty)
+    let resolver = Address::generate(&env);
+    (env, client, issuer, counterparty, resolver)
 }
 
 #[test]
 fn test_create_and_get_commitment_success() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let commitment_id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let commitment_id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     assert_eq!(commitment_id, 1);
 
     let commitment = client.get_commitment(&commitment_id);
@@ -36,6 +37,7 @@ fn test_create_and_get_commitment_success() {
     assert_eq!(commitment.due_at, due_at);
     assert_eq!(commitment.status, CommitmentStatus::Pending);
     assert_eq!(commitment.created_at, 1000);
+    assert_eq!(commitment.resolver_address, resolver);
 }
 
 #[test]
@@ -46,30 +48,31 @@ fn test_create_commitment_requires_auth() {
     let client = RegistryContractClient::new(&env, &contract_id);
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
+    let resolver = Address::generate(&env);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let due_at = 2000;
 
-    client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 }
 
 #[test]
 fn test_create_commitment_fails_if_due_at_in_past() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 999;
 
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     assert_eq!(res, Err(Ok(Error::DueAtInPast.into())));
 }
 
 #[test]
 fn test_get_commitment_fails_for_nonexistent_id() {
-    let (_env, client, _issuer, _counterparty) = setup_test();
+    let (_env, client, _issuer, _counterparty, _resolver) = setup_test();
 
     let res = client.try_get_commitment(&999);
     assert_eq!(res, Err(Ok(Error::CommitmentNotFound.into())));
@@ -77,14 +80,14 @@ fn test_get_commitment_fails_for_nonexistent_id() {
 
 #[test]
 fn test_sequential_unique_ids() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash1 = BytesN::from_array(&env, &[1u8; 32]);
     let terms_hash2 = BytesN::from_array(&env, &[2u8; 32]);
 
-    let id1 = client.create_commitment(&issuer, &counterparty, &terms_hash1, &2000);
-    let id2 = client.create_commitment(&issuer, &counterparty, &terms_hash2, &3000);
+    let id1 = client.create_commitment(&issuer, &counterparty, &terms_hash1, &2000, &resolver);
+    let id2 = client.create_commitment(&issuer, &counterparty, &terms_hash2, &3000, &resolver);
 
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
@@ -101,13 +104,13 @@ fn test_sequential_unique_ids() {
 
 #[test]
 fn test_attest_outcome_fulfilled() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
@@ -119,13 +122,13 @@ fn test_attest_outcome_fulfilled() {
 
 #[test]
 fn test_attest_outcome_late_by_counterparty() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     env.ledger().with_mut(|l| l.timestamp = 2500);
     client.attest(&counterparty, &id, &CommitmentStatus::Late);
@@ -137,13 +140,13 @@ fn test_attest_outcome_late_by_counterparty() {
 
 #[test]
 fn test_attest_outcome_breached() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     env.ledger().with_mut(|l| l.timestamp = 2100);
     client.attest(&issuer, &id, &CommitmentStatus::Breached);
@@ -155,13 +158,13 @@ fn test_attest_outcome_breached() {
 
 #[test]
 fn test_attest_fails_if_not_pending() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
@@ -183,13 +186,14 @@ fn test_attest_requires_auth() {
     let client = RegistryContractClient::new(&env, &contract_id);
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
+    let resolver = Address::generate(&env);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let due_at = 2000;
 
     env.mock_all_auths();
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     env.mock_auths(&[]);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
@@ -197,13 +201,13 @@ fn test_attest_requires_auth() {
 
 #[test]
 fn test_attest_fails_if_unauthorized_caller() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     let stranger = Address::generate(&env);
     let res = client.try_attest(&stranger, &id, &CommitmentStatus::Fulfilled);
@@ -212,13 +216,13 @@ fn test_attest_fails_if_unauthorized_caller() {
 
 #[test]
 fn test_attest_fails_for_pending_outcome() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     let res = client.try_attest(&issuer, &id, &CommitmentStatus::Pending);
     assert_eq!(res, Err(Ok(Error::InvalidOutcome.into())));
@@ -226,13 +230,13 @@ fn test_attest_fails_for_pending_outcome() {
 
 #[test]
 fn test_is_overdue_before_and_after_due_date() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     assert!(!client.is_overdue(&id));
 
@@ -248,7 +252,7 @@ fn test_is_overdue_before_and_after_due_date() {
 
 #[test]
 fn test_is_overdue_fails_for_nonexistent_id() {
-    let (_env, client, _issuer, _counterparty) = setup_test();
+    let (_env, client, _issuer, _counterparty, _resolver) = setup_test();
     let res = client.try_is_overdue(&999);
     assert_eq!(res, Err(Ok(Error::CommitmentNotFound.into())));
 }
@@ -258,13 +262,13 @@ fn test_events_emitted() {
     use soroban_sdk::testutils::Events;
     use soroban_sdk::{symbol_short, FromVal, IntoVal, Val, Vec};
 
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     let create_events = env.events().all();
     assert_eq!(create_events.len(), 1);
@@ -301,15 +305,16 @@ fn setup_test_with_arbitrator() -> (
     Address,
     Address,
 ) {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
     let arbitrator = Address::generate(&env);
     client.initialize(&arbitrator);
-    (env, client, issuer, counterparty, arbitrator)
+    (env, client, issuer, counterparty, resolver)
 }
 
 #[test]
 fn test_initialize_can_only_run_once() {
-    let (_env, client, _issuer, _counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (_env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
     let res = client.try_initialize(&arbitrator);
     assert_eq!(res, Err(Ok(Error::AlreadyInitialized.into())));
     assert_eq!(client.get_arbitrator(), arbitrator);
@@ -317,13 +322,13 @@ fn test_initialize_can_only_run_once() {
 
 #[test]
 fn test_dispute_and_resolution_end_to_end() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
@@ -338,9 +343,9 @@ fn test_dispute_and_resolution_end_to_end() {
     let disputed_comm = client.get_commitment(&id);
     assert_eq!(disputed_comm.status, CommitmentStatus::Disputed);
 
-    // Arbitrator resolves the dispute
+    // Custom resolver resolves the dispute
     env.ledger().with_mut(|l| l.timestamp = 1700);
-    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Breached);
+    client.resolve_dispute(&resolver, &id, &CommitmentStatus::Breached);
 
     let resolved_comm = client.get_commitment(&id);
     assert_eq!(resolved_comm.status, CommitmentStatus::Breached);
@@ -348,13 +353,13 @@ fn test_dispute_and_resolution_end_to_end() {
 
 #[test]
 fn test_dispute_fails_outside_dispute_window() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
@@ -367,13 +372,13 @@ fn test_dispute_fails_outside_dispute_window() {
 
 #[test]
 fn test_dispute_succeeds_at_window_boundary() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
@@ -387,29 +392,28 @@ fn test_dispute_succeeds_at_window_boundary() {
 
 #[test]
 fn test_dispute_fails_if_caller_not_issuer_or_counterparty() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
     let stranger = Address::generate(&env);
     let res = client.try_dispute(&stranger, &id);
     assert_eq!(res, Err(Ok(Error::Unauthorized.into())));
 }
-
 #[test]
 fn test_resolve_dispute_fails_if_caller_not_arbitrator() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     client.dispute(&counterparty, &id);
 
@@ -419,58 +423,63 @@ fn test_resolve_dispute_fails_if_caller_not_arbitrator() {
 
     let res2 = client.try_resolve_dispute(&issuer, &id, &CommitmentStatus::Breached);
     assert_eq!(res2, Err(Ok(Error::NotArbitrator.into())));
+
+    // Global contract arbitrator is also rejected when not the designated resolver
+    let global_arbitrator = client.get_arbitrator();
+    let res3 = client.try_resolve_dispute(&global_arbitrator, &id, &CommitmentStatus::Breached);
+    assert_eq!(res3, Err(Ok(Error::NotArbitrator.into())));
 }
 
 #[test]
 fn test_resolve_dispute_fails_if_commitment_not_disputed() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     // Pending -> resolve_dispute should fail
-    let res = client.try_resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+    let res = client.try_resolve_dispute(&resolver, &id, &CommitmentStatus::Fulfilled);
     assert_eq!(res, Err(Ok(Error::InvalidTransition.into())));
 
     // Fulfilled -> resolve_dispute should fail
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
-    let res2 = client.try_resolve_dispute(&arbitrator, &id, &CommitmentStatus::Late);
+    let res2 = client.try_resolve_dispute(&resolver, &id, &CommitmentStatus::Late);
     assert_eq!(res2, Err(Ok(Error::InvalidTransition.into())));
 }
 
 #[test]
 fn test_resolve_dispute_rejects_invalid_final_outcome() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     client.dispute(&counterparty, &id);
 
     // Reject Pending
-    let res1 = client.try_resolve_dispute(&arbitrator, &id, &CommitmentStatus::Pending);
+    let res1 = client.try_resolve_dispute(&resolver, &id, &CommitmentStatus::Pending);
     assert_eq!(res1, Err(Ok(Error::InvalidOutcome.into())));
 
     // Reject Disputed
-    let res2 = client.try_resolve_dispute(&arbitrator, &id, &CommitmentStatus::Disputed);
+    let res2 = client.try_resolve_dispute(&resolver, &id, &CommitmentStatus::Disputed);
     assert_eq!(res2, Err(Ok(Error::InvalidOutcome.into())));
 }
 
 #[test]
 fn test_dispute_fails_if_pending() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     let res = client.try_dispute(&issuer, &id);
     assert_eq!(res, Err(Ok(Error::InvalidTransition.into())));
@@ -478,13 +487,13 @@ fn test_dispute_fails_if_pending() {
 
 #[test]
 fn test_dispute_fails_if_already_disputed() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     client.dispute(&counterparty, &id);
 
@@ -495,13 +504,13 @@ fn test_dispute_fails_if_already_disputed() {
 
 #[test]
 fn test_attest_fails_for_disputed_outcome() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
 
     let res = client.try_attest(&issuer, &id, &CommitmentStatus::Disputed);
     assert_eq!(res, Err(Ok(Error::InvalidOutcome.into())));
@@ -512,13 +521,13 @@ fn test_dispute_events_emitted() {
     use soroban_sdk::testutils::Events;
     use soroban_sdk::{symbol_short, FromVal, IntoVal, Val, Vec};
 
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
     client.dispute(&counterparty, &id);
@@ -532,7 +541,7 @@ fn test_dispute_events_emitted() {
     assert_eq!(<()>::from_val(&env, &disputed_event.2), ());
 
 
-    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Late);
+    client.resolve_dispute(&resolver, &id, &CommitmentStatus::Late);
 
     let all_events_after = env.events().all();
     let resolved_event = all_events_after.get(all_events_after.len() - 1).unwrap();
@@ -554,10 +563,11 @@ fn test_dispute_requires_auth() {
     let client = RegistryContractClient::new(&env, &contract_id);
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
+    let resolver = Address::generate(&env);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     env.mock_all_auths();
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
     env.mock_auths(&[]);
@@ -573,16 +583,17 @@ fn test_resolve_dispute_requires_auth() {
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let resolver = Address::generate(&env);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     env.mock_all_auths();
     client.initialize(&arbitrator);
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     client.dispute(&counterparty, &id);
 
     env.mock_auths(&[]);
-    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Late);
+    client.resolve_dispute(&resolver, &id, &CommitmentStatus::Late);
 }
 
 #[test]
@@ -602,8 +613,8 @@ fn test_initialize_requires_auth() {
 
 #[test]
 fn test_get_reputation_zeroed_for_new_address() {
-    let (env, client, _issuer, _counterparty) = setup_test();
-    let new_issuer = Address::generate(&env);
+    let (_env, client, _issuer, _counterparty, _resolver) = setup_test();
+    let new_issuer = Address::generate(&_env);
 
     let rep = client.get_reputation(&new_issuer);
     assert_eq!(rep.fulfilled_count, 0);
@@ -613,13 +624,13 @@ fn test_get_reputation_zeroed_for_new_address() {
 
 #[test]
 fn test_reputation_increments_direct_attestation() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
     
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let due_at = 2000;
     
     // Create and fulfill first commitment
-    let id1 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &due_at);
+    let id1 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &due_at, &resolver);
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
     
     let rep1 = client.get_reputation(&issuer);
@@ -628,7 +639,7 @@ fn test_reputation_increments_direct_attestation() {
     assert_eq!(rep1.breached_count, 0);
     
     // Create and late second commitment
-    let id2 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[2u8; 32]), &due_at);
+    let id2 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[2u8; 32]), &due_at, &resolver);
     client.attest(&issuer, &id2, &CommitmentStatus::Late);
     
     let rep2 = client.get_reputation(&issuer);
@@ -637,7 +648,7 @@ fn test_reputation_increments_direct_attestation() {
     assert_eq!(rep2.breached_count, 0);
     
     // Create and breach third commitment
-    let id3 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[3u8; 32]), &due_at);
+    let id3 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[3u8; 32]), &due_at, &resolver);
     client.attest(&issuer, &id3, &CommitmentStatus::Breached);
     
     let rep3 = client.get_reputation(&issuer);
@@ -648,10 +659,10 @@ fn test_reputation_increments_direct_attestation() {
 
 #[test]
 fn test_reputation_not_incremented_when_disputed() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000, &resolver);
     
     // Initial attestation increments it
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
@@ -668,10 +679,10 @@ fn test_reputation_not_incremented_when_disputed() {
 
 #[test]
 fn test_reputation_reflects_final_outcome_after_dispute() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000, &resolver);
     
     // 1. Attest as Breached
     client.attest(&issuer, &id, &CommitmentStatus::Breached);
@@ -684,7 +695,7 @@ fn test_reputation_reflects_final_outcome_after_dispute() {
     assert_eq!(rep2.breached_count, 0); // Decr old outcome
     
     // 3. Resolve as Fulfilled
-    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+    client.resolve_dispute(&resolver, &id, &CommitmentStatus::Fulfilled);
     let rep3 = client.get_reputation(&issuer);
     
     // Most important check: ONLY final outcome is counted
@@ -695,26 +706,26 @@ fn test_reputation_reflects_final_outcome_after_dispute() {
 
 #[test]
 fn test_reputation_aggregates_multiple_commitments() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     
     // Comm 1: Fulfilled (direct)
-    let id1 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    let id1 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000, &resolver);
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
     
     // Comm 2: Late (disputed, resolved as Late)
-    let id2 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[2u8; 32]), &2000);
+    let id2 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[2u8; 32]), &2000, &resolver);
     client.attest(&issuer, &id2, &CommitmentStatus::Fulfilled); // Attested as Fulfilled initially
     client.dispute(&counterparty, &id2);
-    client.resolve_dispute(&arbitrator, &id2, &CommitmentStatus::Late); // Overturned to Late
+    client.resolve_dispute(&resolver, &id2, &CommitmentStatus::Late); // Overturned to Late
     
     // Comm 3: Breached (direct)
-    let id3 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[3u8; 32]), &2000);
+    let id3 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[3u8; 32]), &2000, &resolver);
     client.attest(&issuer, &id3, &CommitmentStatus::Breached);
     
     // Comm 4: Fulfilled (direct)
-    let id4 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[4u8; 32]), &2000);
+    let id4 = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[4u8; 32]), &2000, &resolver);
     client.attest(&issuer, &id4, &CommitmentStatus::Fulfilled);
     
     let rep = client.get_reputation(&issuer);
@@ -729,46 +740,40 @@ fn test_reputation_aggregates_multiple_commitments() {
 
 #[test]
 fn test_create_commitment_fails_if_due_at_is_current_timestamp() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 1000; // Exactly current timestamp
 
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     assert_eq!(res, Err(Ok(Error::DueAtInPast.into())));
 }
 
 #[test]
 fn test_dispute_fails_if_already_resolved() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000, &resolver);
     
     // Attest, dispute, resolve
     client.attest(&issuer, &id, &CommitmentStatus::Late);
     client.dispute(&counterparty, &id);
-    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+    client.resolve_dispute(&resolver, &id, &CommitmentStatus::Fulfilled);
 
     // Try disputing again after final resolution
     let res = client.try_dispute(&counterparty, &id);
-    
-    // We expect this to fail.
-    // However, if the current contract logic allows a second dispute because `attested_at` is still within the window,
-    // we need to fix the contract. Let's see if the test passes with an error. 
-    // Wait, the test expects an error. The user requirement:
-    // "repeated dispute attempts on an already-resolved dispute"
     assert_eq!(res, Err(Ok(Error::InvalidTransition.into())));
 }
 
 #[test]
 fn test_realistic_sequence() {
     // create -> attest late -> dispute -> resolve fulfilled -> verify reputation
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000);
+    let id = client.create_commitment(&issuer, &counterparty, &BytesN::from_array(&env, &[1u8; 32]), &2000, &resolver);
     
     env.ledger().with_mut(|l| l.timestamp = 2500); // Late
     client.attest(&issuer, &id, &CommitmentStatus::Late);
@@ -780,7 +785,7 @@ fn test_realistic_sequence() {
     let rep_after_dispute = client.get_reputation(&issuer);
     assert_eq!(rep_after_dispute.late_count, 0); // Decremented
     
-    client.resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+    client.resolve_dispute(&resolver, &id, &CommitmentStatus::Fulfilled);
     
     let rep_final = client.get_reputation(&issuer);
     assert_eq!(rep_final.fulfilled_count, 1);
@@ -801,7 +806,7 @@ fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
     use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
     use soroban_sdk::IntoVal;
 
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, _resolver) = setup_test();
 
     // Register the malicious mock as a real contract (not via mock_auths,
     // which would silently replace it with a no-op stand-in) so that its
@@ -817,6 +822,7 @@ fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
         &counterparty,
         &BytesN::from_array(&env, &[7u8; 32]),
         &2000,
+        &attacker_id,
     );
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     client.dispute(&counterparty, &id);
@@ -864,7 +870,7 @@ fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
 
 #[test]
 fn test_reentrant_attest_call_is_rejected() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let id = client.create_commitment(
@@ -872,6 +878,7 @@ fn test_reentrant_attest_call_is_rejected() {
         &counterparty,
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
+        &resolver,
     );
 
     // Simulate a stuck guard (as if a nested call were already in progress)
@@ -895,7 +902,7 @@ fn test_reentrant_attest_call_is_rejected() {
 
 #[test]
 fn test_get_trust_score_reflects_outcomes() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
@@ -906,6 +913,7 @@ fn test_get_trust_score_reflects_outcomes() {
         &counterparty,
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
+        &resolver,
     );
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
     assert_eq!(client.get_trust_score(&issuer), 60);
@@ -915,6 +923,7 @@ fn test_get_trust_score_reflects_outcomes() {
         &counterparty,
         &BytesN::from_array(&env, &[2u8; 32]),
         &2000,
+        &resolver,
     );
     client.attest(&issuer, &id2, &CommitmentStatus::Late);
     assert_eq!(client.get_trust_score(&issuer), 50);
@@ -924,11 +933,10 @@ fn test_get_trust_score_reflects_outcomes() {
         &counterparty,
         &BytesN::from_array(&env, &[3u8; 32]),
         &2000,
+        &resolver,
     );
     client.attest(&issuer, &id3, &CommitmentStatus::Breached);
     assert_eq!(client.get_trust_score(&issuer), 0);
-
-    let _ = arbitrator;
 }
 // -----------------------------------------------------------------------------
 // Pausable Protocol - Emergency Halt Tests
@@ -1127,6 +1135,7 @@ fn test_admin_lifecycle_operations_exempt_from_pause() {
     client.unpause(&arbitrator);
     assert!(!client.is_paused());
 }
+}
 
 // -----------------------------------------------------------------------------
 // Phase 6 - Contract Upgrade Tests
@@ -1134,7 +1143,7 @@ fn test_admin_lifecycle_operations_exempt_from_pause() {
 
 #[test]
 fn test_upgrade_requires_arbitrator() {
-    let (env, client, _issuer, _counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
 
     // Use a mock WASM hash for testing authorization logic
     let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
@@ -1151,7 +1160,7 @@ fn test_upgrade_requires_arbitrator() {
 
 #[test]
 fn test_upgrade_fails_if_not_initialized() {
-    let (env, client, _issuer, _counterparty) = setup_test();
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test();
     let arbitrator = Address::generate(&env);
     
     // Use a mock WASM hash for testing
@@ -1181,14 +1190,14 @@ fn test_upgrade_requires_auth() {
 
 #[test]
 fn test_upgrade_authorization_logic() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     // Create some state to verify the upgrade function checks authorization
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id1 = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    let id1 = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
 
     // Verify that non-arbitrator cannot upgrade
@@ -1201,4 +1210,129 @@ fn test_upgrade_authorization_logic() {
     let comm = client.get_commitment(&id1);
     assert_eq!(comm.status, CommitmentStatus::Fulfilled);
     assert_eq!(comm.id, id1);
+}
+
+#[test]
+fn test_custom_resolver_delegation() {
+    let (env, client, issuer, counterparty, _default_resolver) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[9u8; 32]);
+    let due_at = 2000;
+
+    // Designate a custom resolver address
+    let custom_resolver = Address::generate(&env);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &custom_resolver);
+
+    let comm = client.get_commitment(&id);
+    assert_eq!(comm.resolver_address, custom_resolver);
+
+    // Attest and dispute
+    env.ledger().with_mut(|l| l.timestamp = 1500);
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    client.dispute(&counterparty, &id);
+
+    // Global arbitrator cannot resolve when a custom resolver is assigned
+    let global_arbitrator = client.get_arbitrator();
+    let res_arb = client.try_resolve_dispute(&global_arbitrator, &id, &CommitmentStatus::Breached);
+    assert_eq!(res_arb, Err(Ok(Error::NotArbitrator.into())));
+
+    // Custom resolver successfully resolves
+    client.resolve_dispute(&custom_resolver, &id, &CommitmentStatus::Breached);
+    let resolved = client.get_commitment(&id);
+    assert_eq!(resolved.status, CommitmentStatus::Breached);
+}
+
+#[test]
+fn test_legacy_commitment_storage_migration() {
+    let (env, client, issuer, counterparty, _default_resolver) = setup_test_with_arbitrator();
+
+    // Directly seed a LegacyCommitment in persistent storage (simulating pre-upgrade storage)
+    let arbitrator = client.get_arbitrator();
+    let legacy_id = 99u64;
+    let legacy_comm = commitments::LegacyCommitment {
+        id: legacy_id,
+        issuer: issuer.clone(),
+        counterparty: counterparty.clone(),
+        terms_hash: BytesN::from_array(&env, &[5u8; 32]),
+        due_at: 2000,
+        status: CommitmentStatus::Fulfilled,
+        created_at: 1000,
+        attested_at: Some(1500),
+    };
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&commitments::DataKey::Commitment(legacy_id), &legacy_comm);
+    });
+
+    // Reading via get_commitment migrates the legacy record and assigns fallback arbitrator as resolver
+    let migrated = client.get_commitment(&legacy_id);
+    assert_eq!(migrated.id, legacy_id);
+    assert_eq!(migrated.resolver_address, arbitrator);
+    assert_eq!(migrated.status, CommitmentStatus::Fulfilled);
+
+    // Raising a dispute on the migrated commitment works and resolves with the fallback arbitrator
+    env.ledger().with_mut(|l| l.timestamp = 1600);
+    client.dispute(&counterparty, &legacy_id);
+    client.resolve_dispute(&arbitrator, &legacy_id, &CommitmentStatus::Breached);
+
+    let final_comm = client.get_commitment(&legacy_id);
+    assert_eq!(final_comm.status, CommitmentStatus::Breached);
+}
+
+#[test]
+fn test_legacy_commitment_migration_fails_if_uninitialized() {
+    // Set up uninitialized contract
+    let (env, client, issuer, counterparty, _resolver) = setup_test();
+
+    let legacy_id = 101u64;
+    let legacy_comm = commitments::LegacyCommitment {
+        id: legacy_id,
+        issuer: issuer.clone(),
+        counterparty: counterparty.clone(),
+        terms_hash: BytesN::from_array(&env, &[7u8; 32]),
+        due_at: 2000,
+        status: CommitmentStatus::Fulfilled,
+        created_at: 1000,
+        attested_at: Some(1500),
+    };
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&commitments::DataKey::Commitment(legacy_id), &legacy_comm);
+    });
+
+    // Reading legacy commitment without an initialized arbitrator fails with NotInitialized
+    let res = client.try_get_commitment(&legacy_id);
+    assert_eq!(res, Err(Ok(Error::NotInitialized.into())));
+}
+
+#[test]
+fn test_legacy_commitment_migration_fails_if_payload_id_mismatch() {
+    let (env, client, issuer, counterparty, _resolver) = setup_test_with_arbitrator();
+
+    let storage_key_id = 200u64;
+    let payload_id = 999u64; // Inconsistent with storage key
+    let legacy_comm = commitments::LegacyCommitment {
+        id: payload_id,
+        issuer: issuer.clone(),
+        counterparty: counterparty.clone(),
+        terms_hash: BytesN::from_array(&env, &[8u8; 32]),
+        due_at: 2000,
+        status: CommitmentStatus::Pending,
+        created_at: 1000,
+        attested_at: None,
+    };
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&commitments::DataKey::Commitment(storage_key_id), &legacy_comm);
+    });
+
+    let res = client.try_get_commitment(&storage_key_id);
+    assert_eq!(res, Err(Ok(Error::CommitmentNotFound.into())));
 }

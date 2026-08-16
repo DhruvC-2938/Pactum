@@ -33,11 +33,8 @@ pub fn attest(
         panic_with_error!(env, Error::InvalidOutcome);
     }
 
-    // 4. Load commitment from persistent storage.
-    let mut commitment: Commitment = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))
+    // 4. Load commitment from persistent storage (with legacy record migration).
+    let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
     // 5. Verify caller is either issuer or counterparty.
@@ -80,10 +77,7 @@ pub fn attest(
 
 /// Returns true if the commitment is still Pending and current timestamp is past due_at.
 pub fn is_overdue(env: &Env, id: u64) -> bool {
-    let commitment: Commitment = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))
+    let commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
     commitment.status == CommitmentStatus::Pending && env.ledger().timestamp() > commitment.due_at
