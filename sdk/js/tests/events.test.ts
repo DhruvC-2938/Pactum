@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PactumClient } from '../src/client';
 import { decodeSorobanEvent, RawSorobanEvent } from '../src/events';
 
@@ -10,7 +11,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
 
   describe('Event Listener Subscription and Dispatch', () => {
     it('handles created event with strongly typed payload', () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       client.on('created', callback);
 
       client.emit('created', {
@@ -31,7 +32,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
     });
 
     it('handles attested event with strongly typed payload', () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       client.on('attested', callback);
 
       client.emit('attested', {
@@ -44,7 +45,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
     });
 
     it('supports unsubscribing via unsubscribe return function', () => {
-      const callback = jest.fn();
+      const callback = vi.fn();
       const unsubscribe = client.on('disputed', callback);
 
       client.emit('disputed', { id: 5n });
@@ -63,7 +64,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
         value: '123'
       };
 
-      const callback = jest.fn();
+      const callback = vi.fn();
       client.on('created', callback);
 
       const handled = client.handleRawEvent(rawEvent);
@@ -84,7 +85,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
         value: 'late'
       };
 
-      const callback = jest.fn();
+      const callback = vi.fn();
       client.on('attested', callback);
 
       const handled = client.handleRawEvent(rawEvent);
@@ -98,7 +99,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
         value: 'Breached'
       };
 
-      const callback = jest.fn();
+      const callback = vi.fn();
       client.on('resolved', callback);
 
       const handled = client.handleRawEvent(rawEvent);
