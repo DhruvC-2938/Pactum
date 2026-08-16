@@ -6,7 +6,6 @@ import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
 import ReputationDashboard from './components/ReputationDashboard'
 import { useCommitments } from './hooks/useCommitments'
-import { useReputation } from './hooks/useReputation'
 import type { Commitment, CommitmentStatus } from './lib/api'
 
 function renderCommitmentItem(commitment: Commitment) {
@@ -35,14 +34,10 @@ function renderCommitmentItem(commitment: Commitment) {
 export default function App() {
 
   const [activePage, setActivePage] = useState('landing');
-  const [repInput, setRepInput] = useState('');
-  const [repAddress, setRepAddress] = useState('');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
 
-  const reputationQuery = useReputation(repAddress);
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
 
-=======
   const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
 
   useEffect(() => {
@@ -67,8 +62,6 @@ export default function App() {
     setActivePage('reputation');
     window.history.pushState({}, '', `/reputation/${addr}`);
   };
-  
->>>>>>> 6a025e1 (feat(frontend): implement reputation dashboard route /reputation/:address with scorecards, search, and pagination)
   if (activePage === 'landing') {
     return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
   }
