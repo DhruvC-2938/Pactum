@@ -11,18 +11,14 @@ pub mod trust_gate;
 pub mod trust_score;
 
 #[cfg(test)]
-mod test_trust_score;
-
-#[cfg(test)]
 mod test;
 
 #[cfg(test)]
 mod attacker_gate;
 
-#[cfg(test)]
-mod demo;
-
-pub use commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
+pub use commitments::{
+    Commitment, CommitmentStatus, DataKey, TemplateType, DISPUTE_WINDOW_SECONDS,
+};
 use errors::Error;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
 
@@ -104,6 +100,7 @@ impl RegistryContract {
     ///
     /// # Panics
     /// * Panics with `Error::DueAtInPast` if `due_at` is less than or equal to the current ledger timestamp.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_commitment(
         env: Env,
         issuer: Address,
@@ -111,6 +108,7 @@ impl RegistryContract {
         terms_hash: BytesN<32>,
         due_at: u64,
         resolver_address: Address,
+        template: Option<TemplateType>,
     ) -> u64 {
         // 0. Enter the reentrancy guard before any external interaction (including
         //    the require_auth call below, which may invoke a custom account contract).
@@ -147,6 +145,7 @@ impl RegistryContract {
             created_at: now,
             attested_at: None,
             resolver_address,
+            template,
         };
 
         // 5. Store in persistent storage keyed by id and extend TTL.
@@ -271,12 +270,7 @@ impl RegistryContract {
     /// * `caller` - The designated resolver address resolving the dispute. Must authorize the call.
     /// * `id` - The unique identifier of the disputed commitment.
     /// * `final_outcome` - The resolution status (`Fulfilled`, `Late`, or `Breached`).
-    pub fn resolve_dispute(
-        env: Env,
-        caller: Address,
-        id: u64,
-        final_outcome: CommitmentStatus,
-    ) {
+    pub fn resolve_dispute(env: Env, caller: Address, id: u64, final_outcome: CommitmentStatus) {
         disputes::resolve_dispute(&env, caller, id, final_outcome);
     }
 
