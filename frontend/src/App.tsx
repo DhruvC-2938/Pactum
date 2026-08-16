@@ -1,9 +1,10 @@
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import './App.css'
 import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
+import ReputationDashboard from './components/ReputationDashboard'
 import { useCommitments } from './hooks/useCommitments'
 import { useReputation } from './hooks/useReputation'
 import type { Commitment, CommitmentStatus } from './lib/api'
@@ -41,6 +42,33 @@ export default function App() {
   const reputationQuery = useReputation(repAddress);
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
 
+=======
+  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const path = window.location.pathname;
+      if (path.startsWith('/reputation/')) {
+        const addr = path.replace('/reputation/', '').trim();
+        if (addr) {
+          setReputationAddress(addr);
+          setActivePage('reputation');
+        }
+      }
+    };
+
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
+
+  const navigateToReputation = (addr: string) => {
+    setReputationAddress(addr);
+    setActivePage('reputation');
+    window.history.pushState({}, '', `/reputation/${addr}`);
+  };
+  
+>>>>>>> 6a025e1 (feat(frontend): implement reputation dashboard route /reputation/:address with scorecards, search, and pagination)
   if (activePage === 'landing') {
     return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
   }
@@ -853,133 +881,11 @@ export default function App() {
          PAGE: Reputation Lookup
          ────────────────────────────────────────────── */}
     <section className={`page ${activePage === 'reputation' ? 'active' : ''}`} id="page-reputation">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Reputation Lookup</div>
-          <div className="section-sub">Query the on-chain compliance history of any Stellar address</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div>
-          <div className="card" style={{marginBottom: "16px"}}>
-            <div className="card-header">
-              <div className="card-title">Address Lookup</div>
-            </div>
-            <div className="card-body">
-              <div className="form-group">
-                <label className="form-label" htmlFor="rep-address">Stellar Address</label>
-                <input type="text" className="form-input" id="rep-address"
-                       placeholder="G..." autoComplete="off" spellCheck="false"
-                       value={repInput} onChange={(e) => setRepInput(e.target.value)} />
-                <div className="form-hint">Enter any address to see their fulfillment track record as an issuer.</div>
-              </div>
-              <button className="btn btn-primary btn-full" id="btn-rep" onClick={() => setRepAddress(repInput.trim())}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="8" cy="5" r="3"/>
-                  <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
-                </svg>
-                <div className="spinner"></div>
-                <span className="btn-text">Get Reputation</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Result Card */}
-          <div className="card" id="rep-result-card" style={{ display: repAddress ? 'block' : 'none' }}>
-            <div className="card-header">
-              <div className="card-title">Reputation Score</div>
-            </div>
-            <div className="card-body">
-              {reputationQuery.isLoading && (
-                <div className="inline-alert info">Loading reputation for {repAddress}...</div>
-              )}
-              {reputationQuery.isError && (
-                <div className="inline-alert warning">Failed to load reputation for {repAddress}.</div>
-              )}
-              {reputationQuery.data && (() => {
-                const score = Math.round((reputationQuery.data.fulfilled / (reputationQuery.data.total || 1)) * 100)
-                const ringOffset = 251.2 * (1 - score / 100)
-                const rating = score >= 80 ? 'Excellent track record' : score >= 50 ? 'Average track record' : 'Poor track record'
-                return (
-                  <>
-                    <div className="score-ring-wrap">
-                      <div className="score-ring">
-                        <svg width="96" height="96" viewBox="0 0 96 96">
-                          <circle className="score-ring-track" cx="48" cy="48" r="40"/>
-                          <circle className="score-ring-fill" id="ring-fill" cx="48" cy="48" r="40"
-                                  stroke="var(--green)"
-                                  stroke-dasharray="251.2"
-                                  stroke-dashoffset={ringOffset}/>
-                        </svg>
-                        <div className="score-center">
-                          <span className="score-num" id="rep-score-num">{score}</span>
-                          <span className="score-pct">score</span>
-                        </div>
-                      </div>
-                      <div className="score-info">
-                        <div className="score-title" id="rep-score-label">{reputationQuery.data.address}</div>
-                        <div className="score-desc" id="rep-score-desc">{rating} across {reputationQuery.data.total} commitment(s).</div>
-                      </div>
-                    </div>
-                    <div className="rep-grid">
-                      <div className="rep-cell">
-                        <div className="rep-num green" id="rep-fulfilled">{reputationQuery.data.fulfilled}</div>
-                        <div className="rep-lbl">Fulfilled</div>
-                      </div>
-                      <div className="rep-cell">
-                        <div className="rep-num orange" id="rep-late">{reputationQuery.data.late}</div>
-                        <div className="rep-lbl">Late</div>
-                      </div>
-                      <div className="rep-cell">
-                        <div className="rep-num red" id="rep-breached">{reputationQuery.data.breached}</div>
-                        <div className="rep-lbl">Breached</div>
-                      </div>
-                    </div>
-                    <div className="progress-bar">
-                      <div className="progress-fill" id="rep-progress" style={{ width: `${score}%` }}></div>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
-                      <span style={{ fontSize: "11.5px", color: "var(--text-tertiary)", fontWeight: "500" }}>Fulfillment Rate</span>
-                      <span style={{ fontSize: "11.5px", fontWeight: "600", color: "var(--text-secondary)" }} id="rep-rate">{score}%</span>
-                    </div>
-                  </>
-                )
-              })()}
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">How Reputation Works</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="detail-panel">
-              <div className="detail-row">
-                <span className="detail-key">Source</span>
-                <span className="detail-val">On-chain Soroban events indexed by the backend</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Scope</span>
-                <span className="detail-val">Tracks the address as an <strong>issuer</strong> only</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Score</span>
-                <span className="detail-val">Fulfilled / (Fulfilled + Late + Breached) × 100</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Updates</span>
-                <span className="detail-val">Automatically on each attestation or dispute resolution</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Privacy</span>
-                <span className="detail-val">Fully public — anyone can query any address</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ReputationDashboard
+        initialAddress={reputationAddress}
+        onNavigateAddress={(addr) => navigateToReputation(addr)}
+        onLaunchCreate={() => setActivePage('create')}
+      />
     </section>
 
 
