@@ -60,6 +60,8 @@ Pactum is a lightweight registry, not a payment or custody system. It doesn't ho
 ```
 pactum/
 ├── contracts/registry/     # Soroban smart contract (Rust)
+├── contracts/timelock/     # DAO-owned 7-day timelock gating contract upgrades
+├── contracts/scripts/      # Upgrade proposal, review, execution & migration scripts
 ├── backend/                # REST API + on-chain event indexer (TypeScript)
 ├── zk/                     # Zero-knowledge Trust Score threshold proofs (Circom + snarkjs)
 ├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
@@ -67,6 +69,11 @@ pactum/
 ├── docs/                   # Architecture, contract & API reference, integration guide
 └── examples/                # Minimal integration demo
 ```
+
+The registry is upgradeable in place: its logic can be replaced while its address and
+all stored Trust Scores are preserved, and every upgrade must pass a 7-day public
+review window enforced by the timelock. See
+[`docs/upgradeability.md`](./docs/upgradeability.md).
 
 See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
