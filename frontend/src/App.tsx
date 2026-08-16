@@ -222,7 +222,16 @@ export default function App() {
 
     {/* Topbar */}
     <header className="topbar">
-      <span className="topbar-title" id="topbar-title">Dashboard</span>
+      <span className="topbar-title" id="topbar-title">
+        {activePage === 'reputation' ? 'Reputation Lookup' :
+         activePage === 'commitments' ? 'Commitments' :
+         activePage === 'create' ? 'Create Commitment' :
+         activePage === 'attest' ? 'Attest' :
+         activePage === 'dispute' ? 'Raise Dispute' :
+         activePage === 'resolve' ? 'Resolve Dispute' :
+         activePage === 'lookup' ? 'Get Commitment' :
+         activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
+      </span>
       <div className="topbar-actions">
         <div className="search-bar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">

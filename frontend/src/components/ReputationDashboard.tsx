@@ -17,7 +17,6 @@ export interface ReputationDashboardProps {
   onLaunchCreate?: () => void;
 }
 
-// Sample dataset of commitments across addresses
 const DEMO_COMMITMENTS: CommitmentItem[] = [
   {
     id: 1,
@@ -71,10 +70,10 @@ const DEMO_COMMITMENTS: CommitmentItem[] = [
   }
 ];
 
-const PRESET_ADDRESSES = [
+const PRESETS = [
   { label: 'Issuer Demo (GAJK...)', address: 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C' },
-  { label: 'Counterparty Demo (GB4U...)', address: 'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX' },
-  { label: 'Empty Address (GNEW...)', address: 'GNEWADDRESSWITHNOCOMMITMENTSHISTORY123456789012345678' }
+  { label: 'Counterparty (GB4U...)', address: 'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX' },
+  { label: 'Empty Account (GNEW...)', address: 'GNEWADDRESSWITHNOCOMMITMENTSHISTORY123456789012345678' }
 ];
 
 export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
@@ -87,6 +86,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [currentPage, setCurrentPage] = useState(1);
+  const [copied, setCopied] = useState(false);
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const itemsPerPage = 3;
 
   useEffect(() => {
@@ -110,19 +111,21 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     if (onNavigateAddress) {
       onNavigateAddress(addr);
     }
-
-    // Simulate API query latency
     setTimeout(() => {
       setIsLoading(false);
-    }, 450);
+    }, 250);
   };
 
-  // Filter commitments associated with activeAddress
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
   const addressCommitments = DEMO_COMMITMENTS.filter(
     (c) => c.issuer === activeAddress || c.counterparty === activeAddress
   );
 
-  // Compute Scorecard Metrics
   const totalCount = addressCommitments.length;
   const fulfilledCount = addressCommitments.filter((c) => c.status === 'Fulfilled').length;
   const lateCount = addressCommitments.filter((c) => c.status === 'Late').length;
@@ -131,13 +134,11 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
   const fulfillmentRate = totalCount > 0 ? Math.round((fulfilledCount / totalCount) * 100) : 0;
 
-  // Filter list by status tab
   const filteredCommitments = addressCommitments.filter((c) => {
     if (statusFilter === 'All') return true;
     return c.status === statusFilter;
   });
 
-  // Pagination logic
   const totalPages = Math.ceil(filteredCommitments.length / itemsPerPage) || 1;
   const paginatedCommitments = filteredCommitments.slice(
     (currentPage - 1) * itemsPerPage,
@@ -157,63 +158,95 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     });
   };
 
+  const strokeDashoffset = 226 - (226 * fulfillmentRate) / 100;
+
   return (
-    <div className="reputation-dashboard-container space-y-6">
+    <div style={{ maxWidth: '1080px', margin: '0 auto', color: '#1e293b' }}>
+
       {/* ── Search Bar Section ── */}
-      <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-              Public Compliance Scorecard
-            </h2>
-            <p className="text-sm text-slate-500 mt-1">
-              Search any Stellar address to view its immutable, on-chain commitment record.
-            </p>
-          </div>
-
-          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-            Stellar Testnet
-          </span>
-        </div>
-
-        <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
+      <div style={{
+        background: '#ffffff',
+        border: '1px solid #e2e8f0',
+        borderRadius: '20px',
+        padding: '20px 24px',
+        marginBottom: '24px',
+        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)'
+      }}>
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            background: '#f8fafc',
+            border: '1.5px solid #cbd5e1',
+            borderRadius: '12px',
+            padding: '10px 16px',
+            transition: 'border-color 0.2s ease'
+          }}>
+            <svg width="18" height="18" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" style={{ marginRight: '12px', flexShrink: 0 }}>
+              <circle cx="8" cy="8" r="6" />
+              <path d="M16 16l-3.5-3.5" />
+            </svg>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Enter Stellar Address (G...)"
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono transition-all"
+              placeholder="Search Stellar account address (G...)"
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#0f172a',
+                fontFamily: 'monospace',
+                fontSize: '13.5px',
+                fontWeight: '600'
+              }}
             />
           </div>
+
           <button
             type="submit"
-            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"
+            style={{
+              background: '#0f172a',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '12px 24px',
+              fontSize: '13.5px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(15,23,42,0.15)',
+              transition: 'transform 0.15s ease, background 0.15s ease',
+              whiteSpace: 'nowrap'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
           >
-            Lookup Reputation
+            Lookup Account
           </button>
         </form>
 
-        {/* Presets / Quick Links */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Quick Presets:</span>
-          {PRESET_ADDRESSES.map((preset) => (
+        {/* Quick Preset Pills */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+          <span style={{ fontSize: '11px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quick Presets:</span>
+          {PRESETS.map((preset) => (
             <button
               key={preset.address}
               onClick={() => triggerAddressChange(preset.address)}
-              className={`text-xs px-2.5 py-1 rounded-md transition-all font-mono ${
-                activeAddress === preset.address
-                  ? 'bg-indigo-100 text-indigo-800 font-semibold border border-indigo-300'
-                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-              }`}
+              style={{
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                padding: '6px 14px',
+                borderRadius: '100px',
+                border: activeAddress === preset.address ? '1.5px solid #6366f1' : '1px solid #e2e8f0',
+                background: activeAddress === preset.address ? '#e0e7ff' : '#f8fafc',
+                color: activeAddress === preset.address ? '#3730a3' : '#475569',
+                fontWeight: activeAddress === preset.address ? '700' : '500',
+                cursor: 'pointer',
+                transition: 'all 0.16s ease',
+                boxShadow: activeAddress === preset.address ? '0 2px 8px rgba(99,102,241,0.18)' : 'none'
+              }}
             >
               {preset.label}
             </button>
@@ -221,111 +254,232 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         </div>
       </div>
 
-      {/* ── Active Address Banner ── */}
-      <div className="bg-slate-900 text-white rounded-xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Target Account</span>
-          <div className="text-sm sm:text-base font-mono font-bold break-all flex items-center gap-2">
-            {activeAddress}
-            <button
-              onClick={() => navigator.clipboard.writeText(activeAddress)}
-              className="text-slate-400 hover:text-white transition-colors"
-              title="Copy Address"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
+      {/* ── Light Pastel Hero Identity Card ── */}
+      <div style={{
+        background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+        border: '1px solid #e2e8f0',
+        borderRadius: '24px',
+        padding: '26px 32px',
+        marginBottom: '24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '24px',
+        boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+          {/* Avatar Icon */}
+          <div style={{
+            width: '56px',
+            height: '56px',
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: '900',
+            fontSize: '22px',
+            boxShadow: '0 6px 16px rgba(99, 102, 241, 0.3)'
+          }}>
+            {activeAddress.charAt(0)}
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#6366f1' }}>
+                Stellar Account Record
+              </span>
+              <span style={{ fontSize: '11px', background: '#dcfce7', color: '#15803d', fontWeight: '700', padding: '3px 10px', borderRadius: '100px', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }}></span>
+                Stellar Testnet Live
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
+              <span style={{ fontFamily: 'monospace', fontSize: '15px', fontWeight: '800', color: '#0f172a', wordBreak: 'break-all' }}>
+                {activeAddress}
+              </span>
+              <button
+                onClick={() => copyToClipboard(activeAddress)}
+                style={{
+                  background: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  color: '#334155',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#e2e8f0')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = '#f1f5f9')}
+              >
+                {copied ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="bg-slate-800 px-4 py-2 rounded-lg text-right">
-            <div className="text-xs text-slate-400">Reliability Rating</div>
-            <div className="text-lg font-bold text-emerald-400">{totalCount > 0 ? `${fulfillmentRate}%` : 'N/A'}</div>
+        {/* Circular Reliability Gauge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px', background: '#ffffff', padding: '14px 22px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Reliability Score</div>
+            <div style={{ fontSize: '26px', fontWeight: '900', color: fulfillmentRate >= 70 ? '#16a34a' : fulfillmentRate >= 40 ? '#d97706' : '#dc2626' }}>
+              {totalCount > 0 ? `${fulfillmentRate}%` : 'N/A'}
+            </div>
+          </div>
+
+          <div style={{ position: 'relative', width: '52px', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="52" height="52" viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="36" stroke="#f1f5f9" strokeWidth="8" fill="none" />
+              <circle
+                cx="40"
+                cy="40"
+                r="36"
+                stroke={fulfillmentRate >= 70 ? '#22c55e' : fulfillmentRate >= 40 ? '#f59e0b' : '#ef4444'}
+                strokeWidth="8"
+                fill="none"
+                strokeDasharray="226"
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+                transform="rotate(-90 40 40)"
+                style={{ transition: 'stroke-dashoffset 0.5s ease-out' }}
+              />
+            </svg>
+            <span style={{ position: 'absolute', fontSize: '12px', fontWeight: '900', color: '#0f172a' }}>
+              {totalCount > 0 ? `${fulfillmentRate}` : '0'}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* ── Scorecard Component ── */}
+      {/* ── Soft Pastel Scorecards Grid ── */}
       {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px', marginBottom: '24px' }}>
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm animate-pulse space-y-3">
-              <div className="h-4 bg-slate-200 rounded w-1/2"></div>
-              <div className="h-8 bg-slate-300 rounded w-1/3"></div>
-              <div className="h-3 bg-slate-100 rounded w-3/4"></div>
+            <div key={i} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '18px', padding: '24px', height: '110px', animation: 'pulse 1.5s infinite' }}>
+              <div style={{ width: '45%', height: '12px', background: '#f1f5f9', borderRadius: '4px', marginBottom: '14px' }}></div>
+              <div style={{ width: '30%', height: '28px', background: '#e2e8f0', borderRadius: '6px' }}></div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Total Commitments Card */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-slate-500 mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Total Commitments</span>
-              <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px', marginBottom: '24px' }}>
+
+          {/* Total Commitments Card (Soft Lavender) */}
+          <div
+            onMouseEnter={() => setHoveredCard('total')}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={{
+              background: '#ffffff',
+              border: '1.5px solid #e2e8f0',
+              borderRadius: '20px',
+              padding: '24px',
+              boxShadow: hoveredCard === 'total' ? '0 12px 28px -6px rgba(0,0,0,0.08)' : '0 2px 8px rgba(0,0,0,0.03)',
+              transform: hoveredCard === 'total' ? 'translateY(-3px)' : 'translateY(0)',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <div style={{ fontSize: '11.5px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+              Total Commitments
             </div>
-            <div className="text-3xl font-extrabold text-slate-900">{totalCount}</div>
-            <div className="text-xs text-slate-500 mt-1">Recorded on-chain ({pendingCount} pending)</div>
+            <div style={{ fontSize: '38px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{totalCount}</div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px', fontWeight: '500' }}>On-chain record ({pendingCount} pending)</div>
           </div>
 
-          {/* Fulfilled Card (Green) */}
-          <div className="bg-emerald-50/60 p-5 rounded-xl border border-emerald-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-emerald-800 mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Fulfilled</span>
-              <span className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                </svg>
+          {/* Fulfilled Card (Pastel Mint) */}
+          <div
+            onMouseEnter={() => setHoveredCard('fulfilled')}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={{
+              background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+              border: '1.5px solid #bbf7d0',
+              borderRadius: '20px',
+              padding: '24px',
+              boxShadow: hoveredCard === 'fulfilled' ? '0 12px 28px -6px rgba(34,197,94,0.18)' : '0 2px 8px rgba(34,197,94,0.04)',
+              transform: hoveredCard === 'fulfilled' ? 'translateY(-3px)' : 'translateY(0)',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: '800', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fulfilled</span>
+              <span style={{ fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '100px', background: '#ffffff', color: '#15803d', border: '1px solid #bbf7d0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                ✓ On Time
               </span>
             </div>
-            <div className="text-3xl font-extrabold text-emerald-700">{fulfilledCount}</div>
-            <div className="text-xs text-emerald-600 mt-1 font-medium">Met on time</div>
+            <div style={{ fontSize: '38px', fontWeight: '900', color: '#15803d', lineHeight: '1' }}>{fulfilledCount}</div>
+            <div style={{ fontSize: '12px', fontWeight: '600', color: '#166534', marginTop: '10px' }}>Met on time</div>
           </div>
 
-          {/* Late Card (Yellow/Amber) */}
-          <div className="bg-amber-50/60 p-5 rounded-xl border border-amber-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-amber-800 mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Late</span>
-              <span className="p-1.5 bg-amber-100 text-amber-700 rounded-lg">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+          {/* Late Card (Pastel Honey) */}
+          <div
+            onMouseEnter={() => setHoveredCard('late')}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={{
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              border: '1.5px solid #fde68a',
+              borderRadius: '20px',
+              padding: '24px',
+              boxShadow: hoveredCard === 'late' ? '0 12px 28px -6px rgba(245,158,11,0.18)' : '0 2px 8px rgba(245,158,11,0.04)',
+              transform: hoveredCard === 'late' ? 'translateY(-3px)' : 'translateY(0)',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: '800', color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Late</span>
+              <span style={{ fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '100px', background: '#ffffff', color: '#b45309', border: '1px solid #fde68a', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                ⏰ Delayed
               </span>
             </div>
-            <div className="text-3xl font-extrabold text-amber-700">{lateCount}</div>
-            <div className="text-xs text-amber-600 mt-1 font-medium">Attested after due date</div>
+            <div style={{ fontSize: '38px', fontWeight: '900', color: '#b45309', lineHeight: '1' }}>{lateCount}</div>
+            <div style={{ fontSize: '12px', fontWeight: '600', color: '#92400e', marginTop: '10px' }}>Attested after due date</div>
           </div>
 
-          {/* Breached Card (Red/Rose) */}
-          <div className="bg-rose-50/60 p-5 rounded-xl border border-rose-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between text-rose-800 mb-2">
-              <span className="text-xs font-semibold uppercase tracking-wider">Breached</span>
-              <span className="p-1.5 bg-rose-100 text-rose-700 rounded-lg">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+          {/* Breached Card (Pastel Coral) */}
+          <div
+            onMouseEnter={() => setHoveredCard('breached')}
+            onMouseLeave={() => setHoveredCard(null)}
+            style={{
+              background: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)',
+              border: '1.5px solid #fecdd3',
+              borderRadius: '20px',
+              padding: '24px',
+              boxShadow: hoveredCard === 'breached' ? '0 12px 28px -6px rgba(239,68,68,0.18)' : '0 2px 8px rgba(239,68,68,0.04)',
+              transform: hoveredCard === 'breached' ? 'translateY(-3px)' : 'translateY(0)',
+              transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: '800', color: '#9f1239', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Breached</span>
+              <span style={{ fontSize: '11px', fontWeight: '800', padding: '3px 10px', borderRadius: '100px', background: '#ffffff', color: '#be123c', border: '1px solid #fecdd3', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                ✕ Breached
               </span>
             </div>
-            <div className="text-3xl font-extrabold text-rose-700">{breachedCount}</div>
-            <div className="text-xs text-rose-600 mt-1 font-medium">Failed or unfulfilled</div>
+            <div style={{ fontSize: '38px', fontWeight: '900', color: '#be123c', lineHeight: '1' }}>{breachedCount}</div>
+            <div style={{ fontSize: '12px', fontWeight: '600', color: '#9f1239', marginTop: '10px' }}>Failed or unfulfilled</div>
           </div>
         </div>
       )}
 
-      {/* ── Commitments List / Table Section ── */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* ── Associated Commitments Table ── */}
+      <div style={{
+        background: '#ffffff',
+        border: '1.5px solid #e2e8f0',
+        borderRadius: '24px',
+        overflow: 'hidden',
+        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.04)'
+      }}>
+        <div style={{ padding: '22px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
           <div>
-            <h3 className="text-base font-bold text-slate-900">Associated Commitments</h3>
-            <p className="text-xs text-slate-500">History of agreements as issuer or counterparty</p>
+            <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>Associated Commitments</h3>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '3px 0 0 0' }}>Activity history as issuer or counterparty</p>
           </div>
 
           {/* Filter Tabs */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs font-medium">
+          <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
             {['All', 'Fulfilled', 'Late', 'Breached', 'Pending'].map((tab) => (
               <button
                 key={tab}
@@ -333,11 +487,18 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                   setStatusFilter(tab);
                   setCurrentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-md transition-all ${
-                  statusFilter === tab
-                    ? 'bg-white text-slate-900 shadow-sm font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: statusFilter === tab ? '800' : '500',
+                  padding: '6px 14px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  background: statusFilter === tab ? '#ffffff' : 'transparent',
+                  color: statusFilter === tab ? '#0f172a' : '#64748b',
+                  boxShadow: statusFilter === tab ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
               >
                 {tab}
               </button>
@@ -345,123 +506,154 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           </div>
         </div>
 
-        {/* Loading Skeleton for Table */}
-        {isLoading ? (
-          <div className="p-6 space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-16 bg-slate-100 animate-pulse rounded-lg"></div>
-            ))}
-          </div>
-        ) : filteredCommitments.length === 0 ? (
-          /* Empty State Requirement: "No commitments found for this address" */
-          <div className="p-12 text-center space-y-4">
-            <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
+        {/* Empty State Requirement: "No commitments found for this address" */}
+        {filteredCommitments.length === 0 ? (
+          <div style={{ padding: '72px 24px', textAlign: 'center' }}>
+            <div style={{ width: '64px', height: '64px', background: '#f8fafc', color: '#94a3b8', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px auto', fontSize: '28px', border: '1px solid #e2e8f0' }}>
+              📭
             </div>
-            <div className="space-y-1">
-              <h4 className="text-base font-bold text-slate-800">No commitments found for this address</h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                This address currently has no recorded agreements on Pactum Stellar Testnet registry.
-              </p>
-            </div>
+            <h4 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 6px 0' }}>
+              No commitments found for this address
+            </h4>
+            <p style={{ fontSize: '13.5px', color: '#64748b', maxWidth: '400px', margin: '0 auto 22px auto' }}>
+              This account currently has no registered commitment activity on Pactum Stellar Testnet.
+            </p>
             {onLaunchCreate && (
               <button
                 onClick={onLaunchCreate}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors"
+                style={{
+                  padding: '10px 22px',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  borderRadius: '10px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(15,23,42,0.15)'
+                }}
               >
                 + Create Commitment for this Address
               </button>
             )}
           </div>
         ) : (
-          /* Commitments Table */
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
-                  <th className="py-3.5 px-4">ID</th>
-                  <th className="py-3.5 px-4">Role</th>
-                  <th className="py-3.5 px-4">Counterparty</th>
-                  <th className="py-3.5 px-4">Terms Hash</th>
-                  <th className="py-3.5 px-4">Due Date</th>
-                  <th className="py-3.5 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-mono">
-                {paginatedCommitments.map((c) => {
-                  const isIssuer = c.issuer === activeAddress;
-                  const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
+          <div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontWeight: '800', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    <th style={{ padding: '16px 24px' }}>ID</th>
+                    <th style={{ padding: '16px 24px' }}>Role</th>
+                    <th style={{ padding: '16px 24px' }}>Counterparty</th>
+                    <th style={{ padding: '16px 24px' }}>Terms Hash</th>
+                    <th style={{ padding: '16px 24px' }}>Due Date</th>
+                    <th style={{ padding: '16px 24px' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody style={{ fontFamily: 'monospace' }}>
+                  {paginatedCommitments.map((c) => {
+                    const isIssuer = c.issuer === activeAddress;
+                    const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
 
-                  return (
-                    <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900">#{c.id}</td>
-                      <td className="py-3.5 px-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${
-                          isIssuer ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
-                        }`}>
-                          {isIssuer ? 'Issuer' : 'Counterparty'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600" title={counterpartyAddr}>
-                        {shortenAddr(counterpartyAddr)}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-500 text-[11px]" title={c.terms_hash}>
-                        {c.terms_hash.substring(0, 14)}...
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-700 font-sans">{formatDate(c.due_at)}</td>
-                      <td className="py-3.5 px-4 font-sans">
-                        {c.status === 'Fulfilled' && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Fulfilled
+                    return (
+                      <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
+                        <td style={{ padding: '18px 24px', fontWeight: '800', color: '#0f172a' }}>#{c.id}</td>
+                        <td style={{ padding: '18px 24px' }}>
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: '800',
+                            background: isIssuer ? '#e0e7ff' : '#f1f5f9',
+                            color: isIssuer ? '#3730a3' : '#475569',
+                            border: isIssuer ? '1px solid #c7d2fe' : '1px solid #e2e8f0'
+                          }}>
+                            {isIssuer ? 'Issuer' : 'Counterparty'}
                           </span>
-                        )}
-                        {c.status === 'Late' && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                            Late
-                          </span>
-                        )}
-                        {c.status === 'Breached' && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 border border-rose-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                            Breached
-                          </span>
-                        )}
-                        {c.status === 'Pending' && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                            Pending
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                        <td style={{ padding: '18px 24px', color: '#334155', fontWeight: '600' }} title={counterpartyAddr}>
+                          {shortenAddr(counterpartyAddr)}
+                        </td>
+                        <td style={{ padding: '18px 24px', color: '#64748b', fontSize: '12px' }} title={c.terms_hash}>
+                          {c.terms_hash.substring(0, 14)}...
+                        </td>
+                        <td style={{ padding: '18px 24px', color: '#0f172a', fontFamily: 'sans-serif', fontWeight: '600' }}>
+                          {formatDate(c.due_at)}
+                        </td>
+                        <td style={{ padding: '18px 24px', fontFamily: 'sans-serif' }}>
+                          {c.status === 'Fulfilled' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }}></span>
+                              Fulfilled
+                            </span>
+                          )}
+                          {c.status === 'Late' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }}></span>
+                              Late
+                            </span>
+                          )}
+                          {c.status === 'Breached' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#ffe4e6', color: '#be123c', border: '1px solid #fecdd3', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }}></span>
+                              Breached
+                            </span>
+                          )}
+                          {c.status === 'Pending' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94a3b8' }}></span>
+                              Pending
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
-            {/* Pagination Controls */}
-            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between font-sans">
-              <span className="text-xs text-slate-500">
-                Showing Page <span className="font-semibold text-slate-900">{currentPage}</span> of{' '}
-                <span className="font-semibold text-slate-900">{totalPages}</span> ({filteredCommitments.length} total)
+            {/* Pagination Bar */}
+            <div style={{ padding: '16px 24px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>
+                Showing Page <strong style={{ color: '#0f172a' }}>{currentPage}</strong> of <strong style={{ color: '#0f172a' }}>{totalPages}</strong> ({filteredCommitments.length} total)
               </span>
 
-              <div className="flex items-center gap-2">
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="px-3 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                  style={{
+                    padding: '8px 16px',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: '700',
+                    color: '#334155',
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                    opacity: currentPage === 1 ? 0.4 : 1,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                  }}
                 >
                   Previous
                 </button>
                 <button
                   disabled={currentPage >= totalPages}
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="px-3 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                  style={{
+                    padding: '8px 16px',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: '700',
+                    color: '#334155',
+                    cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                    opacity: currentPage >= totalPages ? 0.4 : 1,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                  }}
                 >
                   Next
                 </button>
@@ -470,6 +662,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           </div>
         )}
       </div>
+
     </div>
   );
 };
