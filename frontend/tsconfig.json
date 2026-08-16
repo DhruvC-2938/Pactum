@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "resolveJsonModule": true,
+    "ignoreDeprecations": "6.0",
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
