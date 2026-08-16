@@ -1,1 +1,63 @@
-// POST /commitments, GET /commitments/:id
+import { Router, Request, Response, NextFunction } from 'express';
+import { commitmentSchema } from '../schemas/commitment';
+import { ZodError } from 'zod';
+
+const router = Router();
+
+/**
+ * Validation middleware using Zod.
+ * Rejects invalid payloads with a 400 Bad Request and structured error details.
+ * Strips undocumented fields from the request body automatically via Zod's parse method.
+ */
+const validateCommitment = (req: Request, res: Response, next: NextFunction): void => {
+  try {
+    // `.parse()` strips any undocumented fields by default unless `.strict()` is used.
+    const validatedData = commitmentSchema.parse(req.body);
+    req.body = validatedData; // Replace body with sanitized & validated data
+    next();
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const formattedErrors = error.errors.map(err => ({
+        field: err.path.join('.'),
+        message: err.message,
+      }));
+      
+      res.status(400).json({
+        error: 'Bad Request',
+        details: formattedErrors,
+      });
+      return;
+    }
+    next(error);
+  }
+};
+
+// POST /commitments - Create a new commitment
+router.post('/', validateCommitment, (req: Request, res: Response) => {
+  // Route handler processes the sanitized req.body safely
+  res.status(201).json({ 
+    message: 'Commitment created successfully', 
+    data: req.body 
+  });
+});
+
+// PUT /commitments/:id - Update an existing commitment
+router.put('/:id', validateCommitment, (req: Request, res: Response) => {
+  // Route handler processes the sanitized req.body safely
+  res.status(200).json({ 
+    message: 'Commitment updated successfully', 
+    data: req.body 
+  });
+});
+
+// GET /commitments/:id - Fetch a commitment by ID
+router.get('/:id', (req: Request, res: Response) => {
+  res.status(200).json({ message: 'Get commitment', id: req.params.id });
+});
+
+// GET /commitments - List commitments
+router.get('/', (req: Request, res: Response) => {
+  res.status(200).json({ message: 'List commitments' });
+});
+
+export default router;
