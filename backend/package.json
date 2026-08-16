@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "test": "npm run test:indexer",
-    "test:indexer": "tsc -p tsconfig.indexer-test.json && node --test dist-indexer-test/src/indexer/listener.test.js"
+    "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src/indexer -type f -name '*.test.js' -exec node --test {} +"
   },
   "keywords": [],
   "author": "",

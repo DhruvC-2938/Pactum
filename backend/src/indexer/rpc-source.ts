@@ -23,6 +23,15 @@ interface RpcEvent {
   value?: unknown;
 }
 
+function unixTimestampToIso(value: string): string {
+  const seconds = Number(value);
+  if (!Number.isInteger(seconds) || seconds < 0) {
+    throw new Error(`Invalid Stellar ledger close time: ${value}`);
+  }
+
+  return new Date(seconds * 1000).toISOString();
+}
+
 export interface SorobanRpcLedgerClient {
   getLatestLedger(): Promise<{ sequence: number }>;
   getLedgers(request: {
@@ -127,14 +136,14 @@ export class SorobanLedgerSource implements LedgerSource {
     const eventResponse = await this.rpc.getEvents({
       filters: [],
       startLedger: sequence,
-      endLedger: sequence,
+      endLedger: sequence + 1,
     });
 
     return {
       sequence: ledger.sequence,
       hash: ledger.hash,
       previousHash,
-      closedAt: ledger.ledgerCloseTime,
+      closedAt: unixTimestampToIso(ledger.ledgerCloseTime),
       events: toEvents(sequence, eventResponse.events),
     };
   }

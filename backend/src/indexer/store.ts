@@ -63,6 +63,18 @@ type LedgerRow = {
   events: unknown;
 };
 
+export interface PostgresIndexerStoreOptions {
+  schema?: string;
+}
+
+function quoteIdentifier(identifier: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Invalid PostgreSQL schema identifier: ${identifier}`);
+  }
+
+  return `"${identifier}"`;
+}
+
 function rowToLedger(row: LedgerRow): LedgerSnapshot {
   const events = Array.isArray(row.events) ? row.events : [];
   return {
@@ -75,11 +87,29 @@ function rowToLedger(row: LedgerRow): LedgerSnapshot {
 }
 
 export class PostgresIndexerStore implements IndexerStore {
-  constructor(private readonly pool: Pool) {}
+  private readonly schema: string;
+
+  private readonly indexedLedgersTable: string;
+
+  private readonly checkpointTable: string;
+
+  constructor(
+    private readonly pool: Pool,
+    options: PostgresIndexerStoreOptions = {},
+  ) {
+    this.schema = options.schema ?? 'public';
+    const schemaIdentifier = quoteIdentifier(this.schema);
+    this.indexedLedgersTable = `${schemaIdentifier}."indexed_ledgers"`;
+    this.checkpointTable = `${schemaIdentifier}."indexer_checkpoint"`;
+  }
 
   async ensureSchema(): Promise<void> {
+    if (this.schema !== 'public') {
+      await this.pool.query(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(this.schema)}`);
+    }
+
     await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS indexed_ledgers (
+      CREATE TABLE IF NOT EXISTS ${this.indexedLedgersTable} (
         sequence BIGINT PRIMARY KEY,
         ledger_hash TEXT NOT NULL,
         previous_hash TEXT,
@@ -87,7 +117,7 @@ export class PostgresIndexerStore implements IndexerStore {
         events JSONB NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS indexer_checkpoint (
+      CREATE TABLE IF NOT EXISTS ${this.checkpointTable} (
         singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
         sequence BIGINT NOT NULL,
         ledger_hash TEXT NOT NULL
@@ -97,7 +127,7 @@ export class PostgresIndexerStore implements IndexerStore {
 
   async getCheckpoint(): Promise<LedgerCheckpoint | null> {
     const result = await this.pool.query<{ sequence: string; ledger_hash: string }>(
-      'SELECT sequence, ledger_hash FROM indexer_checkpoint WHERE singleton = TRUE',
+      `SELECT sequence, ledger_hash FROM ${this.checkpointTable} WHERE singleton = TRUE`,
     );
     const row = result.rows[0];
     return row ? { sequence: Number(row.sequence), hash: row.ledger_hash } : null;
@@ -106,7 +136,7 @@ export class PostgresIndexerStore implements IndexerStore {
   async getLedger(sequence: number): Promise<LedgerSnapshot | null> {
     const result = await this.pool.query<LedgerRow>(
       `SELECT sequence, ledger_hash, previous_hash, closed_at, events
-       FROM indexed_ledgers
+       FROM ${this.indexedLedgersTable}
        WHERE sequence = $1`,
       [sequence],
     );
@@ -123,13 +153,15 @@ export class PostgresIndexerStore implements IndexerStore {
         ledger_hash: string;
       }>(
         `SELECT sequence, ledger_hash
-         FROM indexer_checkpoint
+         FROM ${this.checkpointTable}
          WHERE singleton = TRUE
          FOR UPDATE`,
       );
       const checkpoint = checkpointResult.rows[0];
       const existing = await client.query<{ ledger_hash: string }>(
-        'SELECT ledger_hash FROM indexed_ledgers WHERE sequence = $1 FOR UPDATE',
+        `SELECT ledger_hash FROM ${this.indexedLedgersTable}
+         WHERE sequence = $1
+         FOR UPDATE`,
         [ledger.sequence],
       );
       if (existing.rows[0] && existing.rows[0].ledger_hash !== ledger.hash) {
@@ -159,7 +191,7 @@ export class PostgresIndexerStore implements IndexerStore {
 
       if (!existing.rows[0]) {
         await client.query(
-          `INSERT INTO indexed_ledgers
+          `INSERT INTO ${this.indexedLedgersTable}
              (sequence, ledger_hash, previous_hash, closed_at, events)
            VALUES ($1, $2, $3, $4, $5::jsonb)`,
           [
@@ -173,7 +205,7 @@ export class PostgresIndexerStore implements IndexerStore {
       }
 
       await client.query(
-        `INSERT INTO indexer_checkpoint (singleton, sequence, ledger_hash)
+        `INSERT INTO ${this.checkpointTable} (singleton, sequence, ledger_hash)
          VALUES (TRUE, $1, $2)
          ON CONFLICT (singleton) DO UPDATE
          SET sequence = EXCLUDED.sequence, ledger_hash = EXCLUDED.ledger_hash`,
@@ -194,23 +226,28 @@ export class PostgresIndexerStore implements IndexerStore {
       await client.query('BEGIN');
       await client.query(
         `SELECT sequence
-         FROM indexer_checkpoint
+         FROM ${this.checkpointTable}
          WHERE singleton = TRUE
          FOR UPDATE`,
       );
-      await client.query('DELETE FROM indexed_ledgers WHERE sequence > $1', [sequence]);
+      await client.query(
+        `DELETE FROM ${this.indexedLedgersTable} WHERE sequence > $1`,
+        [sequence],
+      );
 
       if (sequence <= 0) {
-        await client.query('DELETE FROM indexer_checkpoint WHERE singleton = TRUE');
+        await client.query(
+          `DELETE FROM ${this.checkpointTable} WHERE singleton = TRUE`,
+        );
       } else {
         const result = await client.query<{ ledger_hash: string }>(
-          'SELECT ledger_hash FROM indexed_ledgers WHERE sequence = $1',
+          `SELECT ledger_hash FROM ${this.indexedLedgersTable} WHERE sequence = $1`,
           [sequence],
         );
         const row = result.rows[0];
         if (!row) throw new Error(`Cannot roll back to missing ledger ${sequence}`);
         await client.query(
-          `INSERT INTO indexer_checkpoint (singleton, sequence, ledger_hash)
+          `INSERT INTO ${this.checkpointTable} (singleton, sequence, ledger_hash)
            VALUES (TRUE, $1, $2)
            ON CONFLICT (singleton) DO UPDATE
            SET sequence = EXCLUDED.sequence, ledger_hash = EXCLUDED.ledger_hash`,

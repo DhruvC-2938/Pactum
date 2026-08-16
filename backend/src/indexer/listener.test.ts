@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { Pool } from 'pg';
 import { FinalityIndexer, LedgerLinkageError } from './listener';
 import { SorobanLedgerSource } from './rpc-source';
-import { InMemoryIndexerStore } from './store';
+import { InMemoryIndexerStore, PostgresIndexerStore } from './store';
 import { LedgerSnapshot, LedgerSource } from './types';
 
 class SimulatedLedgerSource implements LedgerSource {
@@ -81,6 +82,62 @@ test('rolls back to the last common ledger and replays the canonical fork', asyn
   assert.deepEqual(await store.getCheckpoint(), { sequence: 5, hash: 'fork-5' });
 });
 
+test(
+  'rolls back and replays the canonical fork in PostgreSQL',
+  { skip: !process.env.DATABASE_URL },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const schema = `indexer_test_${process.pid}_${Date.now()}`;
+
+    try {
+      const source = new SimulatedLedgerSource();
+      const store = new PostgresIndexerStore(pool, { schema });
+      await store.ensureSchema();
+
+      const mainChain = makeChain('main', 6);
+      source.replaceChain(mainChain);
+      const indexer = new FinalityIndexer({ source, store, finalityDepth: 1 });
+
+      await indexer.sync();
+
+      const fork = makeChain('fork', 6, mainChain.slice(0, 2));
+      source.replaceChain(fork);
+      const result = await indexer.sync();
+
+      assert.equal(result.rolledBackFrom, 5);
+      assert.equal(result.committed, 3);
+      assert.deepEqual(await store.getLedger(3), {
+        sequence: 3,
+        hash: 'fork-3',
+        previousHash: 'main-2',
+        closedAt: new Date(3000).toISOString(),
+        events: [{ id: 'fork-event-3', type: 'commitment', payload: { sequence: 3 } }],
+      });
+      assert.deepEqual(await store.getCheckpoint(), { sequence: 5, hash: 'fork-5' });
+
+      const rows = await pool.query<{ sequence: string; ledger_hash: string }>(
+        `SELECT sequence, ledger_hash
+         FROM "${schema}"."indexed_ledgers"
+         ORDER BY sequence`,
+      );
+      assert.deepEqual(
+        rows.rows.map((row) => [Number(row.sequence), row.ledger_hash]),
+        [
+          [1, 'main-1'],
+          [2, 'main-2'],
+          [3, 'fork-3'],
+          [4, 'fork-4'],
+          [5, 'fork-5'],
+        ],
+      );
+      assert.equal(await store.getLedger(6), null);
+    } finally {
+      await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await pool.end();
+    }
+  },
+);
+
 test('rejects a canonical source that breaks the committed parent link', async () => {
   const source = new SimulatedLedgerSource();
   source.replaceChain(makeChain('main', 3));
@@ -120,7 +177,7 @@ test('maps Soroban RPC ledger headers and events into the indexer model', async 
           {
             sequence: 2,
             hash: 'ledger-2',
-            ledgerCloseTime: '2026-08-16T00:00:02.000Z',
+            ledgerCloseTime: '1786838402',
             headerXdr: {
               header: () => ({
                 previousLedgerHash: () => Buffer.from('ledger-1'),
@@ -131,14 +188,21 @@ test('maps Soroban RPC ledger headers and events into the indexer model', async 
       };
     },
     async getEvents(request) {
-      assert.deepEqual(request.filters, []);
+      assert.deepEqual(request, {
+        filters: [],
+        startLedger: 2,
+        endLedger: 3,
+      });
       return {
-        events: [{
-          id: 'event-2',
-          type: 'contract',
-          ledger: 2,
-          value: { toXDR: () => 'value-xdr' },
-        }],
+        events:
+          request.startLedger <= 2 && 2 < request.endLedger
+            ? [{
+                id: 'event-2',
+                type: 'contract',
+                ledger: 2,
+                value: { toXDR: () => 'value-xdr' },
+              }]
+            : [],
       };
     },
   });
