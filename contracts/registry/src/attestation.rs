@@ -47,12 +47,19 @@ pub fn attest(
         panic_with_error!(env, Error::AlreadyResolved);
     }
 
-    // 6. Update status and attested_at timestamp.
+    // 6. M-of-N commitments must be resolved via attestor voting, not
+    //    unilaterally by the issuer or counterparty, to prevent bypassing
+    //    the required consensus.
+    if !commitment.attestors.is_empty() {
+        panic_with_error!(env, Error::InvalidTransition);
+    }
+
+    // 7. Update status and attested_at timestamp.
     let now = env.ledger().timestamp();
     commitment.status = outcome;
     commitment.attested_at = Some(now);
 
-    // 7. Save updated commitment to storage.
+    // 8. Save updated commitment to storage.
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
@@ -62,10 +69,10 @@ pub fn attest(
         crate::commitments::TTL_EXTEND_LEDGERS,
     );
 
-    // 8. Update reputation (increment).
+    // 9. Update reputation (increment).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), outcome, true);
 
-    // 9. Update trust history (increment).
+    // 10. Update trust history (increment).
     crate::trust_score::update_trust_history(env, commitment.issuer.clone(), outcome, true);
 
     // 10. Emit commitment_attested event.

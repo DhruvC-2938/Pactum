@@ -48,6 +48,8 @@ fn create_and_attest(
         counterparty,
         &BytesN::from_array(env, &[terms; 32]),
         &2000,
+        &soroban_sdk::Vec::new(env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(issuer, &id, &outcome);

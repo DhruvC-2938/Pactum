@@ -27,7 +27,7 @@ There's currently no simple, general-purpose way to record these kinds of ongoin
 Pactum is a lightweight registry, not a payment or custody system. It doesn't hold funds. It records **who promised what to whom, by when — and whether they delivered.**
 
 ```
- create_commitment(issuer, counterparty, terms, due_at)
+ create_commitment(issuer, counterparty, terms, due_at, attestors, threshold)
               │
               ▼
      ┌──────────────────┐
@@ -90,11 +90,14 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
 | Method | Kind | Description |
 |---|---|---|
-| `create_commitment(issuer, counterparty, terms_hash, due_at)` | write | Register a new commitment between two addresses |
+| `create_commitment(issuer, counterparty, terms_hash, due_at, attestors, threshold)` | write | Register a new commitment between two addresses (optional M-of-N attestor voting) |
 | `attest(commitment_id, outcome)` | write | Mark a commitment fulfilled, late, or breached |
+| `cast_attestor_vote(commitment_id, outcome)` | write | Cast an attestor vote on an M-of-N commitment |
+| `finalize_commitment(commitment_id)` | write | Resolve an M-of-N commitment to its fallback state after the vote timeout |
 | `dispute(commitment_id, reason)` | write | Flag a commitment as contested rather than resolved |
 | `resolve_dispute(commitment_id, outcome)` | write | Designated arbitrator/oracle settles a disputed commitment |
 | `get_commitment(commitment_id)` | read | Fetch a single commitment's details and status |
+| `get_vote_tally(commitment_id)` | read | Fetch the running per-outcome attestor vote tally |
 | `get_reputation(address)` | read | Aggregate fulfilled / late / breached counts for an address |
 
 Full spec lives in [`docs/contract-reference.md`](./docs/contract-reference.md) as the contract develops.
