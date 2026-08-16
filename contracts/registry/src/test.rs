@@ -1106,6 +1106,28 @@ fn test_pause_and_unpause_events_emitted() {
     assert_eq!(unpaused_event.1, expected_unpaused_topics);
 }
 
+#[test]
+fn test_admin_lifecycle_operations_exempt_from_pause() {
+    let (env, client, _issuer, _counterparty, arbitrator) = setup_test_with_arbitrator();
+
+    client.pause(&arbitrator);
+    assert!(client.is_paused());
+
+    // upgrade is an admin lifecycle operation exempt from the pause: a
+    // non-arbitrator is still rejected by the admin gate (NotArbitrator),
+    // not by the pause gate (ProtocolPaused).
+    let stranger = Address::generate(&env);
+    let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let res = client.try_upgrade(&stranger, &mock_wasm_hash);
+    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+
+    // pause/unpause remain callable by the admin while paused.
+    client.pause(&arbitrator);
+    assert!(client.is_paused());
+    client.unpause(&arbitrator);
+    assert!(!client.is_paused());
+}
+
 // -----------------------------------------------------------------------------
 // Phase 6 - Contract Upgrade Tests
 // -----------------------------------------------------------------------------

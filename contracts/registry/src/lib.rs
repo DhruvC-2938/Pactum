@@ -299,11 +299,14 @@ impl RegistryContract {
         pausable::is_paused(&env)
     }
 
-    /// Pauses the protocol, halting all state-mutating entry points
-    /// (e.g. `create_commitment`, `attest`, `dispute`, `resolve_dispute`) with
+    /// Pauses the protocol, halting protocol state-mutating entry points
+    /// (`create_commitment`, `attest`, `dispute`, `resolve_dispute`) with
     /// `Error::ProtocolPaused` while leaving reads fully operational.
     ///
     /// This is the emergency kill-switch used in the event of a zero-day exploit.
+    /// Admin lifecycle operations (`pause`, `unpause`, `upgrade`) are exempt from
+    /// the pause so the admin always retains control: they can unpause the
+    /// protocol or deploy an emergency patch via `upgrade` while it is halted.
     ///
     /// # Authorization
     /// * Authorized caller: `admin` (via `require_auth`), which must exactly match
@@ -400,6 +403,10 @@ impl RegistryContract {
         trust_score::get_trust_score(&env, address)
     }
     /// Upgrades the contract to a new WASM binary.
+    ///
+    /// This is an admin lifecycle operation and is deliberately exempt from the
+    /// protocol pause: while the protocol is halted, the admin may still deploy
+    /// a patched WASM binary to remediate the underlying issue.
     ///
     /// # Authorization
     /// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match

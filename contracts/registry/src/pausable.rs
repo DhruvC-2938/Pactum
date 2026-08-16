@@ -1,10 +1,13 @@
 //! Emergency pause (kill-switch) control for the Pactum registry.
 //!
 //! In the event of a zero-day exploit, the protocol admin can flip the
-//! `Paused` flag so that every state-mutating entry point reverts with
-//! `Error::ProtocolPaused`, while read-only functions continue to work.
-//! The admin controls the flag via `pause` / `unpause`; the toggle itself
-//! is not gated so the admin always retains the ability to act.
+//! `Paused` flag so that every protocol state-mutating entry point reverts
+//! with `Error::ProtocolPaused`, while read-only functions continue to work.
+//! The admin controls the flag via `pause` / `unpause`; the toggle itself is
+//! not gated so the admin always retains the ability to act. Admin lifecycle
+//! operations (`pause`, `unpause`, `upgrade`) are deliberately exempt from the
+//! pause so the admin can end the halt or deploy an emergency patch while the
+//! protocol is paused.
 
 use crate::commitments::DataKey;
 use crate::errors::Error;
