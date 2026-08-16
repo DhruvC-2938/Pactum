@@ -1,116 +1,264 @@
+/**
+ * PactumClient — the primary integration surface for the @pactum/sdk.
+ *
+ * All Soroban RPC plumbing (XDR encoding/decoding, transaction building,
+ * simulation, assembly, signing, and submission) is handled internally so
+ * that callers only need to provide typed parameters.
+ *
+ * Deployed contract address (testnet):
+ * CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E
+ */
+import { Contract, Keypair, rpc, scValToNative } from '@stellar/stellar-sdk';
+import { DEFAULT_CONTRACT_ID, resolveNetwork } from './networks.js';
+import { invokeContract, queryContract, type TxOptions } from './transaction.js';
 import {
-  PactumEventType,
-  ContractEventMap,
-  EventCallback,
-  RawSorobanEvent,
-  decodeSorobanEvent
-} from './events';
-
-export interface PactumClientOptions {
-  rpcUrl?: string;
-  contractId?: string;
-  networkPassphrase?: string;
-}
+  encodeAddress,
+  encodeAddressVec,
+  encodeBytes32,
+  encodeCommitmentStatus,
+  encodeU32,
+  encodeU64,
+  decodeCommitment,
+  decodeReputation,
+} from './xdr.js';
+import type {
+  AttestParams,
+  Commitment,
+  CommitmentStatus,
+  CreateCommitmentParams,
+  DisputeParams,
+  PactumClientConfig,
+  Reputation,
+  ResolveDisputeParams,
+} from './types.js';
 
 export class PactumClient {
-  private rpcUrl: string;
-  private contractId: string;
-  private networkPassphrase: string;
-  private listeners: Map<PactumEventType, Set<EventCallback<any>>> = new Map();
-
-  constructor(options: PactumClientOptions = {}) {
-    this.rpcUrl = options.rpcUrl || 'https://soroban-testnet.stellar.org';
-    this.contractId = options.contractId || '';
-    this.networkPassphrase = options.networkPassphrase || 'Test SDF Network ; September 2015';
-  }
+  private readonly opts: TxOptions;
 
   /**
-   * Registers a strongly typed event listener for contract events.
-   * TypeScript strictly enforces that the callback payload matches the specified eventType.
+   * Constructs a PactumClient connected to the specified network.
    *
-   * @param eventType Event type to listen for ('created' | 'attested' | 'disputed' | 'resolved')
-   * @param callback Callback function receiving the strongly typed event payload
-   * @returns Unsubscribe cleanup function
+   * @example
+   * const client = new PactumClient({ network: 'testnet' });
    */
-  public on<K extends PactumEventType>(
-    eventType: K,
-    callback: EventCallback<K>
-  ): () => void {
-    if (!this.listeners.has(eventType)) {
-      this.listeners.set(eventType, new Set());
-    }
-    this.listeners.get(eventType)!.add(callback);
+  constructor(config: PactumClientConfig) {
+    const { rpcUrl, networkPassphrase } = resolveNetwork(
+      config.network,
+      config.rpcUrl,
+      config.networkPassphrase,
+    );
 
-    // Return unsubscribe function
-    return () => {
-      this.off(eventType, callback);
+    const contractId = config.contractId ?? DEFAULT_CONTRACT_ID;
+
+    this.opts = {
+      rpcServer: new rpc.Server(rpcUrl, { allowHttp: false }),
+      contract: new Contract(contractId),
+      networkPassphrase,
     };
   }
 
-  /**
-   * Unsubscribes a callback from a specific event type.
-   */
-  public off<K extends PactumEventType>(
-    eventType: K,
-    callback: EventCallback<K>
-  ): void {
-    const callbackSet = this.listeners.get(eventType);
-    if (callbackSet) {
-      callbackSet.delete(callback);
-    }
-  }
+  // ─── Write methods ──────────────────────────────────────────────────────────
 
   /**
-   * Manually emits a typed event to all registered listeners.
-   */
-  public emit<K extends PactumEventType>(
-    eventType: K,
-    payload: ContractEventMap[K],
-    rawEvent?: RawSorobanEvent
-  ): void {
-    const callbackSet = this.listeners.get(eventType);
-    if (callbackSet) {
-      callbackSet.forEach(cb => {
-        try {
-          cb(payload, rawEvent);
-        } catch (error) {
-          console.error(`[PactumClient] Error in '${eventType}' event callback:`, error);
-        }
-      });
-    }
-  }
-
-  /**
-   * Decodes a raw Soroban XDR / RPC event and dispatches it to registered typed listeners.
+   * Creates and registers a new commitment on-chain.
    *
-   * @param rawEvent Raw Soroban event object containing topics and values
-   * @returns True if decoded and dispatched, false otherwise
+   * @returns The unique commitment ID assigned by the contract.
+   *
+   * @example
+   * const id = await client.createCommitment({
+   *   issuer: 'G...',
+   *   issuerSecret: 'S...',
+   *   counterparty: 'G...',
+   *   termsHash: 'abcd...', // 32-byte hex
+   *   dueAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
+   * });
    */
-  public handleRawEvent(rawEvent: RawSorobanEvent): boolean {
-    const decoded = decodeSorobanEvent(rawEvent);
-    if (!decoded) {
-      return false;
+  async createCommitment(params: CreateCommitmentParams): Promise<bigint> {
+    const attestors = params.attestors ?? [];
+    const threshold = params.threshold ?? 0;
+
+    // issuerSecret is required: derive the public key from it for getAccount.
+    const keypair = Keypair.fromSecret(params.issuerSecret);
+    if (keypair.publicKey() !== params.issuer) {
+      throw new Error(
+        'PactumClient.createCommitment: issuerSecret does not match issuer address.',
+      );
     }
 
-    this.emit(decoded.type, decoded.payload, rawEvent);
-    return true;
+    const txHash = await invokeContract(
+      this.opts,
+      params.issuerSecret,
+      'create_commitment',
+      [
+        encodeAddress(params.issuer),
+        encodeAddress(params.counterparty),
+        encodeBytes32(params.termsHash),
+        encodeU64(params.dueAt),
+        encodeAddressVec(attestors),
+        encodeU32(threshold),
+      ],
+    );
+
+    // The contract returns the new commitment ID. We resolve it by querying
+    // the latest commitment via get_commitment with a best-effort scan.
+    // Since Soroban doesn't return the return value of submitted (vs simulated)
+    // transactions in the standard send flow, we extract the ID from the
+    // transaction meta via pollTransaction's returnValue.
+    //
+    // The pollTransaction result for a successful tx contains a `returnValue`
+    // on the `rpc.Api.GetSuccessfulTransactionResponse` type.
+    const pollResult = await this.opts.rpcServer.getTransaction(txHash);
+    if (
+      pollResult.status === rpc.Api.GetTransactionStatus.SUCCESS &&
+      'returnValue' in pollResult &&
+      pollResult.returnValue != null
+    ) {
+      return BigInt(scValToNative(pollResult.returnValue));
+    }
+
+    throw new Error(
+      `PactumClient.createCommitment: transaction succeeded (${txHash}) but return value could not be read.`,
+    );
   }
 
   /**
-   * Removes all registered event listeners.
+   * Attests to the outcome of a commitment.
+   *
+   * @returns The transaction hash.
+   *
+   * @example
+   * await client.attest({
+   *   caller: 'G...',
+   *   callerSecret: 'S...',
+   *   id: 1n,
+   *   outcome: CommitmentStatus.Fulfilled,
+   * });
    */
-  public removeAllListeners(eventType?: PactumEventType): void {
-    if (eventType) {
-      this.listeners.delete(eventType);
-    } else {
-      this.listeners.clear();
-    }
+  async attest(params: AttestParams): Promise<string> {
+    return invokeContract(this.opts, params.callerSecret, 'attest', [
+      encodeAddress(params.caller),
+      encodeU64(params.id),
+      encodeCommitmentStatus(params.outcome),
+    ]);
   }
 
   /**
-   * Returns the count of registered listeners for an event type.
+   * Raises a dispute on an attested commitment within the 7-day dispute window.
+   *
+   * @returns The transaction hash.
+   *
+   * @example
+   * await client.dispute({ caller: 'G...', callerSecret: 'S...', id: 1n });
    */
-  public listenerCount(eventType: PactumEventType): number {
-    return this.listeners.get(eventType)?.size || 0;
+  async dispute(params: DisputeParams): Promise<string> {
+    return invokeContract(this.opts, params.callerSecret, 'dispute', [
+      encodeAddress(params.caller),
+      encodeU64(params.id),
+    ]);
   }
+
+  /**
+   * Resolves a disputed commitment to a final outcome (arbitrator only).
+   *
+   * @returns The transaction hash.
+   *
+   * @example
+   * await client.resolveDispute({
+   *   arbitrator: 'G...',
+   *   arbitratorSecret: 'S...',
+   *   id: 1n,
+   *   finalOutcome: CommitmentStatus.Breached,
+   * });
+   */
+  async resolveDispute(params: ResolveDisputeParams): Promise<string> {
+    return invokeContract(
+      this.opts,
+      params.arbitratorSecret,
+      'resolve_dispute',
+      [
+        encodeAddress(params.arbitrator),
+        encodeU64(params.id),
+        encodeCommitmentStatus(params.finalOutcome),
+      ],
+    );
+  }
+
+  // ─── Read methods ───────────────────────────────────────────────────────────
+
+  /**
+   * Retrieves a commitment by its unique ID.
+   *
+   * Uses a read-only simulation so no signing is required.
+   *
+   * @example
+   * const commitment = await client.getCommitment(1n);
+   */
+  async getCommitment(id: bigint): Promise<Commitment> {
+    // Use a well-known Stellar account (the contract itself) as a read-only
+    // stub. Any valid public key works here since the tx is never submitted.
+    const stubPublicKey = this.opts.contract.address().toString();
+    const val = await queryContract(this.opts, stubPublicKey, 'get_commitment', [
+      encodeU64(id),
+    ]);
+    return decodeCommitment(val);
+  }
+
+  /**
+   * Returns true if the commitment is still Pending and its due date has passed.
+   *
+   * @example
+   * const overdue = await client.isOverdue(1n);
+   */
+  async isOverdue(id: bigint): Promise<boolean> {
+    const stubPublicKey = this.opts.contract.address().toString();
+    const val = await queryContract(this.opts, stubPublicKey, 'is_overdue', [
+      encodeU64(id),
+    ]);
+    return Boolean(scValToNative(val));
+  }
+
+  /**
+   * Retrieves the aggregate reputation for a given address.
+   *
+   * @example
+   * const rep = await client.getReputation('G...');
+   */
+  async getReputation(address: string): Promise<Reputation> {
+    const stubPublicKey = this.opts.contract.address().toString();
+    const val = await queryContract(
+      this.opts,
+      stubPublicKey,
+      'get_reputation',
+      [encodeAddress(address)],
+    );
+    return decodeReputation(val);
+  }
+
+  /**
+   * Retrieves the designated arbitrator address from the contract.
+   *
+   * @example
+   * const arb = await client.getArbitrator();
+   */
+  async getArbitrator(): Promise<string> {
+    const stubPublicKey = this.opts.contract.address().toString();
+    const val = await queryContract(
+      this.opts,
+      stubPublicKey,
+      'get_arbitrator',
+      [],
+    );
+    return String(scValToNative(val));
+  }
+
+  // ─── Type re-exports for convenience ────────────────────────────────────────
+
+  /** CommitmentStatus enum values, accessible as PactumClient.Status. */
+  static readonly Status = {
+    Pending: 0 as CommitmentStatus,
+    Fulfilled: 1 as CommitmentStatus,
+    Late: 2 as CommitmentStatus,
+    Breached: 3 as CommitmentStatus,
+    Disputed: 4 as CommitmentStatus,
+  } as const;
 }
