@@ -1,0 +1,34 @@
+{
+  "name": "@pactum/zk-reputation",
+  "version": "0.1.0",
+  "description": "Zero-knowledge Trust Score threshold proofs for Pactum reputation",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build:circuit": "node scripts/build-circuit.mjs",
+    "demo": "node scripts/demo.mjs",
+    "publish:snapshot": "node scripts/publish-snapshot.mjs",
+    "verify:proof": "node scripts/verify-proof.mjs",
+    "test": "node --test test/*.test.ts",
+    "test:circuit": "node --test test/circuit.test.ts"
+  },
+  "keywords": [
+    "pactum",
+    "zk-snark",
+    "groth16",
+    "circom",
+    "reputation"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.6"
+  },
+  "devDependencies": {
+    "@stellar/stellar-sdk": "^16.2.0",
+    "circomlib": "^2.0.5"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

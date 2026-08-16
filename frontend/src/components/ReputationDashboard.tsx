@@ -1,75 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import UserProfile from './UserProfile';
-
-export interface CommitmentItem {
-  id: number;
-  issuer: string;
-  counterparty: string;
-  terms_hash: string;
-  due_at: number;
-  status: 'Fulfilled' | 'Late' | 'Breached' | 'Pending' | 'Disputed';
-  created_at: number;
-  attested_at: number | null;
-}
+import { fetchCommitments, fetchReputation } from '../lib/api';
+import type { Commitment, Reputation } from '../lib/api';
 
 export interface ReputationDashboardProps {
   initialAddress?: string;
   onNavigateAddress?: (address: string) => void;
   onLaunchCreate?: () => void;
 }
-
-const DEMO_COMMITMENTS: CommitmentItem[] = [
-  {
-    id: 1,
-    issuer: 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
-    counterparty: 'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX',
-    terms_hash: 'a3f9c1d2e4b5678901234567890abcdef1234567890abcdef1234567890ab',
-    due_at: Math.floor(Date.now() / 1000) - 86400 * 5,
-    status: 'Fulfilled',
-    created_at: Math.floor(Date.now() / 1000) - 86400 * 20,
-    attested_at: Math.floor(Date.now() / 1000) - 86400 * 4,
-  },
-  {
-    id: 2,
-    issuer: 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
-    counterparty: 'GCJUKUMADK5PKZF7MCQBBNLRH2AIZQPK5JXBZWBZM7S4CGAJKUMA6V4',
-    terms_hash: 'b7e2d1c3f5a6789012345678901abcdef234567890abcdef234567890abc',
-    due_at: Math.floor(Date.now() / 1000) - 86400 * 10,
-    status: 'Breached',
-    created_at: Math.floor(Date.now() / 1000) - 86400 * 30,
-    attested_at: Math.floor(Date.now() / 1000) - 86400 * 8,
-  },
-  {
-    id: 3,
-    issuer: 'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX',
-    counterparty: 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
-    terms_hash: 'c8f3e2d4a6b7890123456789012abcdef345678901abcdef345678901abcd',
-    due_at: Math.floor(Date.now() / 1000) - 86400 * 2,
-    status: 'Fulfilled',
-    created_at: Math.floor(Date.now() / 1000) - 86400 * 15,
-    attested_at: Math.floor(Date.now() / 1000) - 86400 * 1,
-  },
-  {
-    id: 4,
-    issuer: 'GCJUKUMADK5PKZF7MCQBBNLRH2AIZQPK5JXBZWBZM7S4CGAJKUMA6V4',
-    counterparty: 'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX',
-    terms_hash: 'd9a4f3e5b7c8901234567890123abcdef456789012abcdef456789012abcde',
-    due_at: Math.floor(Date.now() / 1000) + 86400 * 8,
-    status: 'Pending',
-    created_at: Math.floor(Date.now() / 1000) - 86400 * 2,
-    attested_at: null,
-  },
-  {
-    id: 5,
-    issuer: 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
-    counterparty: 'GD7H8K9L0M1N2P3Q4R5S6T7U8V9W0X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4L',
-    terms_hash: 'e0b5f4e6c8d9012345678901234abcdef56789012abcdef56789012abcdef',
-    due_at: Math.floor(Date.now() / 1000) - 86400 * 1,
-    status: 'Late',
-    created_at: Math.floor(Date.now() / 1000) - 86400 * 12,
-    attested_at: Math.floor(Date.now() / 1000),
-  }
-];
 
 const PRESETS = [
   { label: 'Issuer Demo (GAJK...)', address: 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C' },
@@ -86,16 +24,27 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [activeAddress, setActiveAddress] = useState(initialAddress);
   const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('All');
-  const [currentPage, setCurrentPage] = useState(1);
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
-  const itemsPerPage = 3;
+
+  // Pagination & Data State
+  const [commitments, setCommitments] = useState<Commitment[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [reputation, setReputation] = useState<Reputation | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const isFetchingRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const itemsPerPage = 50;
 
   useEffect(() => {
     if (initialAddress && initialAddress !== activeAddress) {
       setSearchQuery(initialAddress);
       setActiveAddress(initialAddress);
     }
-  }, [initialAddress]);
+  }, [initialAddress, activeAddress]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,40 +53,104 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   };
 
   const triggerAddressChange = (addr: string) => {
+    abortRef.current?.abort();
     setIsLoading(true);
     setActiveAddress(addr);
     setSearchQuery(addr);
-    setCurrentPage(1);
+    setReputation(null);
+    setCommitments([]);
+    setPage(1);
+    setHasMore(true);
     if (onNavigateAddress) {
       onNavigateAddress(addr);
     }
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 250);
   };
 
-  const addressCommitments = DEMO_COMMITMENTS.filter(
-    (c) => c.issuer === activeAddress || c.counterparty === activeAddress
-  );
+  const loadCommitments = React.useCallback(async (pageNum: number, isAppend = false, signal?: AbortSignal) => {
+    const filters: any = {
+      address: activeAddress,
+      status: statusFilter === 'All' ? undefined : statusFilter,
+      page: pageNum,
+      limit: itemsPerPage
+    };
+    const data = await fetchCommitments(filters, signal);
 
-  const totalCount = addressCommitments.length;
-  const fulfilledCount = addressCommitments.filter((c) => c.status === 'Fulfilled').length;
-  const lateCount = addressCommitments.filter((c) => c.status === 'Late').length;
-  const breachedCount = addressCommitments.filter((c) => c.status === 'Breached').length;
-  const pendingCount = addressCommitments.filter((c) => c.status === 'Pending').length;
+    if (signal?.aborted) return;
+    setCommitments(prev => isAppend ? [...prev, ...data] : data);
+    setHasMore(data.length === itemsPerPage);
+    return data;
+  }, [activeAddress, statusFilter]);
 
-  const fulfillmentRate = totalCount > 0 ? Math.round((fulfilledCount / totalCount) * 100) : 0;
+  const loadMore = React.useCallback(async () => {
+    if (isFetchingRef.current || !hasMore) return;
 
-  const filteredCommitments = addressCommitments.filter((c) => {
-    if (statusFilter === 'All') return true;
-    return c.status === statusFilter;
-  });
+    isFetchingRef.current = true;
+    setIsFetchingMore(true);
+    setFetchError(null);
 
-  const totalPages = Math.ceil(filteredCommitments.length / itemsPerPage) || 1;
-  const paginatedCommitments = filteredCommitments.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+    try {
+      const nextPage = page + 1;
+      await loadCommitments(nextPage, true, abortRef.current?.signal);
+      setPage(nextPage);
+    } catch (error) {
+      setFetchError('Failed to load more commitments. Please try again.');
+      console.error('Load more error:', error);
+    } finally {
+      setIsFetchingMore(false);
+      isFetchingRef.current = false;
+    }
+  }, [page, hasMore, loadCommitments]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const signal = controller.signal;
+
+    const initializeData = async () => {
+      setIsLoading(true);
+      setFetchError(null);
+      try {
+        const [repData] = await Promise.all([
+          fetchReputation(activeAddress, signal),
+          loadCommitments(1, false, signal)
+        ]);
+
+        if (!signal.aborted) {
+          setReputation(repData);
+        }
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.error('Initialization error:', error);
+          setFetchError('Failed to initialize dashboard data.');
+        }
+      } finally {
+        if (!signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initializeData();
+
+    return () => controller.abort();
+  }, [activeAddress, statusFilter, loadCommitments]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { threshold: 1.0 }
+    );
+
+    if (bottomRef.current) {
+      observer.observe(bottomRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, isFetchingMore, loadMore]);
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleDateString('en-US', {
@@ -147,11 +160,17 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     });
   };
 
+  const totalCount = reputation?.total ?? 0;
+  const fulfilledCount = reputation?.fulfilled ?? 0;
+  const lateCount = reputation?.late ?? 0;
+  const breachedCount = reputation?.breached ?? 0;
+  const calculatedPending = reputation ? (reputation.total - (reputation.fulfilled + reputation.late + reputation.breached)) : 0;
+  const fulfillmentRate = totalCount > 0 ? Math.round((fulfilledCount / totalCount) * 100) : 0;
+
   const strokeDashoffset = 226 - (226 * fulfillmentRate) / 100;
 
   return (
     <div style={{ maxWidth: '1080px', margin: '0 auto', color: '#1e293b' }}>
-
       {/* ── Search Bar Section ── */}
       <div style={{
         background: '#ffffff',
@@ -337,7 +356,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
               Total Commitments
             </div>
             <div style={{ fontSize: '38px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{totalCount}</div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px', fontWeight: '500' }}>On-chain record ({pendingCount} pending)</div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '10px', fontWeight: '500' }}>On-chain record ({calculatedPending} pending)</div>
           </div>
 
           {/* Fulfilled Card (Pastel Mint) */}
@@ -422,6 +441,11 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         overflow: 'hidden',
         boxShadow: '0 4px 20px -2px rgba(0,0,0,0.04)'
       }}>
+        {fetchError && (
+          <div style={{ background: '#fef2f2', color: '#dc2626', padding: '12px 24px', fontSize: '13px', fontWeight: '500', borderBottom: '1px solid #fee2e2', textAlign: 'center' }}>
+            {fetchError}
+          </div>
+        )}
         <div style={{ padding: '22px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
           <div>
             <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>Associated Commitments</h3>
@@ -435,7 +459,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                 key={tab}
                 onClick={() => {
                   setStatusFilter(tab);
-                  setCurrentPage(1);
+                  setPage(1);
                 }}
                 style={{
                   fontSize: '12px',
@@ -457,7 +481,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         </div>
 
         {/* Empty State Requirement: "No commitments found for this address" */}
-        {filteredCommitments.length === 0 ? (
+        {commitments.length === 0 && !isLoading ? (
           <div style={{ padding: '72px 24px', textAlign: 'center' }}>
             <div style={{ width: '64px', height: '64px', background: '#f8fafc', color: '#94a3b8', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px auto', fontSize: '28px', border: '1px solid #e2e8f0' }}>
               📭
@@ -502,7 +526,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody style={{ fontFamily: 'monospace' }}>
-                  {paginatedCommitments.map((c) => {
+                  {commitments.map((c) => {
                     const isIssuer = c.issuer === activeAddress;
                     const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
 
@@ -563,56 +587,16 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination Bar */}
-            <div style={{ padding: '16px 24px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>
-                Showing Page <strong style={{ color: '#0f172a' }}>{currentPage}</strong> of <strong style={{ color: '#0f172a' }}>{totalPages}</strong> ({filteredCommitments.length} total)
-              </span>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    fontSize: '12.5px',
-                    fontWeight: '700',
-                    color: '#334155',
-                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                    opacity: currentPage === 1 ? 0.4 : 1,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                  }}
-                >
-                  Previous
-                </button>
-                <button
-                  disabled={currentPage >= totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    fontSize: '12.5px',
-                    fontWeight: '700',
-                    color: '#334155',
-                    cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-                    opacity: currentPage >= totalPages ? 0.4 : 1,
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                  }}
-                >
-                  Next
-                </button>
-              </div>
+            <div ref={bottomRef} style={{ height: '20px' }}>
+              {isFetchingMore && (
+                <div style={{ textAlign: 'center', padding: '16px', fontSize: '13px', color: '#64748b', fontWeight: '500' }}>
+                  Loading more commitments...
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
-
     </div>
   );
 };

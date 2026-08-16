@@ -1,5 +1,6 @@
 use crate::commitments::CommitmentStatus;
-use soroban_sdk::{symbol_short, Address, Env};
+use crate::reputation::ReputationV2;
+use soroban_sdk::{symbol_short, Address, BytesN, Env};
 
 /// Publishes an event when a new commitment is created.
 pub fn commitment_created(
@@ -49,43 +50,37 @@ pub fn dispute_resolved(
     );
 }
 
-/// Publishes an event when an attestor casts a vote on an M-of-N commitment.
-pub fn attestor_vote_cast(
+/// Publishes an event when the contract's executable is replaced.
+///
+/// Emitted by the *outgoing* executable, before the swap takes effect, so the log
+/// entry is produced by the code reviewers audited during the timelock window.
+pub fn upgraded(
     env: &Env,
-    id: u64,
-    attestor: &Address,
-    outcome: CommitmentStatus,
-    tally: u32,
-    threshold: u32,
+    new_wasm_hash: &BytesN<32>,
+    old_schema_version: u32,
+    new_schema_version: u32,
 ) {
     env.events().publish(
-        (symbol_short!("voted"), id, attestor.clone()),
-        (outcome, tally, threshold),
+        (symbol_short!("upgraded"), new_wasm_hash.clone()),
+        (old_schema_version, new_schema_version),
     );
 }
 
-/// Publishes an event when an M-of-N commitment reaches its threshold and resolves.
-pub fn commitment_resolved(
-    env: &Env,
-    id: u64,
-    outcome: CommitmentStatus,
-) {
+/// Publishes an event when upgrade authority moves to a different address.
+///
+/// `old` is `None` only for the one-time bootstrap installation.
+pub fn upgrade_admin_changed(env: &Env, old: Option<&Address>, new: &Address) {
     env.events().publish(
-        (symbol_short!("vresolved"), id),
-        outcome,
+        (symbol_short!("upgadmin"), new.clone()),
+        old.cloned(),
     );
 }
 
-/// Publishes an event when an M-of-N commitment falls back to a predefined
-/// fallback state because the vote threshold was not reached in time.
-pub fn commitment_fallback(
-    env: &Env,
-    id: u64,
-    fallback_status: CommitmentStatus,
-) {
+/// Publishes an event when an address's reputation row is rewritten from V1 to V2.
+pub fn reputation_migrated(env: &Env, address: &Address, migrated: &ReputationV2) {
     env.events().publish(
-        (symbol_short!("fallback"), id),
-        fallback_status,
+        (symbol_short!("repmigr"), address.clone()),
+        migrated.clone(),
     );
 }
 

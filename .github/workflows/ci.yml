@@ -31,9 +31,75 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-test-
 
+      # The upgrade tests embed a compiled Wasm fixture in order to exercise a real
+      # executable swap, so the artifacts have to exist before the tests are compiled.
+      - name: Build Wasm artifacts for the upgrade tests
+        working-directory: contracts
+        run: cargo build --target wasm32-unknown-unknown --release
+
       - name: Run Soroban contract test suite
         working-directory: contracts
-        run: cargo test --workspace
+        run: cargo test --workspace --features registry/wasm-tests,timelock/wasm-tests
+
+  zk-tests:
+    name: ZK Circuit Tests
+    runs-on: ubuntu-latest
+    # Building circom from source dominates a cold run. The cap is here so a hang in
+    # the proving toolchain fails the job promptly instead of burning the default
+    # six-hour budget.
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Node 22.18+ runs the package's TypeScript sources directly, so there is no
+      # build step to keep in sync with the tests.
+      - name: Set up Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # circom is not published to npm, so it is built from source and cached — the
+      # circuit tests skip without it, and a skipped circuit test proves nothing.
+      - name: Cache circom binary
+        id: cache_circom
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/circom
+          key: ${{ runner.os }}-circom-2.2.3
+
+      - name: Build circom from source
+        if: steps.cache_circom.outputs.cache-hit != 'true'
+        run: cargo install --locked --git https://github.com/iden3/circom.git --tag v2.2.3 circom
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-zk-${{ hashFiles('zk/package-lock.json', 'zk/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-zk-
+
+      - name: Install zk dependencies
+        working-directory: zk
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Compile circuit and run the Groth16 setup
+        working-directory: zk
+        run: npm run build:circuit
+
+      - name: Run zk test suite
+        working-directory: zk
+        run: npm test
 
   backend-tests:
     name: Backend Tests

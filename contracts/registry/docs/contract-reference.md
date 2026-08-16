@@ -9,13 +9,10 @@ The registry is an immutable ledger for creating, tracking, and resolving on-cha
 Soroban implements a Time-To-Live (TTL) model for data storage. The registry contract automatically extends the TTL of active data to prevent unexpected expiration.
 - **`TTL_THRESHOLD_LEDGERS`**: `241920` (Approx 14 days)
 - **`TTL_EXTEND_LEDGERS`**: `518400` (Approx 30 days)
-- **`ATTESTOR_VOTE_TIMEOUT_SECONDS`**: `604800` (7 days). M-of-N attestor voting must reach its threshold by `due_at + ATTESTOR_VOTE_TIMEOUT_SECONDS`, otherwise the commitment falls back to a predefined fallback state (`Breached`).
 
 ### Persistent Storage
-- **Commitments**: Preserved indefinitely as long as they are queried via `get_commitment` or updated via attest/dispute/vote. Extended up to 30 days upon each access. 
+- **Commitments**: Preserved indefinitely as long as they are queried via `get_commitment` or updated via attest/dispute. Extended up to 30 days upon each access. 
 - **Reputation**: Automatically extended to 30 days on each query or change. It must persist indefinitely as an immutable record of an issuer's reliability.
-- **Vote Records**: A `VoteRecord(commitment_id, attestor)` entry per cast vote (prevents double voting). Extended up to 30 days upon each vote.
-- **Vote Tallies**: A `VoteTally(commitment_id)` counter per commitment holding the per-outcome vote counts, enabling O(1) threshold checks.
 - **Trust History**: One entry per address (~52 bytes) holding the bucketed outcome history used by `get_trust_score`. Extended to 30 days on each query or change, mirroring the reputation bump-on-access pattern.
 
 ### Instance Storage
@@ -39,11 +36,9 @@ Creates and registers a new ongoing commitment between an issuer and a counterpa
   - `counterparty: Address`: The address to whom the commitment is owed.
   - `terms_hash: BytesN<32>`: Hash of the off-chain terms.
   - `due_at: u64`: Unix timestamp (seconds) when the commitment is due.
-  - `attestors: Vec<Address>`: Dynamically sized list of attestors assigned to adjudicate via M-of-N voting. Pass an empty list for regular single-party commitments.
-  - `threshold: u32`: Required number of attestor votes (M in M-of-N). Must be `0` when `attestors` is empty and between `1` and `attestors.len()` otherwise.
 - **Authorization**: Requires authorization from `issuer`.
 - **Returns**: `u64` (the unique identifier for the commitment).
-- **Panics**: `Error::DueAtInPast` if `due_at` is in the past, `Error::ThresholdInvalid` for an invalid threshold, `Error::DuplicateAttestor` for duplicate attestor addresses.
+- **Panics**: `Error::DueAtInPast` if `due_at` is in the past.
 
 ### `get_commitment`
 Retrieves an existing commitment by its unique ID.
@@ -61,42 +56,7 @@ Attests to the lifecycle status of a commitment.
   - `id: u64`
   - `outcome: CommitmentStatus`: Must be `Fulfilled`, `Late`, or `Breached`.
 - **Authorization**: Requires authorization from `caller`.
-- **Panics**: `Error::Unauthorized` if the caller isn't participating, `Error::InvalidOutcome` if status is Pending/Disputed, `Error::AlreadyResolved` if no longer pending, `Error::InvalidTransition` if the commitment is an M-of-N commitment (which must be resolved via `cast_attestor_vote`).
-
-### `cast_attestor_vote`
-Casts a single attestor vote on an M-of-N commitment, tallying it securely.
-- **Parameters**:
-  - `env: Env`
-  - `caller: Address`: The attestor casting the vote (must be an assigned attestor).
-  - `id: u64`
-  - `outcome: CommitmentStatus`: Must be `Fulfilled`, `Late`, or `Breached`.
-- **Authorization**: Requires authorization from `caller`.
-- **Guarantees**:
-  - Each attestor may vote at most once (race-condition safe via `VoteRecord`).
-  - The threshold check is **O(1)** — votes are counted in a running `VoteTally` rather than by scanning prior votes, so the final (threshold-meeting) vote never exhausts the gas limit.
-- **Panics**: `Error::NotAttestor` if the caller isn't assigned, `Error::AlreadyVoted` on a duplicate vote, `Error::VotingClosed` after `due_at + ATTESTOR_VOTE_TIMEOUT_SECONDS`, `Error::InvalidOutcome` for Pending/Disputed, `Error::AlreadyResolved` if no longer pending.
-
-### `finalize_commitment`
-Resolves an M-of-N commitment to the predefined fallback state (`Breached`) if the vote threshold was not reached by `due_at + ATTESTOR_VOTE_TIMEOUT_SECONDS`. Callable by anyone so a stalled commitment (e.g. offline attestors) can always be unblocked, preventing locked funds/state.
-- **Parameters**:
-  - `env: Env`
-  - `id: u64`
-- **Panics**: `Error::VotesNotMet` before the deadline, `Error::InvalidTransition` for commitments without attestors, `Error::AlreadyResolved` if already resolved.
-
-### `get_vote_tally`
-Retrieves the running per-outcome vote tally for an M-of-N commitment.
-- **Parameters**:
-  - `env: Env`
-  - `id: u64`
-- **Returns**: `VoteTally` struct (fulfilled, late, breached counts). Zeroed if no votes yet.
-- **Panics**: `Error::CommitmentNotFound` if the ID does not exist.
-
-### `can_finalize_commitment`
-Checks whether an M-of-N commitment can be finalized to its fallback state (timeout elapsed and threshold unmet).
-- **Parameters**:
-  - `env: Env`
-  - `id: u64`
-- **Returns**: `bool`.
+- **Panics**: `Error::Unauthorized` if the caller isn't participating, `Error::InvalidOutcome` if status is Pending/Disputed, `Error::AlreadyResolved` if no longer pending.
 
 ### `is_overdue`
 Checks whether a commitment is overdue.
@@ -155,3 +115,94 @@ Two safeguards address this:
 2. **A reentrancy guard (`contracts/registry/src/reentrancy.rs`)** — every state-mutating entry point (`initialize`, `create_commitment`, `attest`, `dispute`, `resolve_dispute`) calls a guard `enter()` before `require_auth` (and therefore before any possible callback into untrusted contract code), and `exit()` only after all state changes are committed. A nested call into any guarded function while another is already in progress fails immediately with `Error::ReentrantCall` instead of observing or corrupting half-updated state. This enforces the Checks-Effects-Interactions pattern contract-wide: the only "interaction" point (`require_auth`) is protected on both sides by the lock.
 
    The test suite includes a malicious mock, `AttackerGate` (`contracts/registry/src/attacker_gate.rs`), registered as a commitment's arbitrator. It implements `CustomAccountInterface` and attempts, from within `__check_auth`, to re-enter `resolve_dispute` for the same commitment before the legitimate call has applied its state changes. The attempt is rejected with `Error::ReentrantCall`, and the legitimate call completes exactly once with correct final state (see `test_reentrancy_attack_during_resolve_dispute_is_blocked` in `contracts/registry/src/test.rs`).
+
+---
+
+## Upgradeability and Governance
+
+The registry upgrades **in place**: `update_current_contract_wasm` replaces the
+executable while the contract ID and all storage survive, so integrating protocols keep
+calling the same address. There is no proxy contract — Soroban has no `delegatecall`
+and does not need one. In production the `upgrade_admin` is the Timelock contract, so
+every upgrade passes a 7-day review window.
+
+See [`docs/upgradeability.md`](../../../docs/upgradeability.md) for the full design
+rationale, threat model, and operator runbook.
+
+### `schema_version`
+Retrieves the reputation storage schema version currently in force.
+- **Parameters**:
+  - `env: Env`
+- **Returns**: `u32` — `1` for a contract that has never been upgraded, `2` after the Phase C upgrade.
+
+### `get_upgrade_admin`
+Retrieves the address permitted to upgrade this contract.
+- **Parameters**:
+  - `env: Env`
+- **Returns**: `Option<Address>` — `None` if governance has not been installed.
+
+### `init_upgrade_admin`
+Installs the initial upgrade admin (the Timelock contract). Bootstrap path only; closes permanently once used.
+- **Parameters**:
+  - `env: Env`
+  - `admin: Address`: The address to grant upgrade authority to.
+- **Authorization**: Requires authorization from the `arbitrator` recorded by `initialize`.
+- **Panics**: `Error::NotInitialized` if the contract has not been initialized, `Error::UpgradeAdminAlreadySet` if an upgrade admin is already installed.
+
+### `set_upgrade_admin`
+Transfers upgrade authority to a different address.
+- **Parameters**:
+  - `env: Env`
+  - `new_admin: Address`
+- **Authorization**: Requires authorization from the current upgrade admin — i.e. it must be proposed through the timelock and inherits the 7-day delay.
+- **Panics**: `Error::UpgradeAdminNotSet` if no upgrade admin is installed.
+
+### `upgrade`
+Replaces the contract's executable and moves the storage schema forward, atomically. The contract ID and all stored state are preserved.
+- **Parameters**:
+  - `env: Env`
+  - `new_wasm_hash: BytesN<32>`: Hash of an already-uploaded Wasm blob, pinned by the timelock at proposal time.
+  - `new_schema_version: u32`: Schema version to move to in the same transaction. Pass the current version for a code-only release.
+- **Authorization**: Requires authorization from the upgrade admin (the Timelock).
+- **Panics**: `Error::UpgradeAdminNotSet` if governance is not installed, `Error::SchemaDowngrade` if the version is below the one in force, `Error::UnsupportedSchemaVersion` if it exceeds what the executable understands.
+
+### `get_reputation_v2`
+Retrieves the Attestor-enabled (V2) reputation for an address. Serves correct V2 data whether or not the row has physically been migrated.
+- **Parameters**:
+  - `env: Env`
+  - `address: Address`
+- **Returns**: `ReputationV2` — the three V1 counters plus `direct_count`, `attested_count`, `updated_at`, and `version`. Zeroed for an address with no history.
+
+### `migration_pending`
+Returns whether an address still holds a V1 row awaiting rewrite as V2.
+- **Parameters**:
+  - `env: Env`
+  - `address: Address`
+- **Returns**: `bool` — always `false` while the contract is on schema V1.
+
+### `migrate_reputation_batch`
+Rewrites a bounded batch of V1 reputation rows into the V2 layout.
+- **Parameters**:
+  - `env: Env`
+  - `addresses: Vec<Address>`: At most 100 addresses.
+- **Authorization**: None — permissionless. Migration is idempotent, cannot alter any counter's value, and the caller pays the fees.
+- **Returns**: `u32` — how many rows were actually rewritten. Addresses already on V2, or never scored, count as zero.
+- **Panics**: `Error::MigrationNotEnabled` if the contract is still on schema V1, `Error::BatchTooLarge` if the batch exceeds 100 addresses.
+- **Note**: An *archived* entry is not readable as absent — touching one aborts the invocation. Restore such keys with `RestoreFootprint` before migrating them.
+
+## Storage Schemas
+
+### V1 (Phase B)
+`ReputationKey::Reputation(Address)` → `Reputation { fulfilled_count, late_count, breached_count }`
+
+### V2 (Phase C, Attestor-enabled)
+`ReputationKey::ReputationV2(Address)` → `ReputationV2 { fulfilled_count, late_count, breached_count, direct_count, attested_count, updated_at, version }`
+
+Migrating a V1 row copies the three counters verbatim, sets `direct_count` to their sum
+(every Phase B outcome was recorded by a commitment party or the arbitrator) and
+`attested_count` to `0` (no Attestor existed). `get_reputation` continues to return the
+V1 struct under both schemas, so existing integrations need no changes.
+
+Adding `ReputationV2` does not disturb existing entries: `#[contracttype]` encodes an
+enum variant by name rather than by ordinal, so already-written `Reputation(addr)` keys
+remain byte-identical.
