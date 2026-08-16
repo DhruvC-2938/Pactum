@@ -1,14 +1,131 @@
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 import './App.css'
 import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
+import CreateCommitmentWizard from './components/CreateCommitmentWizard'
+import ReputationDashboard from './components/ReputationDashboard'
+import FreighterInstallModal from './components/FreighterInstallModal'
+import WalletConnectModal from './components/WalletConnectModal'
+import { useCommitments } from './hooks/useCommitments'
+import type { Commitment, CommitmentStatus } from './lib/api'
+import { useWallet } from './context/WalletContext'
+import { Wallet, CheckCircle2 } from 'lucide-react'
+
+function renderCommitmentItem(commitment: Commitment) {
+  return (
+    <div className="commitment-item" key={commitment.id}>
+      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
+        {commitment.issuer.charAt(0)}
+      </div>
+      <div className="commitment-info">
+        <div className="commitment-id">Commitment #{commitment.id}</div>
+        <div className="commitment-parties">
+          {commitment.issuer} &rarr; {commitment.counterparty}
+        </div>
+        <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
+      </div>
+      <div className="commitment-status">
+        <span className={`badge ${commitment.status.toLowerCase()}`}>
+          <span className="badge-dot"></span>
+          {commitment.status}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function WalletButton() {
+  const { address, isConnected, isConnecting } = useWallet();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const shortenKey = (key: string) => {
+    if (!key || key.length < 10) return key;
+    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
+  };
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      {isConnected && address ? (
+        <button
+          onClick={() => setIsOpen((prev) => !prev)}
+          className="btn btn-secondary btn-sm"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: '#f0fdf4',
+            borderColor: '#bbf7d0',
+            color: '#15803d',
+            fontWeight: '700',
+            fontFamily: 'monospace'
+          }}
+          title="Click to view wallet details"
+        >
+          <CheckCircle2 size={13} color="#22c55e" />
+          {shortenKey(address)}
+        </button>
+      ) : (
+        <button
+          onClick={() => setIsOpen((prev) => !prev)}
+          disabled={isConnecting}
+          className="btn btn-secondary btn-sm"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontWeight: '700',
+            borderColor: '#cbd5e1'
+          }}
+        >
+          <Wallet size={14} />
+          {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+        </button>
+      )}
+
+      {/* Dropping Banner Popover Dropdown */}
+      <WalletConnectModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+    </div>
+  );
+}
+
+function InlineWalletError() {
+  const { error, clearError } = useWallet();
+  return <FreighterInstallModal error={error} onDismiss={clearError} />;
+}
 
 export default function App() {
 
   const [activePage, setActivePage] = useState('landing');
-  
+  const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
+
+  const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
+
+  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const path = window.location.pathname;
+      if (path.startsWith('/reputation/')) {
+        const addr = path.replace('/reputation/', '').trim();
+        if (addr) {
+          setReputationAddress(addr);
+          setActivePage('reputation');
+        }
+      }
+    };
+
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
+
+  const navigateToReputation = (addr: string) => {
+    setReputationAddress(addr);
+    setActivePage('reputation');
+    window.history.pushState({}, '', `/reputation/${addr}`);
+  };
   if (activePage === 'landing') {
     return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
   }
@@ -23,7 +140,7 @@ export default function App() {
 
   {/* ── Sidebar ── */}
   <aside className="sidebar">
-    <div className="sidebar-logo">
+    <div className="sidebar-logo" onClick={() => setActivePage('landing')} style={{ cursor: 'pointer' }} title="Go to Home Page">
       <div className="logo-mark">
         <div className="logo-icon">
           <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
@@ -161,9 +278,42 @@ export default function App() {
   <main className="main-content">
 
     {/* Topbar */}
-    <header className="topbar">
-      <span className="topbar-title" id="topbar-title">Dashboard</span>
-      <div className="topbar-actions">
+    <header className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <button
+          onClick={() => setActivePage('landing')}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
+            padding: '6px 12px',
+            fontSize: '12.5px',
+            fontWeight: '700',
+            color: '#475569',
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            transition: 'all 0.15s ease'
+          }}
+          title="Back to Landing Page"
+        >
+          ← Home
+        </button>
+
+        <span className="topbar-title" id="topbar-title" style={{ margin: 0 }}>
+          {activePage === 'reputation' ? 'Reputation Lookup' :
+           activePage === 'commitments' ? 'Commitments' :
+           activePage === 'create' ? 'Create Commitment' :
+           activePage === 'attest' ? 'Attest' :
+           activePage === 'dispute' ? 'Raise Dispute' :
+           activePage === 'resolve' ? 'Resolve Dispute' :
+           activePage === 'lookup' ? 'Get Commitment' :
+           activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
+        </span>
+      </div>
+      <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div className="search-bar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <circle cx="6.5" cy="6.5" r="4.5"/>
@@ -171,7 +321,11 @@ export default function App() {
           </svg>
           <input type="text" placeholder="Search commitments..." id="global-search" />
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => {}}>
+
+        {/* Topbar Wallet Connect Component */}
+        <WalletButton />
+
+        <button className="btn btn-primary btn-sm" onClick={() => setActivePage('create')}>
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M8 2v12M2 8h12"/>
           </svg>
@@ -179,6 +333,9 @@ export default function App() {
         </button>
       </div>
     </header>
+
+    {/* Inline On-Screen Wallet Error / Installation Alert Banner */}
+    <InlineWalletError />
 
     {/* Toast Container */}
     <div className="toast-container" id="toast-container"></div>
@@ -374,10 +531,20 @@ export default function App() {
         </div>
         <div style={{display: "flex", gap: "10px", alignItems: "center"}}>
           <div className="tabs" id="filter-tabs">
-            <button className="tab-btn active" onClick={() => {}}>All</button>
-            <button className="tab-btn" onClick={() => {}}>Pending</button>
-            <button className="tab-btn" onClick={() => {}}>Fulfilled</button>
-            <button className="tab-btn" onClick={() => {}}>Breached</button>
+            {[
+              { label: 'All', value: undefined as CommitmentStatus | undefined },
+              { label: 'Pending', value: 'Pending' as CommitmentStatus },
+              { label: 'Fulfilled', value: 'Fulfilled' as CommitmentStatus },
+              { label: 'Breached', value: 'Breached' as CommitmentStatus },
+            ].map((tab) => (
+              <button
+                key={tab.label}
+                className={`tab-btn ${commitmentStatus === tab.value ? 'active' : ''}`}
+                onClick={() => setCommitmentStatus(tab.value)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => {}}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -387,7 +554,15 @@ export default function App() {
           </button>
         </div>
       </div>
-      <div className="commitment-list" id="commitments-list-page"></div>
+      <div className="commitment-list" id="commitments-list-page">
+        {commitmentsQuery.isLoading && (
+          <div className="inline-alert info">Loading commitments...</div>
+        )}
+        {commitmentsQuery.isError && (
+          <div className="inline-alert warning">Failed to load commitments from the backend.</div>
+        )}
+        {commitmentsQuery.data?.map(renderCommitmentItem)}
+      </div>
     </section>
 
 
@@ -402,138 +577,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="two-col">
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Commitment Details</div>
-          </div>
-          <div className="card-body">
-            <div className="inline-alert info">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="8" cy="8" r="6"/><path d="M8 6v4M8 11.5v.5"/>
-              </svg>
-              The issuer must authorize this transaction via their Stellar wallet. The commitment will be immediately visible on-chain.
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-issuer">Issuer Address</label>
-              <input type="text" className="form-input" id="create-issuer"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-              <div className="form-hint">The Stellar address making the promise. Must authorize the transaction.</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-counterparty">Counterparty Address</label>
-              <input type="text" className="form-input" id="create-counterparty"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-              <div className="form-hint">The address to whom the commitment is owed.</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-terms">Terms / Description</label>
-              <textarea className="form-textarea" id="create-terms"
-                        placeholder="Describe the commitment terms in plain language. This will be hashed (SHA-256) before being stored on-chain."></textarea>
-              <div className="form-hint">Stored as a SHA-256 hash on-chain. Keep a copy of the original off-chain.</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="create-dueat">Due Date</label>
-              <input type="datetime-local" className="form-input" id="create-dueat" />
-              <div className="form-hint">Must be a future date. Stored as a Unix timestamp on Stellar.</div>
-            </div>
-
-            <div style={{display: "flex", gap: "10px", marginTop: "4px"}}>
-              <button className="btn btn-secondary" onClick={() => {}}>Clear</button>
-              <button className="btn btn-primary" style={{flex: "1"}} id="btn-create" onClick={() => {}}>
-                <div className="spinner"></div>
-                <span className="btn-text">Create Commitment</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Preview */}
-        <div style={{display: "flex", flexDirection: "column", gap: "14px"}}>
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">Preview</div>
-            </div>
-            <div className="card-body">
-              <div className="detail-panel" id="create-preview">
-                <div className="detail-row">
-                  <span className="detail-key">Status</span>
-                  <span className="detail-val"><span className="badge pending"><span className="badge-dot"></span>Pending</span></span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Issuer</span>
-                  <span className="detail-val mono" id="preview-issuer">—</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Counterparty</span>
-                  <span className="detail-val mono" id="preview-counterparty">—</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Terms Hash</span>
-                  <span className="detail-val mono" id="preview-hash">—</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-key">Due At</span>
-                  <span className="detail-val" id="preview-dueat">—</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">How it works</div>
-            </div>
-            <div className="card-body" style={{paddingTop: "14px"}}>
-              <div className="timeline">
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot"></div>
-                    <div className="timeline-line"></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Create</div>
-                    <div className="timeline-date">Register the commitment on Stellar</div>
-                  </div>
-                </div>
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot" style={{background: "#d1d1d6", boxShadow: "none"}}></div>
-                    <div className="timeline-line"></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Due Date Arrives</div>
-                    <div className="timeline-date">Commitment becomes attestable</div>
-                  </div>
-                </div>
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot" style={{background: "#d1d1d6", boxShadow: "none"}}></div>
-                    <div className="timeline-line"></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Attest</div>
-                    <div className="timeline-date">Either party attests the outcome</div>
-                  </div>
-                </div>
-                <div className="timeline-item">
-                  <div className="timeline-dot-wrap">
-                    <div className="timeline-dot" style={{background: "#d1d1d6", boxShadow: "none"}}></div>
-                  </div>
-                  <div className="timeline-body">
-                    <div className="timeline-label">Reputation Updated</div>
-                    <div className="timeline-date">Outcome recorded on issuer's history</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CreateCommitmentWizard onSubmit={(payload) => console.log('commitment payload', payload)} />
     </section>
 
 
@@ -803,117 +847,11 @@ export default function App() {
          PAGE: Reputation Lookup
          ────────────────────────────────────────────── */}
     <section className={`page ${activePage === 'reputation' ? 'active' : ''}`} id="page-reputation">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Reputation Lookup</div>
-          <div className="section-sub">Query the on-chain compliance history of any Stellar address</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div>
-          <div className="card" style={{marginBottom: "16px"}}>
-            <div className="card-header">
-              <div className="card-title">Address Lookup</div>
-            </div>
-            <div className="card-body">
-              <div className="form-group">
-                <label className="form-label" htmlFor="rep-address">Stellar Address</label>
-                <input type="text" className="form-input" id="rep-address"
-                       placeholder="G..." autoComplete="off" spellCheck="false" />
-                <div className="form-hint">Enter any address to see their fulfillment track record as an issuer.</div>
-              </div>
-              <button className="btn btn-primary btn-full" id="btn-rep" onClick={() => {}}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="8" cy="5" r="3"/>
-                  <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
-                </svg>
-                <div className="spinner"></div>
-                <span className="btn-text">Get Reputation</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Result Card */}
-          <div className="card" id="rep-result-card" style={{display: "none"}}>
-            <div className="card-header">
-              <div className="card-title">Reputation Score</div>
-            </div>
-            <div className="card-body">
-              <div className="score-ring-wrap">
-                <div className="score-ring">
-                  <svg width="96" height="96" viewBox="0 0 96 96">
-                    <circle className="score-ring-track" cx="48" cy="48" r="40"/>
-                    <circle className="score-ring-fill" id="ring-fill" cx="48" cy="48" r="40"
-                            stroke="var(--green)"
-                            stroke-dasharray="251.2"
-                            stroke-dashoffset="251.2"/>
-                  </svg>
-                  <div className="score-center">
-                    <span className="score-num" id="rep-score-num">0</span>
-                    <span className="score-pct">score</span>
-                  </div>
-                </div>
-                <div className="score-info">
-                  <div className="score-title" id="rep-score-label">—</div>
-                  <div className="score-desc" id="rep-score-desc">Query an address to see their compliance score.</div>
-                </div>
-              </div>
-              <div className="rep-grid">
-                <div className="rep-cell">
-                  <div className="rep-num green" id="rep-fulfilled">0</div>
-                  <div className="rep-lbl">Fulfilled</div>
-                </div>
-                <div className="rep-cell">
-                  <div className="rep-num orange" id="rep-late">0</div>
-                  <div className="rep-lbl">Late</div>
-                </div>
-                <div className="rep-cell">
-                  <div className="rep-num red" id="rep-breached">0</div>
-                  <div className="rep-lbl">Breached</div>
-                </div>
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" id="rep-progress" style={{width: "0%"}}></div>
-              </div>
-              <div style={{display: "flex", justifyContent: "space-between", marginTop: "6px"}}>
-                <span style={{fontSize: "11.5px", color: "var(--text-tertiary)", fontWeight: "500"}}>Fulfillment Rate</span>
-                <span style={{fontSize: "11.5px", fontWeight: "600", color: "var(--text-secondary)"}} id="rep-rate">0%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">How Reputation Works</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="detail-panel">
-              <div className="detail-row">
-                <span className="detail-key">Source</span>
-                <span className="detail-val">On-chain Soroban events indexed by the backend</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Scope</span>
-                <span className="detail-val">Tracks the address as an <strong>issuer</strong> only</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Score</span>
-                <span className="detail-val">Fulfilled / (Fulfilled + Late + Breached) × 100</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Updates</span>
-                <span className="detail-val">Automatically on each attestation or dispute resolution</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Privacy</span>
-                <span className="detail-val">Fully public — anyone can query any address</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ReputationDashboard
+        initialAddress={reputationAddress}
+        onNavigateAddress={(addr) => navigateToReputation(addr)}
+        onLaunchCreate={() => setActivePage('create')}
+      />
     </section>
 
 

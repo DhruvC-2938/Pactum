@@ -18,6 +18,10 @@ pub fn attest(
     id: u64,
     outcome: CommitmentStatus,
 ) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
     // 1. Require authorization from the caller.
     caller.require_auth();
 
@@ -67,9 +71,17 @@ pub fn attest(
 
     // 9. Update reputation (increment).
     crate::reputation::update_reputation(env, commitment.issuer, outcome, true);
+    // 8. Update reputation (increment).
+    crate::reputation::update_reputation(env, commitment.issuer.clone(), outcome, true);
+
+    // 9. Update trust history (increment).
+    crate::trust_score::update_trust_history(env, commitment.issuer.clone(), outcome, true);
 
     // 10. Emit commitment_attested event.
     events::commitment_attested(env, id, outcome);
+
+    // 11. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }
 
 /// Returns true if the commitment is still Pending and current timestamp is past due_at.
@@ -80,6 +92,5 @@ pub fn is_overdue(env: &Env, id: u64) -> bool {
         .get(&DataKey::Commitment(id))
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    commitment.status == CommitmentStatus::Pending
-        && env.ledger().timestamp() > commitment.due_at
+    commitment.status == CommitmentStatus::Pending && env.ledger().timestamp() > commitment.due_at
 }

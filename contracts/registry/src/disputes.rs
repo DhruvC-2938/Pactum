@@ -13,6 +13,10 @@ use soroban_sdk::{panic_with_error, Address, Env};
 /// * Why: Only the participating parties to the commitment have standing to contest
 ///   an attested outcome and initiate a dispute.
 pub fn dispute(env: &Env, caller: Address, id: u64) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
     // 1. Require authorization from the caller.
     caller.require_auth();
 
@@ -30,9 +34,7 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
 
     // 4. Verify commitment is currently Fulfilled, Late, or Breached (i.e. already attested).
     match commitment.status {
-        CommitmentStatus::Fulfilled
-        | CommitmentStatus::Late
-        | CommitmentStatus::Breached => {}
+        CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
         _ => panic_with_error!(env, Error::InvalidTransition),
     }
 
@@ -66,8 +68,14 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
     // 9. Update reputation (decrement previous outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), old_status, false);
 
-    // 10. Emit commitment_disputed event.
+    // 10. Update trust history (decrement previous outcome).
+    crate::trust_score::update_trust_history(env, commitment.issuer.clone(), old_status, false);
+
+    // 11. Emit commitment_disputed event.
     events::commitment_disputed(env, id);
+
+    // 12. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }
 
 /// Resolves a disputed commitment to a final outcome.
@@ -83,6 +91,10 @@ pub fn resolve_dispute(
     id: u64,
     final_outcome: CommitmentStatus,
 ) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
     // 1. Require authorization from the arbitrator.
     arbitrator.require_auth();
 
@@ -98,9 +110,7 @@ pub fn resolve_dispute(
 
     // 3. Reject Pending or Disputed as final_outcome. Must be Fulfilled, Late, or Breached.
     match final_outcome {
-        CommitmentStatus::Fulfilled
-        | CommitmentStatus::Late
-        | CommitmentStatus::Breached => {}
+        CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
         _ => panic_with_error!(env, Error::InvalidOutcome),
     }
 
@@ -133,6 +143,12 @@ pub fn resolve_dispute(
     // 8. Update reputation (increment with final outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), final_outcome, true);
 
-    // 9. Emit dispute_resolved event.
+    // 9. Update trust history (increment with final outcome).
+    crate::trust_score::update_trust_history(env, commitment.issuer.clone(), final_outcome, true);
+
+    // 10. Emit dispute_resolved event.
     events::dispute_resolved(env, id, final_outcome);
+
+    // 11. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }

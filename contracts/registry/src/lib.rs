@@ -5,11 +5,23 @@ pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+mod reentrancy;
 pub mod reputation;
 pub mod voting;
+pub mod trust_gate;
+pub mod trust_score;
+
+#[cfg(test)]
+mod test_trust_score;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod attacker_gate;
+
+#[cfg(test)]
+mod demo;
 
 pub use commitments::DISPUTE_WINDOW_SECONDS;
 use commitments::{Commitment, CommitmentStatus, DataKey, VoteTally};
@@ -36,15 +48,23 @@ impl RegistryContract {
         if env.storage().instance().has(&DataKey::Arbitrator) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
+
+        // Enter the reentrancy guard before any external interaction (including
+        // the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
         arbitrator.require_auth();
         env.storage()
             .instance()
             .set(&DataKey::Arbitrator, &arbitrator);
-        
+
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
+
+        // Release the reentrancy guard.
+        reentrancy::exit(&env);
     }
 
     /// Retrieves the designated arbitrator address.
@@ -52,16 +72,17 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
     pub fn get_arbitrator(env: Env) -> Address {
-        let arbitrator = env.storage()
+        let arbitrator = env
+            .storage()
             .instance()
             .get(&DataKey::Arbitrator)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
-        
+
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
-        
+
         arbitrator
     }
 
@@ -100,6 +121,10 @@ impl RegistryContract {
         attestors: Vec<Address>,
         threshold: u32,
     ) -> u64 {
+        // 0. Enter the reentrancy guard before any external interaction (including
+        //    the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
         // 1. Require authorization from the issuer.
         issuer.require_auth();
 
@@ -134,6 +159,8 @@ impl RegistryContract {
             .instance()
             .get(&DataKey::NextId)
             .unwrap_or(1);
+        // 3. Assign the next available ID.
+        let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
         let next_id = id
             .checked_add(1)
             .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
@@ -170,6 +197,9 @@ impl RegistryContract {
         // 7. Emit Created event.
         events::commitment_created(&env, id, &issuer, &counterparty);
 
+        // 7. Release the reentrancy guard.
+        reentrancy::exit(&env);
+
         id
     }
 
@@ -185,17 +215,18 @@ impl RegistryContract {
     /// # Panics
     /// * Panics with `Error::CommitmentNotFound` if the ID does not exist in storage.
     pub fn get_commitment(env: Env, id: u64) -> Commitment {
-        let commitment = env.storage()
+        let commitment = env
+            .storage()
             .persistent()
             .get(&DataKey::Commitment(id))
             .unwrap_or_else(|| panic_with_error!(&env, Error::CommitmentNotFound));
-        
+
         env.storage().persistent().extend_ttl(
             &DataKey::Commitment(id),
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
-        
+
         commitment
     }
 
@@ -359,5 +390,54 @@ impl RegistryContract {
     pub fn get_reputation(env: Env, address: Address) -> reputation::Reputation {
         reputation::get_reputation(&env, address)
     }
-}
 
+    /// Retrieves the 0..=100 trust score for a given address as an issuer.
+    ///
+    /// The score weights recent outcomes more heavily than old ones via an
+    /// integer, ledger-bucket-based decay curve (half-life of 64 buckets of
+    /// 10,000 ledgers each, full decay after ~3.2 years). Outcomes are
+    /// aggregated per bucket so this runs in O(1) storage reads.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `address` - The address to query.
+    ///
+    /// # Returns
+    /// * `u32` - The trust score in the range 0..=100 (50 = neutral baseline).
+    pub fn get_trust_score(env: Env, address: Address) -> u32 {
+        trust_score::get_trust_score(&env, address)
+    }
+    /// Upgrades the contract to a new WASM binary.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `arbitrator` (via `require_auth`), which must exactly match
+    ///   the designated arbitrator address stored at contract initialization.
+    /// * Why: Only the designated arbitrator (admin) is authorized to upgrade the contract
+    ///   to fix bugs or add features post-launch.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `arbitrator` - The designated arbitrator address initiating the upgrade. Must authorize the call.
+    /// * `new_wasm_hash` - The 32-byte hash of the new WASM binary to deploy.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if the caller is not the designated arbitrator.
+    pub fn upgrade(env: Env, arbitrator: Address, new_wasm_hash: BytesN<32>) {
+        // Verify the caller is the designated arbitrator
+        let stored_arbitrator: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Arbitrator)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+
+        if stored_arbitrator != arbitrator {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+
+        arbitrator.require_auth();
+
+        // Upgrade the contract to the new WASM binary
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+}

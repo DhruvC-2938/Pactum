@@ -966,6 +966,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "Locked"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "NextId"
                             }
                           ]

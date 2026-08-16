@@ -41,5 +41,8 @@ pub enum Error {
     VotingClosed = 17,
     /// The fallback timeout has not elapsed yet or the threshold was already met.
     VotesNotMet = 18,
+    /// A state-mutating registry function was re-entered while a call to
+    /// another state-mutating registry function was already in progress.
+    ReentrantCall = 13,
 }
 

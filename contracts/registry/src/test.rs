@@ -234,16 +234,16 @@ fn test_is_overdue_before_and_after_due_date() {
 
     let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &Vec::new(&env), &0);
 
-    assert_eq!(client.is_overdue(&id), false);
+    assert!(!client.is_overdue(&id));
 
     env.ledger().with_mut(|l| l.timestamp = 2000);
-    assert_eq!(client.is_overdue(&id), false);
+    assert!(!client.is_overdue(&id));
 
     env.ledger().with_mut(|l| l.timestamp = 2001);
-    assert_eq!(client.is_overdue(&id), true);
+    assert!(client.is_overdue(&id));
 
     client.attest(&issuer, &id, &CommitmentStatus::Late);
-    assert_eq!(client.is_overdue(&id), false);
+    assert!(!client.is_overdue(&id));
 }
 
 #[test]
@@ -903,6 +903,27 @@ fn test_create_commitment_rejects_duplicate_attestors() {
     dup.push_back(Address::generate(&env));
 
     let res = client.try_create_commitment(
+// TrustGate Phase B - Reentrancy Hardening
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
+    use crate::attacker_gate::{AttackerGate, AttackerGateClient};
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    use soroban_sdk::IntoVal;
+
+    let (env, client, issuer, counterparty) = setup_test();
+
+    // Register the malicious mock as a real contract (not via mock_auths,
+    // which would silently replace it with a no-op stand-in) so that its
+    // __check_auth implementation is genuinely invoked.
+    let attacker_id = env.register(AttackerGate, ());
+    let attacker_client = AttackerGateClient::new(&env, &attacker_id);
+
+    client.initialize(&attacker_id);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(
         &issuer,
         &counterparty,
         &BytesN::from_array(&env, &[7u8; 32]),
@@ -1025,6 +1046,53 @@ fn test_cast_attestor_vote_fails_for_invalid_outcome() {
 
 #[test]
 fn test_cast_attestor_vote_fails_on_regular_commitment() {
+    );
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    client.dispute(&counterparty, &id);
+
+    attacker_client.init(&client.address, &id);
+
+    // Disable auth mocking and supply a real Address-credentialed auth entry
+    // for the attacker, so the host actually invokes AttackerGate's
+    // __check_auth instead of bypassing it (mocked auths never invoke a
+    // custom account's __check_auth).
+    env.set_auths(&[(&MockAuth {
+        address: &attacker_id,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "resolve_dispute",
+            args: (attacker_id.clone(), id, CommitmentStatus::Fulfilled).into_val(&env),
+            sub_invokes: &[],
+        },
+    })
+        .into()]);
+
+    // Legitimate resolution by the arbitrator. Mid-flight, inside
+    // __check_auth, AttackerGate attempts to re-enter resolve_dispute for
+    // the same commitment to double-process it before the first call has
+    // applied its state changes.
+    client.resolve_dispute(&attacker_id, &id, &CommitmentStatus::Fulfilled);
+
+    // The reentrant call must have been rejected by the reentrancy guard.
+    assert!(
+        attacker_client.reentry_was_blocked(),
+        "diag_code={}",
+        attacker_client.diag_code()
+    );
+
+    // The legitimate call must have completed exactly once, with correct
+    // final state and no double-counted reputation.
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+
+    let rep = client.get_reputation(&issuer);
+    assert_eq!(rep.fulfilled_count, 1);
+    assert_eq!(rep.late_count, 0);
+    assert_eq!(rep.breached_count, 0);
+}
+
+#[test]
+fn test_reentrant_attest_call_is_rejected() {
     let (env, client, issuer, counterparty) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
@@ -1112,6 +1180,36 @@ fn test_finalize_commitment_fails_on_regular_commitment() {
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let id = client.create_commitment(
+    );
+
+    // Simulate a stuck guard (as if a nested call were already in progress)
+    // and verify a top-level mutating call is rejected while it is locked.
+    env.as_contract(&client.address, || {
+        crate::reentrancy::enter(&env);
+    });
+
+    let res = client.try_attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::ReentrantCall.into())));
+
+    env.as_contract(&client.address, || {
+        crate::reentrancy::exit(&env);
+    });
+
+    // Once released, the call succeeds normally.
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+}
+
+#[test]
+fn test_get_trust_score_reflects_outcomes() {
+    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    assert_eq!(client.get_trust_score(&issuer), 50);
+
+    let id1 = client.create_commitment(
         &issuer,
         &counterparty,
         &BytesN::from_array(&env, &[1u8; 32]),
@@ -1203,6 +1301,60 @@ fn test_attest_fails_for_m_of_n_commitment() {
 
     let res2 = client.try_attest(&counterparty, &id, &CommitmentStatus::Breached);
     assert_eq!(res2, Err(Ok(Error::InvalidTransition.into())));
+    );
+    client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
+    assert_eq!(client.get_trust_score(&issuer), 60);
+
+    let id2 = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &2000,
+    );
+    client.attest(&issuer, &id2, &CommitmentStatus::Late);
+    assert_eq!(client.get_trust_score(&issuer), 50);
+
+    let id3 = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &2000,
+    );
+    client.attest(&issuer, &id3, &CommitmentStatus::Breached);
+    assert_eq!(client.get_trust_score(&issuer), 0);
+
+    let _ = arbitrator;
+}
+// Phase 6 - Contract Upgrade Tests
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_upgrade_requires_arbitrator() {
+    let (env, client, _issuer, _counterparty, _arbitrator) = setup_test_with_arbitrator();
+
+    // Use a mock WASM hash for testing authorization logic
+    let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
+    
+    // Should fail when called by non-arbitrator
+    let stranger = Address::generate(&env);
+    let res = client.try_upgrade(&stranger, &mock_wasm_hash);
+    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+    
+    // Note: We cannot test the successful upgrade path without valid WASM bytes.
+    // The Soroban SDK requires actual WASM binary format for upload_contract_wasm.
+    // The authorization logic is verified by the failure test above.
+}
+
+#[test]
+fn test_upgrade_fails_if_not_initialized() {
+    let (env, client, _issuer, _counterparty) = setup_test();
+    let arbitrator = Address::generate(&env);
+    
+    // Use a mock WASM hash for testing
+    let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
+    
+    let res = client.try_upgrade(&arbitrator, &mock_wasm_hash);
+    assert_eq!(res, Err(Ok(Error::NotInitialized.into())));
 }
 
 #[test]
@@ -1291,4 +1443,42 @@ fn test_resolution_and_fallback_events_emitted() {
         CommitmentStatus::from_val(&env, &fallback.2),
         CommitmentStatus::Breached
     );
+fn test_upgrade_requires_auth() {
+    let env = Env::default();
+    let contract_id = env.register(RegistryContract, ());
+    let client = RegistryContractClient::new(&env, &contract_id);
+    let arbitrator = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&arbitrator);
+
+    // Use a mock WASM hash for testing
+    let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
+
+    env.mock_auths(&[]);
+    client.upgrade(&arbitrator, &mock_wasm_hash);
+}
+
+#[test]
+fn test_upgrade_authorization_logic() {
+    let (env, client, issuer, counterparty, _arbitrator) = setup_test_with_arbitrator();
+
+    // Create some state to verify the upgrade function checks authorization
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let due_at = 2000;
+
+    let id1 = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at);
+    client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
+
+    // Verify that non-arbitrator cannot upgrade
+    let stranger = Address::generate(&env);
+    let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let res = client.try_upgrade(&stranger, &mock_wasm_hash);
+    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+    
+    // Verify that the state remains unchanged after failed upgrade attempt
+    let comm = client.get_commitment(&id1);
+    assert_eq!(comm.status, CommitmentStatus::Fulfilled);
+    assert_eq!(comm.id, id1);
 }
