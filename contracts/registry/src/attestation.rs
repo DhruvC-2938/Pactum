@@ -18,6 +18,10 @@ pub fn attest(
     id: u64,
     outcome: CommitmentStatus,
 ) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
     // 1. Require authorization from the caller.
     caller.require_auth();
 
@@ -63,6 +67,9 @@ pub fn attest(
 
     // 9. Emit commitment_attested event.
     events::commitment_attested(env, id, outcome);
+
+    // 10. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }
 
 /// Returns true if the commitment is still Pending and current timestamp is past due_at.

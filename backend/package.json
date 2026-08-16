@@ -8,7 +8,9 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "test": "npm run test:indexer",
-    "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src/indexer -type f -name '*.test.js' -exec node --test {} +"
+    "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src/indexer -type f -name '*.test.js' -exec node --test {} +",
+    "analytics:worker": "node dist/workers/analyticsWorker.js",
+    "migrate:timescale": "node -e \"require('./dist/db/timescale').runMigrations()\""
   },
   "keywords": [],
   "author": "",
