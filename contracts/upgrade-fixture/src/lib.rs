@@ -85,6 +85,7 @@ pub struct Commitment {
     pub status: CommitmentStatus,
     pub created_at: u64,
     pub attested_at: Option<u64>,
+    pub resolver_address: Address,
 }
 
 /// Mirror of `registry::commitments::DataKey`.

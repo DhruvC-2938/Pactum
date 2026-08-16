@@ -555,6 +555,7 @@ fn test_write_path_migrates_lazily() {
         &counterparty,
         &BytesN::from_array(&f.env, &[1u8; 32]),
         &2_000,
+        &f.arbitrator,
     );
     f.client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     assert_eq!(f.client.get_reputation(&issuer).fulfilled_count, 1);
@@ -569,6 +570,7 @@ fn test_write_path_migrates_lazily() {
         &counterparty,
         &BytesN::from_array(&f.env, &[2u8; 32]),
         &3_000,
+        &f.arbitrator,
     );
     f.client.attest(&issuer, &id2, &CommitmentStatus::Late);
 
@@ -595,6 +597,7 @@ fn test_v2_write_path_decrements_direct_count_on_dispute() {
         &counterparty,
         &BytesN::from_array(&f.env, &[3u8; 32]),
         &2_000,
+        &f.arbitrator,
     );
     f.client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     assert_eq!(raw_v2(&f, &issuer).unwrap().direct_count, 1);
@@ -623,7 +626,7 @@ fn test_commitments_are_untouched_by_the_schema_switch() {
     let terms = BytesN::from_array(&f.env, &[9u8; 32]);
     let id = f
         .client
-        .create_commitment(&issuer, &counterparty, &terms, &2_000);
+        .create_commitment(&issuer, &counterparty, &terms, &2_000, &f.arbitrator);
     let before = f.client.get_commitment(&id);
 
     force_schema_v2(&f);
@@ -699,6 +702,7 @@ mod wasm {
                 counterparty,
                 &BytesN::from_array(&f.env, &[i as u8; 32]),
                 &2_000,
+                &f.arbitrator,
             );
             f.client.attest(issuer, &id, outcome);
         }
@@ -752,7 +756,7 @@ mod wasm {
         let terms = BytesN::from_array(&f.env, &[42u8; 32]);
         let id = f
             .client
-            .create_commitment(&issuer, &counterparty, &terms, &2_000);
+            .create_commitment(&issuer, &counterparty, &terms, &2_000, &f.arbitrator);
 
         let new_hash = f
             .env

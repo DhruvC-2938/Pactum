@@ -723,6 +723,7 @@ mod wasm {
             &counterparty,
             &hash(&g.env, 0x11),
             &(START + 100_000),
+            &g.arbitrator,
         );
         g.registry.attest(
             &issuer,
