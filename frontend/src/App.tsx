@@ -4,11 +4,43 @@ import { useState } from 'react'
 import './App.css'
 import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
+import { useCommitments } from './hooks/useCommitments'
+import { useReputation } from './hooks/useReputation'
+import type { Commitment, CommitmentStatus } from './lib/api'
+
+function renderCommitmentItem(commitment: Commitment) {
+  return (
+    <div className="commitment-item" key={commitment.id}>
+      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
+        {commitment.issuer.charAt(0)}
+      </div>
+      <div className="commitment-info">
+        <div className="commitment-id">Commitment #{commitment.id}</div>
+        <div className="commitment-parties">
+          {commitment.issuer} &rarr; {commitment.counterparty}
+        </div>
+        <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
+      </div>
+      <div className="commitment-status">
+        <span className={`badge ${commitment.status.toLowerCase()}`}>
+          <span className="badge-dot"></span>
+          {commitment.status}
+        </span>
+      </div>
+    </div>
+  )
+}
 
 export default function App() {
 
   const [activePage, setActivePage] = useState('landing');
-  
+  const [repInput, setRepInput] = useState('');
+  const [repAddress, setRepAddress] = useState('');
+  const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
+
+  const reputationQuery = useReputation(repAddress);
+  const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
+
   if (activePage === 'landing') {
     return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
   }
@@ -374,10 +406,20 @@ export default function App() {
         </div>
         <div style={{display: "flex", gap: "10px", alignItems: "center"}}>
           <div className="tabs" id="filter-tabs">
-            <button className="tab-btn active" onClick={() => {}}>All</button>
-            <button className="tab-btn" onClick={() => {}}>Pending</button>
-            <button className="tab-btn" onClick={() => {}}>Fulfilled</button>
-            <button className="tab-btn" onClick={() => {}}>Breached</button>
+            {[
+              { label: 'All', value: undefined as CommitmentStatus | undefined },
+              { label: 'Pending', value: 'Pending' as CommitmentStatus },
+              { label: 'Fulfilled', value: 'Fulfilled' as CommitmentStatus },
+              { label: 'Breached', value: 'Breached' as CommitmentStatus },
+            ].map((tab) => (
+              <button
+                key={tab.label}
+                className={`tab-btn ${commitmentStatus === tab.value ? 'active' : ''}`}
+                onClick={() => setCommitmentStatus(tab.value)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => {}}>
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -387,7 +429,15 @@ export default function App() {
           </button>
         </div>
       </div>
-      <div className="commitment-list" id="commitments-list-page"></div>
+      <div className="commitment-list" id="commitments-list-page">
+        {commitmentsQuery.isLoading && (
+          <div className="inline-alert info">Loading commitments...</div>
+        )}
+        {commitmentsQuery.isError && (
+          <div className="inline-alert warning">Failed to load commitments from the backend.</div>
+        )}
+        {commitmentsQuery.data?.map(renderCommitmentItem)}
+      </div>
     </section>
 
 
@@ -820,10 +870,11 @@ export default function App() {
               <div className="form-group">
                 <label className="form-label" htmlFor="rep-address">Stellar Address</label>
                 <input type="text" className="form-input" id="rep-address"
-                       placeholder="G..." autoComplete="off" spellCheck="false" />
+                       placeholder="G..." autoComplete="off" spellCheck="false"
+                       value={repInput} onChange={(e) => setRepInput(e.target.value)} />
                 <div className="form-hint">Enter any address to see their fulfillment track record as an issuer.</div>
               </div>
-              <button className="btn btn-primary btn-full" id="btn-rep" onClick={() => {}}>
+              <button className="btn btn-primary btn-full" id="btn-rep" onClick={() => setRepAddress(repInput.trim())}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="8" cy="5" r="3"/>
                   <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
@@ -835,51 +886,66 @@ export default function App() {
           </div>
 
           {/* Result Card */}
-          <div className="card" id="rep-result-card" style={{display: "none"}}>
+          <div className="card" id="rep-result-card" style={{ display: repAddress ? 'block' : 'none' }}>
             <div className="card-header">
               <div className="card-title">Reputation Score</div>
             </div>
             <div className="card-body">
-              <div className="score-ring-wrap">
-                <div className="score-ring">
-                  <svg width="96" height="96" viewBox="0 0 96 96">
-                    <circle className="score-ring-track" cx="48" cy="48" r="40"/>
-                    <circle className="score-ring-fill" id="ring-fill" cx="48" cy="48" r="40"
-                            stroke="var(--green)"
-                            stroke-dasharray="251.2"
-                            stroke-dashoffset="251.2"/>
-                  </svg>
-                  <div className="score-center">
-                    <span className="score-num" id="rep-score-num">0</span>
-                    <span className="score-pct">score</span>
-                  </div>
-                </div>
-                <div className="score-info">
-                  <div className="score-title" id="rep-score-label">—</div>
-                  <div className="score-desc" id="rep-score-desc">Query an address to see their compliance score.</div>
-                </div>
-              </div>
-              <div className="rep-grid">
-                <div className="rep-cell">
-                  <div className="rep-num green" id="rep-fulfilled">0</div>
-                  <div className="rep-lbl">Fulfilled</div>
-                </div>
-                <div className="rep-cell">
-                  <div className="rep-num orange" id="rep-late">0</div>
-                  <div className="rep-lbl">Late</div>
-                </div>
-                <div className="rep-cell">
-                  <div className="rep-num red" id="rep-breached">0</div>
-                  <div className="rep-lbl">Breached</div>
-                </div>
-              </div>
-              <div className="progress-bar">
-                <div className="progress-fill" id="rep-progress" style={{width: "0%"}}></div>
-              </div>
-              <div style={{display: "flex", justifyContent: "space-between", marginTop: "6px"}}>
-                <span style={{fontSize: "11.5px", color: "var(--text-tertiary)", fontWeight: "500"}}>Fulfillment Rate</span>
-                <span style={{fontSize: "11.5px", fontWeight: "600", color: "var(--text-secondary)"}} id="rep-rate">0%</span>
-              </div>
+              {reputationQuery.isLoading && (
+                <div className="inline-alert info">Loading reputation for {repAddress}...</div>
+              )}
+              {reputationQuery.isError && (
+                <div className="inline-alert warning">Failed to load reputation for {repAddress}.</div>
+              )}
+              {reputationQuery.data && (() => {
+                const score = Math.round((reputationQuery.data.fulfilled / (reputationQuery.data.total || 1)) * 100)
+                const ringOffset = 251.2 * (1 - score / 100)
+                const rating = score >= 80 ? 'Excellent track record' : score >= 50 ? 'Average track record' : 'Poor track record'
+                return (
+                  <>
+                    <div className="score-ring-wrap">
+                      <div className="score-ring">
+                        <svg width="96" height="96" viewBox="0 0 96 96">
+                          <circle className="score-ring-track" cx="48" cy="48" r="40"/>
+                          <circle className="score-ring-fill" id="ring-fill" cx="48" cy="48" r="40"
+                                  stroke="var(--green)"
+                                  stroke-dasharray="251.2"
+                                  stroke-dashoffset={ringOffset}/>
+                        </svg>
+                        <div className="score-center">
+                          <span className="score-num" id="rep-score-num">{score}</span>
+                          <span className="score-pct">score</span>
+                        </div>
+                      </div>
+                      <div className="score-info">
+                        <div className="score-title" id="rep-score-label">{reputationQuery.data.address}</div>
+                        <div className="score-desc" id="rep-score-desc">{rating} across {reputationQuery.data.total} commitment(s).</div>
+                      </div>
+                    </div>
+                    <div className="rep-grid">
+                      <div className="rep-cell">
+                        <div className="rep-num green" id="rep-fulfilled">{reputationQuery.data.fulfilled}</div>
+                        <div className="rep-lbl">Fulfilled</div>
+                      </div>
+                      <div className="rep-cell">
+                        <div className="rep-num orange" id="rep-late">{reputationQuery.data.late}</div>
+                        <div className="rep-lbl">Late</div>
+                      </div>
+                      <div className="rep-cell">
+                        <div className="rep-num red" id="rep-breached">{reputationQuery.data.breached}</div>
+                        <div className="rep-lbl">Breached</div>
+                      </div>
+                    </div>
+                    <div className="progress-bar">
+                      <div className="progress-fill" id="rep-progress" style={{ width: `${score}%` }}></div>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
+                      <span style={{ fontSize: "11.5px", color: "var(--text-tertiary)", fontWeight: "500" }}>Fulfillment Rate</span>
+                      <span style={{ fontSize: "11.5px", fontWeight: "600", color: "var(--text-secondary)" }} id="rep-rate">{score}%</span>
+                    </div>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>
