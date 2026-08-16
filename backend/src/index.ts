@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import commitmentsRouter from './routes/commitments';
 import reputationRouter from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
+import { startSnapshotCron } from './indexer/cron';
 
 dotenv.config();
 const app = express();
@@ -21,6 +22,10 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/commitments', commitmentsRouter);
 app.use('/reputation', reputationRouter);
 app.use('/api/analytics', analyticsRoutes);
+
+if (process.env.REPUTATION_SNAPSHOT_CRON !== 'off') {
+  startSnapshotCron();
+}
 
 app.listen(port, () => {
   console.log(`[server]: Pactum Backend running at http://localhost:${port}`);
