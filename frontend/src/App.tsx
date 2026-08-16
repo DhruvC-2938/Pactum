@@ -337,9 +337,6 @@ export default function App() {
     {/* Inline On-Screen Wallet Error / Installation Alert Banner */}
     <InlineWalletError />
 
-    {/* Toast Container */}
-    <div className="toast-container" id="toast-container"></div>
-
     {/* ──────────────────────────────────────────────
          PAGE: Dashboard
          ────────────────────────────────────────────── */}
