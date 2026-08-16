@@ -81,6 +81,7 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Backend API | Node.js + TypeScript + Express |
 | Indexer | Soroban RPC event listener |
 | Database | PostgreSQL + TimescaleDB (time-series analytics) |
+| Cache | Redis (optional read cache for reputation lookups) |
 | SDK | TypeScript, published as `@pactum/sdk` |
 | ZK proofs | Circom 2 + snarkjs (Groth16 over BN254) |
 | Testing | Cargo test (contract) · Jest (backend) · `node --test` (zk) |
@@ -157,7 +158,7 @@ npm run analytics:worker
 - [ ] Per-address reputation aggregation
 - [ ] Oracle-based auto-attestation for measurable commitments (e.g. uptime feeds)
 - [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
-- [ ] Public reputation lookup API
+- [x] Public reputation lookup API
 - [ ] JS/TS SDK (`@pactum/sdk`)
 - [ ] Marketplace integration example (check a counterparty's history before a deal)
 - [ ] Rate limiting & spam-commitment protections
