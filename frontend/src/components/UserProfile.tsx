@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { resolveIdentity, truncateAddress, type StellarIdentity } from '../lib/identity';
+import { Copy, Check } from 'lucide-react';
 
 export interface UserProfileProps {
   address: string;
@@ -96,7 +97,6 @@ export const UserProfile: React.FC<UserProfileProps> = ({
               alt={displayName}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               onError={(e) => {
-                // Fallback to letter avatar on image load error
                 (e.currentTarget as HTMLElement).style.display = 'none';
               }}
             />
@@ -135,7 +135,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           </span>
         )}
 
-        {/* Copy Icon Button */}
+        {/* Lucide Copy Icon */}
         <button
           onClick={handleCopy}
           style={{
@@ -143,16 +143,16 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             border: 'none',
             color: copied ? '#16a34a' : '#94a3b8',
             cursor: 'pointer',
-            fontSize: '11px',
             padding: '2px 4px',
             borderRadius: '4px',
             display: 'inline-flex',
             alignItems: 'center',
+            justifyContent: 'center',
             transition: 'color 0.15s ease'
           }}
           title={copied ? 'Copied address!' : 'Copy full address'}
         >
-          {copied ? '✓' : '📋'}
+          {copied ? <Check size={13} color="#16a34a" /> : <Copy size={13} />}
         </button>
       </div>
     </div>
