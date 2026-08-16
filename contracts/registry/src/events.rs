@@ -27,6 +27,14 @@ pub fn commitment_attested(
     );
 }
 
+/// Publishes an event when a single milestone of a multi-milestone commitment
+/// is attested. The commitment as a whole stays `Pending` until the final
+/// milestone lands, at which point `commitment_attested` also fires.
+pub fn milestone_attested(env: &Env, id: u64, milestone_index: u32, status: CommitmentStatus) {
+    env.events()
+        .publish((symbol_short!("milestone"), id), (milestone_index, status));
+}
+
 /// Publishes an event when a commitment is disputed by a party.
 pub fn commitment_disputed(
     env: &Env,
