@@ -6,14 +6,15 @@ pub mod disputes;
 pub mod errors;
 pub mod events;
 pub mod reputation;
+pub mod voting;
 
 #[cfg(test)]
 mod test;
 
 pub use commitments::DISPUTE_WINDOW_SECONDS;
-use commitments::{Commitment, CommitmentStatus, DataKey};
+use commitments::{Commitment, CommitmentStatus, DataKey, VoteTally};
 use errors::Error;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Vec};
 
 /// The Pactum Registry contract for recording and tracking recurring commitments.
 #[contract]
@@ -77,18 +78,27 @@ impl RegistryContract {
     /// * `counterparty` - The address to whom the commitment is owed.
     /// * `terms_hash` - A 32-byte hash representing the off-chain terms of the commitment.
     /// * `due_at` - Unix timestamp (seconds) when the commitment is due. Must be in the future.
+    /// * `attestors` - The dynamically sized list of attestors assigned to adjudicate the
+    ///   outcome via M-of-N voting. Pass an empty list for regular single-party commitments.
+    /// * `threshold` - The number of attestor votes required to resolve the commitment (M in M-of-N).
+    ///   Must be `0` when `attestors` is empty, and between `1` and `attestors.len()` otherwise.
     ///
     /// # Returns
     /// * `u64` - The unique identifier assigned to the created commitment.
     ///
     /// # Panics
     /// * Panics with `Error::DueAtInPast` if `due_at` is less than or equal to the current ledger timestamp.
+    /// * Panics with `Error::ThresholdInvalid` if `threshold` is `0` while attestors are assigned,
+    ///   or greater than the number of attestors.
+    /// * Panics with `Error::DuplicateAttestor` if the attestor list contains duplicate addresses.
     pub fn create_commitment(
         env: Env,
         issuer: Address,
         counterparty: Address,
         terms_hash: BytesN<32>,
         due_at: u64,
+        attestors: Vec<Address>,
+        threshold: u32,
     ) -> u64 {
         // 1. Require authorization from the issuer.
         issuer.require_auth();
@@ -99,7 +109,26 @@ impl RegistryContract {
             panic_with_error!(&env, Error::DueAtInPast);
         }
 
-        // 3. Assign the next available ID.
+        // 3. Validate the M-of-N configuration.
+        if attestors.is_empty() {
+            if threshold != 0 {
+                panic_with_error!(&env, Error::ThresholdInvalid);
+            }
+        } else {
+            if threshold == 0 || threshold > attestors.len() {
+                panic_with_error!(&env, Error::ThresholdInvalid);
+            }
+            for i in 0..attestors.len() {
+                let candidate = attestors.get_unchecked(i);
+                for j in (i + 1)..attestors.len() {
+                    if candidate == attestors.get_unchecked(j) {
+                        panic_with_error!(&env, Error::DuplicateAttestor);
+                    }
+                }
+            }
+        }
+
+        // 4. Assign the next available ID.
         let id: u64 = env
             .storage()
             .instance()
@@ -114,7 +143,7 @@ impl RegistryContract {
             commitments::TTL_EXTEND_LEDGERS,
         );
 
-        // 4. Create the Commitment object with Pending status.
+        // 5. Create the Commitment object with Pending status.
         let commitment = Commitment {
             id,
             issuer: issuer.clone(),
@@ -124,9 +153,11 @@ impl RegistryContract {
             status: CommitmentStatus::Pending,
             created_at: now,
             attested_at: None,
+            attestors,
+            threshold,
         };
 
-        // 5. Store in persistent storage keyed by id and extend TTL.
+        // 6. Store in persistent storage keyed by id and extend TTL.
         env.storage()
             .persistent()
             .set(&DataKey::Commitment(id), &commitment);
@@ -136,7 +167,7 @@ impl RegistryContract {
             commitments::TTL_EXTEND_LEDGERS,
         );
 
-        // 6. Emit Created event.
+        // 7. Emit Created event.
         events::commitment_created(&env, id, &issuer, &counterparty);
 
         id
@@ -204,6 +235,79 @@ impl RegistryContract {
     /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
     pub fn is_overdue(env: Env, id: u64) -> bool {
         attestation::is_overdue(&env, id)
+    }
+
+    /// Casts an attestor vote on an M-of-N commitment, tallying it securely.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `caller` (via `require_auth`), which must be one of the
+    ///   commitment's assigned `attestors`.
+    /// * Why: Only assigned attestors are permitted to vote on the commitment's outcome.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `caller` - The attestor casting the vote. Must authorize the call.
+    /// * `id` - The unique identifier of the commitment.
+    /// * `outcome` - The attested outcome (`Fulfilled`, `Late`, or `Breached`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotAttestor` if `caller` is not an assigned attestor.
+    /// * Panics with `Error::AlreadyVoted` if the attestor has already voted.
+    /// * Panics with `Error::VotingClosed` if the vote is cast after `due_at + timeout`.
+    /// * Panics with `Error::InvalidOutcome` if `outcome` is `Pending` or `Disputed`.
+    /// * Panics with `Error::AlreadyResolved` if the commitment is no longer `Pending`.
+    pub fn cast_attestor_vote(
+        env: Env,
+        caller: Address,
+        id: u64,
+        outcome: CommitmentStatus,
+    ) {
+        voting::cast_attestor_vote(&env, caller, id, outcome);
+    }
+
+    /// Resolves an M-of-N commitment to the predefined fallback state if the vote
+    /// threshold was not reached by `due_at + ATTESTOR_VOTE_TIMEOUT_SECONDS`.
+    ///
+    /// Callable by anyone so a stalled commitment can always be unblocked,
+    /// preventing locked funds/state.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `id` - The unique identifier of the commitment.
+    ///
+    /// # Panics
+    /// * Panics with `Error::VotesNotMet` if called before the deadline has elapsed.
+    /// * Panics with `Error::AlreadyResolved` if the commitment is no longer `Pending`.
+    pub fn finalize_commitment(env: Env, id: u64) {
+        voting::finalize_commitment(&env, id);
+    }
+
+    /// Returns the running vote tally for an M-of-N commitment.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `id` - The unique identifier of the commitment.
+    ///
+    /// # Returns
+    /// * `VoteTally` - The per-outcome vote counts (`fulfilled`, `late`, `breached`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
+    pub fn get_vote_tally(env: Env, id: u64) -> VoteTally {
+        voting::get_vote_tally(&env, id)
+    }
+
+    /// Checks whether an M-of-N commitment can be finalized to its fallback state
+    /// (the timeout has elapsed and the threshold was not met).
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `id` - The unique identifier of the commitment.
+    ///
+    /// # Returns
+    /// * `bool` - True if the fallback timeout has elapsed with the threshold unmet.
+    pub fn can_finalize_commitment(env: Env, id: u64) -> bool {
+        voting::can_finalize_commitment(&env, id)
     }
 
     /// Raises a dispute on an attested commitment within the dispute window.

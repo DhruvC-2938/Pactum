@@ -49,3 +49,43 @@ pub fn dispute_resolved(
     );
 }
 
+/// Publishes an event when an attestor casts a vote on an M-of-N commitment.
+pub fn attestor_vote_cast(
+    env: &Env,
+    id: u64,
+    attestor: &Address,
+    outcome: CommitmentStatus,
+    tally: u32,
+    threshold: u32,
+) {
+    env.events().publish(
+        (symbol_short!("voted"), id, attestor.clone()),
+        (outcome, tally, threshold),
+    );
+}
+
+/// Publishes an event when an M-of-N commitment reaches its threshold and resolves.
+pub fn commitment_resolved(
+    env: &Env,
+    id: u64,
+    outcome: CommitmentStatus,
+) {
+    env.events().publish(
+        (symbol_short!("vresolved"), id),
+        outcome,
+    );
+}
+
+/// Publishes an event when an M-of-N commitment falls back to a predefined
+/// fallback state because the vote threshold was not reached in time.
+pub fn commitment_fallback(
+    env: &Env,
+    id: u64,
+    fallback_status: CommitmentStatus,
+) {
+    env.events().publish(
+        (symbol_short!("fallback"), id),
+        fallback_status,
+    );
+}
+

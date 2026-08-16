@@ -29,5 +29,17 @@ pub enum Error {
     NotAuthorized = 11,
     /// Numerical overflow occurred when calculating ID or timestamps.
     Overflow = 12,
+    /// The caller is not one of the assigned attestors for the commitment.
+    NotAttestor = 13,
+    /// The attestor has already cast a vote on this commitment.
+    AlreadyVoted = 14,
+    /// The M-of-N threshold is invalid (zero, or greater than the number of attestors).
+    ThresholdInvalid = 15,
+    /// The attestor list contains duplicate addresses.
+    DuplicateAttestor = 16,
+    /// The attestor voting window has closed (`now > due_at + timeout`).
+    VotingClosed = 17,
+    /// The fallback timeout has not elapsed yet or the threshold was already met.
+    VotesNotMet = 18,
 }
 
