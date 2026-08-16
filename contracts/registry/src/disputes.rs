@@ -13,6 +13,10 @@ use soroban_sdk::{panic_with_error, Address, Env};
 /// * Why: Only the participating parties to the commitment have standing to contest
 ///   an attested outcome and initiate a dispute.
 pub fn dispute(env: &Env, caller: Address, id: u64) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
     // 1. Require authorization from the caller.
     caller.require_auth();
 
@@ -68,6 +72,9 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
 
     // 10. Emit commitment_disputed event.
     events::commitment_disputed(env, id);
+
+    // 11. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }
 
 /// Resolves a disputed commitment to a final outcome.
@@ -83,6 +90,10 @@ pub fn resolve_dispute(
     id: u64,
     final_outcome: CommitmentStatus,
 ) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
     // 1. Require authorization from the arbitrator.
     arbitrator.require_auth();
 
@@ -135,4 +146,7 @@ pub fn resolve_dispute(
 
     // 9. Emit dispute_resolved event.
     events::dispute_resolved(env, id, final_outcome);
+
+    // 10. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }

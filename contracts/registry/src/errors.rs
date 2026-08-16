@@ -29,5 +29,8 @@ pub enum Error {
     NotAuthorized = 11,
     /// Numerical overflow occurred when calculating ID or timestamps.
     Overflow = 12,
+    /// A state-mutating registry function was re-entered while a call to
+    /// another state-mutating registry function was already in progress.
+    ReentrantCall = 13,
 }
 

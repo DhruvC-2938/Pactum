@@ -792,6 +792,144 @@ fn test_realistic_sequence() {
 }
 
 // -----------------------------------------------------------------------------
+// TrustGate Phase B - Reentrancy Hardening
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
+    use crate::attacker_gate::{AttackerGate, AttackerGateClient};
+    use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+    use soroban_sdk::IntoVal;
+
+    let (env, client, issuer, counterparty) = setup_test();
+
+    // Register the malicious mock as a real contract (not via mock_auths,
+    // which would silently replace it with a no-op stand-in) so that its
+    // __check_auth implementation is genuinely invoked.
+    let attacker_id = env.register(AttackerGate, ());
+    let attacker_client = AttackerGateClient::new(&env, &attacker_id);
+
+    client.initialize(&attacker_id);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[7u8; 32]),
+        &2000,
+    );
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    client.dispute(&counterparty, &id);
+
+    attacker_client.init(&client.address, &id);
+
+    // Disable auth mocking and supply a real Address-credentialed auth entry
+    // for the attacker, so the host actually invokes AttackerGate's
+    // __check_auth instead of bypassing it (mocked auths never invoke a
+    // custom account's __check_auth).
+    env.set_auths(&[(&MockAuth {
+        address: &attacker_id,
+        invoke: &MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "resolve_dispute",
+            args: (attacker_id.clone(), id, CommitmentStatus::Fulfilled).into_val(&env),
+            sub_invokes: &[],
+        },
+    })
+        .into()]);
+
+    // Legitimate resolution by the arbitrator. Mid-flight, inside
+    // __check_auth, AttackerGate attempts to re-enter resolve_dispute for
+    // the same commitment to double-process it before the first call has
+    // applied its state changes.
+    client.resolve_dispute(&attacker_id, &id, &CommitmentStatus::Fulfilled);
+
+    // The reentrant call must have been rejected by the reentrancy guard.
+    assert!(
+        attacker_client.reentry_was_blocked(),
+        "diag_code={}",
+        attacker_client.diag_code()
+    );
+
+    // The legitimate call must have completed exactly once, with correct
+    // final state and no double-counted reputation.
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+
+    let rep = client.get_reputation(&issuer);
+    assert_eq!(rep.fulfilled_count, 1);
+    assert_eq!(rep.late_count, 0);
+    assert_eq!(rep.breached_count, 0);
+}
+
+#[test]
+fn test_reentrant_attest_call_is_rejected() {
+    let (env, client, issuer, counterparty) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &2000,
+    );
+
+    // Simulate a stuck guard (as if a nested call were already in progress)
+    // and verify a top-level mutating call is rejected while it is locked.
+    env.as_contract(&client.address, || {
+        crate::reentrancy::enter(&env);
+    });
+
+    let res = client.try_attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::ReentrantCall.into())));
+
+    env.as_contract(&client.address, || {
+        crate::reentrancy::exit(&env);
+    });
+
+    // Once released, the call succeeds normally.
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+}
+
+#[test]
+fn test_get_trust_score_reflects_weighted_outcomes() {
+    let (env, client, issuer, counterparty, arbitrator) = setup_test_with_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    assert_eq!(client.get_trust_score(&issuer), 0);
+
+    let id1 = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &2000,
+    );
+    client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
+    assert_eq!(client.get_trust_score(&issuer), 2);
+
+    let id2 = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &2000,
+    );
+    client.attest(&issuer, &id2, &CommitmentStatus::Late);
+    assert_eq!(client.get_trust_score(&issuer), 1);
+
+    let id3 = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[3u8; 32]),
+        &2000,
+    );
+    client.attest(&issuer, &id3, &CommitmentStatus::Breached);
+    assert_eq!(client.get_trust_score(&issuer), -2);
+
+    let _ = arbitrator;
+}
 // Phase 6 - Contract Upgrade Tests
 // -----------------------------------------------------------------------------
 
