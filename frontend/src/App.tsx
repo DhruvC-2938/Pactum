@@ -11,6 +11,7 @@ import WalletConnectButton from './components/WalletConnectButton'
 import { useCommitments } from './hooks/useCommitments'
 import type { Commitment, CommitmentStatus } from './lib/api'
 import { useWallet } from './context/WalletContext'
+import { Menu, X, User } from 'lucide-react'
 
 function renderCommitmentItem(commitment: Commitment) {
   return (
@@ -46,10 +47,27 @@ export default function App() {
 
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
+  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
+  const wallet = useWallet();
 
-  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
+  const handleNavigateReputation = (addr: string) => {
+    setReputationAddress(addr);
+    setActivePage('reputation');
+    setIsMobileMenuOpen(false);
+    window.history.pushState({}, '', `/reputation/${addr}`);
+  };
+
+  const handleMyProfile = () => {
+    if (wallet.address) {
+      handleNavigateReputation(wallet.address);
+    } else {
+      setActivePage('reputation');
+      setIsMobileMenuOpen(false);
+    }
+  };
 
   useEffect(() => {
     const handleUrlChange = () => {
@@ -68,11 +86,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', handleUrlChange);
   }, []);
 
-  const navigateToReputation = (addr: string) => {
-    setReputationAddress(addr);
-    setActivePage('reputation');
-    window.history.pushState({}, '', `/reputation/${addr}`);
-  };
   if (activePage === 'landing') {
     return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
   }
@@ -83,11 +96,27 @@ export default function App() {
 
   return (
     <>
+      {/* Mobile Drawer Backdrop Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="mobile-backdrop"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       <div className="app-shell">
 
-        {/* ── Sidebar ── */}
-        <aside className="sidebar">
-          <div className="sidebar-logo" onClick={() => setActivePage('landing')} style={{ cursor: 'pointer' }} title="Go to Home Page">
+        {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
+        <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
+          <div
+            className="sidebar-logo"
+            onClick={() => {
+              setActivePage('landing');
+              setIsMobileMenuOpen(false);
+            }}
+            style={{ cursor: 'pointer' }}
+            title="Go to Home Page"
+          >
             <div className="logo-mark">
               <div className="logo-icon">
                 <svg viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
@@ -102,7 +131,14 @@ export default function App() {
           <nav className="sidebar-nav">
             <span className="nav-section-label">Overview</span>
 
-            <button className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`} id="nav-dashboard" onClick={() => setActivePage('dashboard')}>
+            <button
+              className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
+              id="nav-dashboard"
+              onClick={() => {
+                setActivePage('dashboard');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="1" y="1" width="6" height="6" rx="1.5" />
@@ -114,7 +150,14 @@ export default function App() {
               Dashboard
             </button>
 
-            <button className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`} id="nav-commitments" onClick={() => setActivePage('commitments')}>
+            <button
+              className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`}
+              id="nav-commitments"
+              onClick={() => {
+                setActivePage('commitments');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M2 4h12M2 8h12M2 12h8" />
@@ -126,7 +169,14 @@ export default function App() {
 
             <span className="nav-section-label">Actions</span>
 
-            <button className={`nav-item ${activePage === 'create' ? 'active' : ''}`} id="nav-create" onClick={() => setActivePage('create')}>
+            <button
+              className={`nav-item ${activePage === 'create' ? 'active' : ''}`}
+              id="nav-create"
+              onClick={() => {
+                setActivePage('create');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
                   <path d="M8 2v12M2 8h12" />
@@ -135,7 +185,14 @@ export default function App() {
               Create Commitment
             </button>
 
-            <button className={`nav-item ${activePage === 'attest' ? 'active' : ''}`} id="nav-attest" onClick={() => setActivePage('attest')}>
+            <button
+              className={`nav-item ${activePage === 'attest' ? 'active' : ''}`}
+              id="nav-attest"
+              onClick={() => {
+                setActivePage('attest');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M2.5 8.5l3.5 3.5 7.5-7.5" />
@@ -144,7 +201,14 @@ export default function App() {
               Attest
             </button>
 
-            <button className={`nav-item ${activePage === 'dispute' ? 'active' : ''}`} id="nav-dispute" onClick={() => setActivePage('dispute')}>
+            <button
+              className={`nav-item ${activePage === 'dispute' ? 'active' : ''}`}
+              id="nav-dispute"
+              onClick={() => {
+                setActivePage('dispute');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M8 2L1 14h14L8 2z" />
@@ -154,7 +218,14 @@ export default function App() {
               Raise Dispute
             </button>
 
-            <button className={`nav-item ${activePage === 'resolve' ? 'active' : ''}`} id="nav-resolve" onClick={() => setActivePage('resolve')}>
+            <button
+              className={`nav-item ${activePage === 'resolve' ? 'active' : ''}`}
+              id="nav-resolve"
+              onClick={() => {
+                setActivePage('resolve');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="8" cy="8" r="6" />
@@ -164,9 +235,27 @@ export default function App() {
               Resolve Dispute
             </button>
 
-            <span className="nav-section-label">Lookup</span>
+            <span className="nav-section-label">Lookup & Profile</span>
 
-            <button className={`nav-item ${activePage === 'reputation' ? 'active' : ''}`} id="nav-reputation" onClick={() => setActivePage('reputation')}>
+            <button
+              className="nav-item"
+              id="nav-my-profile"
+              onClick={handleMyProfile}
+            >
+              <span className="nav-icon">
+                <User size={16} />
+              </span>
+              My Profile
+            </button>
+
+            <button
+              className={`nav-item ${activePage === 'reputation' ? 'active' : ''}`}
+              id="nav-reputation"
+              onClick={() => {
+                setActivePage('reputation');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="8" cy="5" r="3" />
@@ -176,7 +265,14 @@ export default function App() {
               Reputation Lookup
             </button>
 
-            <button className={`nav-item ${activePage === 'lookup' ? 'active' : ''}`} id="nav-lookup" onClick={() => setActivePage('lookup')}>
+            <button
+              className={`nav-item ${activePage === 'lookup' ? 'active' : ''}`}
+              id="nav-lookup"
+              onClick={() => {
+                setActivePage('lookup');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
                   <circle cx="6.5" cy="6.5" r="4.5" />
@@ -188,7 +284,31 @@ export default function App() {
 
             <span className="nav-section-label">System</span>
 
-            <button className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`} id="nav-initialize" onClick={() => setActivePage('initialize')}>
+            <button
+              className={`nav-item ${activePage === 'docs' ? 'active' : ''}`}
+              id="nav-docs"
+              onClick={() => {
+                setActivePage('docs');
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <span className="nav-icon">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 2.5h10a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1z" />
+                  <path d="M5 5.5h6M5 8.5h6M5 11.5h4" />
+                </svg>
+              </span>
+              Docs
+            </button>
+
+            <button
+              className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`}
+              id="nav-initialize"
+              onClick={() => {
+                setActivePage('initialize');
+                setIsMobileMenuOpen(false);
+              }}
+            >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="8" cy="8" r="2.5" />
@@ -203,7 +323,10 @@ export default function App() {
             <button
               className="nav-item"
               style={{ width: '100%', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}
-              onClick={() => setActivePage('landing')}
+              onClick={() => {
+                setActivePage('landing');
+                setIsMobileMenuOpen(false);
+              }}
             >
               <span className="nav-icon">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -226,9 +349,19 @@ export default function App() {
 
           {/* Topbar */}
           <header className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {/* Mobile Hamburger Toggle Button */}
+              <button
+                className="hamburger-btn"
+                onClick={() => setIsMobileMenuOpen((prev: boolean) => !prev)}
+                aria-label="Toggle Navigation Menu"
+              >
+                {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+
               <button
                 onClick={() => setActivePage('landing')}
+                className="topbar-home-btn"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -796,7 +929,7 @@ export default function App() {
           <section className={`page ${activePage === 'reputation' ? 'active' : ''}`} id="page-reputation">
             <ReputationDashboard
               initialAddress={reputationAddress}
-              onNavigateAddress={(addr) => navigateToReputation(addr)}
+              onNavigateAddress={(addr) => handleNavigateReputation(addr)}
               onLaunchCreate={() => setActivePage('create')}
             />
           </section>

@@ -34,7 +34,7 @@ export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProp
           <a className="lp-nav-link" href="https://github.com/amankoli09/Pactum" target="_blank" rel="noopener noreferrer">GitHub</a>
           <a className="lp-nav-link" href="https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E" target="_blank" rel="noopener noreferrer">Explorer</a>
 
-          {/* Wallet Connect Dropdown Button */}
+{/* Wallet Connect Dropdown Button */}
           <WalletConnectButton variant="dark" />
           <button className="lp-btn-primary lp-btn-sm" onClick={onLaunchApp}>Launch App →</button>
         </div>
