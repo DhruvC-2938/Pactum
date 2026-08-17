@@ -10,6 +10,18 @@ import {
   LedgerSnapshot,
   LedgerSource,
 } from './types';
+import client from 'prom-client';
+
+// Prometheus metrics for indexer
+const eventsIndexedTotal = new client.Counter({
+  name: 'events_indexed_total',
+  help: 'Total number of events indexed by the indexer',
+});
+
+const indexerLagSeconds = new client.Gauge({
+  name: 'indexer_lag_seconds',
+  help: 'Current indexer lag in seconds (difference between latest and finalized sequence)',
+});
 import { InMemoryCursorCache, PostgresCursorCache } from './cache';
 
 // ─── Existing FinalityIndexer (unchanged) ────────────────────────────────────
@@ -141,6 +153,10 @@ export class FinalityIndexer {
         }
       }
     }
+
+    // Update Prometheus metrics
+    eventsIndexedTotal.inc(committed);
+    indexerLagSeconds.set(latest.sequence - finalizedSequence);
 
     return {
       latestSequence: latest.sequence,
