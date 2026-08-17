@@ -721,6 +721,8 @@ fn setup_disputed_commitment(
         &BytesN::from_array(env, &[1u8; 32]),
         &2000,
         resolver,
+        &Vec::new(env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(issuer, &id, &CommitmentStatus::Fulfilled);

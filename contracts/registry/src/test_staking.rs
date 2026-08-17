@@ -27,7 +27,7 @@ fn setup_with_staking(
     let client = RegistryContractClient::new(env, &contract_id);
 
     let arbitrator = Address::generate(env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![env, arbitrator.clone()]);
 
     let token = env
         .register_stellar_asset_contract_v2(arbitrator.clone())
@@ -50,7 +50,7 @@ fn test_set_staking_token_requires_arbitrator() {
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
 
     let stranger = Address::generate(&env);
     let token = env

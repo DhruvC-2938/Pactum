@@ -36,7 +36,7 @@ fn setup_voting(
     let client = RegistryContractClient::new(env, &contract_id);
 
     let arbitrator = Address::generate(env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![env, arbitrator.clone()]);
 
     let token = env
         .register_stellar_asset_contract_v2(arbitrator.clone())

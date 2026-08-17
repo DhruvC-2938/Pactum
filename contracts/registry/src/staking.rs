@@ -116,12 +116,8 @@ pub fn set_staking_token(env: &Env, caller: Address, token: Address) {
     reentrancy::enter(env);
     caller.require_auth();
 
-    let arbitrator: Address = env
-        .storage()
-        .instance()
-        .get(&DataKey::Arbitrator)
-        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized));
-    if caller != arbitrator {
+    let arbitrators = crate::commitments::arbitrators(env);
+    if !arbitrators.contains(&caller) {
         panic_with_error!(env, Error::NotArbitrator);
     }
     if env.storage().instance().has(&DataKey::StakingToken) {
