@@ -9,7 +9,6 @@ import {
   LedgerCheckpoint,
   LedgerSnapshot,
   LedgerSource,
-  LedgerSnapshot,
 } from './types';
 import client from 'prom-client';
 
