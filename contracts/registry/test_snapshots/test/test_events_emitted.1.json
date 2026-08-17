@@ -29,7 +29,12 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
-                "void"
+                {
+                  "vec": []
+                },
+                {
+                  "u32": 0
+                }
               ]
             }
           },
@@ -124,6 +129,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "attestors"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "counterparty"
                       },
                       "val": {
@@ -164,6 +177,30 @@
                     },
                     {
                       "key": {
+                        "symbol": "late_milestones"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestone_count"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_attested"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "resolver_address"
                       },
                       "val": {
@@ -184,17 +221,74 @@
                     },
                     {
                       "key": {
-                        "symbol": "template"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "terms_hash"
                       },
                       "val": {
                         "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "vote_threshold"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Milestone"
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "u32": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Milestone"
+                    },
+                    {
+                      "u64": 1
+                    },
+                    {
+                      "u32": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "Fulfilled"
                     }
                   ]
                 }

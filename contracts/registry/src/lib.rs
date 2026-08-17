@@ -436,6 +436,7 @@ impl RegistryContract {
     /// * `id` - The unique identifier of the disputed commitment.
     /// * `final_outcome` - The resolution status (`Fulfilled`, `Late`, or `Breached`).
     pub fn resolve_dispute(env: Env, caller: Address, id: u64, final_outcome: CommitmentStatus) {
+        pausable::require_not_paused(&env);
         disputes::resolve_dispute(&env, caller, id, final_outcome);
     }
 

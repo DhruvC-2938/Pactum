@@ -15,7 +15,11 @@
               "function_name": "initialize",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                  "vec": [
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                    }
+                  ]
                 }
               ]
             }
@@ -48,7 +52,12 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
-                "void"
+                {
+                  "vec": []
+                },
+                {
+                  "u32": 0
+                }
               ]
             }
           },
@@ -109,7 +118,12 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
-                "void"
+                {
+                  "vec": []
+                },
+                {
+                  "u32": 0
+                }
               ]
             }
           },
@@ -221,7 +235,12 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
-                "void"
+                {
+                  "vec": []
+                },
+                {
+                  "u32": 0
+                }
               ]
             }
           },
@@ -282,7 +301,12 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
-                "void"
+                {
+                  "vec": []
+                },
+                {
+                  "u32": 0
+                }
               ]
             }
           },
@@ -378,6 +402,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "attestors"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "counterparty"
                       },
                       "val": {
@@ -418,6 +450,30 @@
                     },
                     {
                       "key": {
+                        "symbol": "late_milestones"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestone_count"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_attested"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "resolver_address"
                       },
                       "val": {
@@ -438,16 +494,18 @@
                     },
                     {
                       "key": {
-                        "symbol": "template"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "terms_hash"
                       },
                       "val": {
                         "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "vote_threshold"
+                      },
+                      "val": {
+                        "u32": 0
                       }
                     }
                   ]
@@ -504,6 +562,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "attestors"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "counterparty"
                       },
                       "val": {
@@ -544,6 +610,30 @@
                     },
                     {
                       "key": {
+                        "symbol": "late_milestones"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestone_count"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_attested"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "resolver_address"
                       },
                       "val": {
@@ -564,16 +654,18 @@
                     },
                     {
                       "key": {
-                        "symbol": "template"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "terms_hash"
                       },
                       "val": {
                         "bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "vote_threshold"
+                      },
+                      "val": {
+                        "u32": 0
                       }
                     }
                   ]
@@ -632,6 +724,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "attestors"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "counterparty"
                       },
                       "val": {
@@ -672,6 +772,30 @@
                     },
                     {
                       "key": {
+                        "symbol": "late_milestones"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestone_count"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_attested"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "resolver_address"
                       },
                       "val": {
@@ -692,16 +816,18 @@
                     },
                     {
                       "key": {
-                        "symbol": "template"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "terms_hash"
                       },
                       "val": {
                         "bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "vote_threshold"
+                      },
+                      "val": {
+                        "u32": 0
                       }
                     }
                   ]
@@ -760,6 +886,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "attestors"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "counterparty"
                       },
                       "val": {
@@ -800,6 +934,30 @@
                     },
                     {
                       "key": {
+                        "symbol": "late_milestones"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestone_count"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "milestones_attested"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "resolver_address"
                       },
                       "val": {
@@ -820,17 +978,239 @@
                     },
                     {
                       "key": {
-                        "symbol": "template"
-                      },
-                      "val": "void"
-                    },
-                    {
-                      "key": {
                         "symbol": "terms_hash"
                       },
                       "val": {
                         "bytes": "0404040404040404040404040404040404040404040404040404040404040404"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "vote_threshold"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Milestone"
+                },
+                {
+                  "u64": 1
+                },
+                {
+                  "u32": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Milestone"
+                    },
+                    {
+                      "u64": 1
+                    },
+                    {
+                      "u32": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "Fulfilled"
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Milestone"
+                },
+                {
+                  "u64": 2
+                },
+                {
+                  "u32": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Milestone"
+                    },
+                    {
+                      "u64": 2
+                    },
+                    {
+                      "u32": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "Fulfilled"
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Milestone"
+                },
+                {
+                  "u64": 3
+                },
+                {
+                  "u32": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Milestone"
+                    },
+                    {
+                      "u64": 3
+                    },
+                    {
+                      "u32": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "Breached"
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          518400
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "Milestone"
+                },
+                {
+                  "u64": 4
+                },
+                {
+                  "u32": 0
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "Milestone"
+                    },
+                    {
+                      "u64": 4
+                    },
+                    {
+                      "u32": 0
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "symbol": "Fulfilled"
                     }
                   ]
                 }
@@ -1058,12 +1438,16 @@
                         "key": {
                           "vec": [
                             {
-                              "symbol": "Arbitrator"
+                              "symbol": "ArbitratorSet"
                             }
                           ]
                         },
                         "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                          "vec": [
+                            {
+                              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                            }
+                          ]
                         }
                       },
                       {

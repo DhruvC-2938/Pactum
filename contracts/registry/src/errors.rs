@@ -82,4 +82,6 @@ pub enum Error {
     /// This commitment is governed by M-of-N attestor voting; single-resolver
     /// resolution is not permitted.
     UseVotingResolution = 37,
+    /// The protocol is currently paused.
+    ProtocolPaused = 38,
 }
