@@ -36,7 +36,7 @@ import {
   ContractEventMap,
   EventCallback,
   RawSorobanEvent,
-  decodeSorobanEvent
+  decodeSorobanEvent,
 } from './events';
 
 export class PactumClient {
@@ -78,7 +78,7 @@ export class PactumClient {
    */
   public on<K extends PactumEventType>(
     eventType: K,
-    callback: EventCallback<K>
+    callback: EventCallback<K>,
   ): () => void {
     if (!this.listeners.has(eventType)) {
       this.listeners.set(eventType, new Set());
@@ -95,7 +95,7 @@ export class PactumClient {
    */
   public off<K extends PactumEventType>(
     eventType: K,
-    callback: EventCallback<K>
+    callback: EventCallback<K>,
   ): void {
     const callbackSet = this.listeners.get(eventType);
     if (callbackSet) {
@@ -109,7 +109,7 @@ export class PactumClient {
   public emit<K extends PactumEventType>(
     eventType: K,
     payload: ContractEventMap[K],
-    rawEvent?: RawSorobanEvent
+    rawEvent?: RawSorobanEvent,
   ): void {
     const callbackSet = this.listeners.get(eventType);
     if (callbackSet) {
@@ -286,6 +286,12 @@ export class PactumClient {
 
   /**
    * Retrieves the designated arbitrator address from the contract.
+   *
+   * Returns the first member of the arbitrator set. Prefer {@link getArbitrators}
+   * when the committee can have more than one member.
+   *
+   * @example
+   * const arb = await client.getArbitrator();
    */
   async getArbitrator(): Promise<string> {
     const stubPublicKey = this.opts.contract.address().toString();
@@ -296,6 +302,26 @@ export class PactumClient {
       [],
     );
     return String(scValToNative(val));
+  }
+
+  /**
+   * Retrieves the full set of designated arbitrators.
+   *
+   * Disputes on committee-routed commitments are settled by a majority vote of
+   * this set rather than by a single point of trust.
+   *
+   * @example
+   * const arbitrators = await client.getArbitrators();
+   */
+  async getArbitrators(): Promise<string[]> {
+    const stubPublicKey = this.opts.contract.address().toString();
+    const val = await queryContract(
+      this.opts,
+      stubPublicKey,
+      'get_arbitrators',
+      [],
+    );
+    return scValToNative(val) as string[];
   }
 
   // ─── Type re-exports for convenience ────────────────────────────────────────

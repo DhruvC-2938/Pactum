@@ -99,22 +99,23 @@ fn require_upgrade_admin(env: &Env) -> Address {
 /// Installs the initial upgrade admin. Bootstrap path only.
 ///
 /// # Authorization
-/// * Authorized caller: the arbitrator recorded by `initialize`.
-/// * Why: at bootstrap the arbitrator is the only authority the contract knows, and
-///   this is the one transition where no upgrade admin exists yet to authorize it.
-///   Once an upgrade admin is installed this path is permanently closed and further
-///   changes must go through [`set_upgrade_admin`] — that is, through the timelock.
+/// * Authorized caller: every arbitrator recorded by `initialize` (via `require_auth`).
+/// * Why: at bootstrap the arbitrator committee is the only authority the contract
+///   knows, and this is the one transition where no upgrade admin exists yet to
+///   authorize it. Requiring the whole committee keeps the multi-arbitrator property
+///   through bootstrap: no single arbitrator can unilaterally install an upgrade
+///   admin they control. Once an upgrade admin is installed this path is permanently
+///   closed and further changes must go through [`set_upgrade_admin`] — that is,
+///   through the timelock.
 pub fn init_upgrade_admin(env: &Env, admin: Address) {
     if env.storage().instance().has(&UpgradeKey::UpgradeAdmin) {
         panic_with_error!(env, Error::UpgradeAdminAlreadySet);
     }
 
-    let arbitrator: Address = env
-        .storage()
-        .instance()
-        .get(&crate::commitments::DataKey::Arbitrator)
-        .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized));
-    arbitrator.require_auth();
+    let arbitrators = crate::commitments::arbitrators(env);
+    for arbitrator in arbitrators.iter() {
+        arbitrator.require_auth();
+    }
 
     env.storage()
         .instance()

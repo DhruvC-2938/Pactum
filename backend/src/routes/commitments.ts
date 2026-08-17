@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { commitmentSchema } from '../schemas/commitment';
 import { ZodError } from 'zod';
+import { strictLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -33,7 +34,8 @@ const validateCommitment = (req: Request, res: Response, next: NextFunction): vo
 };
 
 // POST /commitments - Create a new commitment
-router.post('/', validateCommitment, (req: Request, res: Response) => {
+// strictLimiter enforces a 10 req/IP/min cap on this write endpoint.
+router.post('/', strictLimiter, validateCommitment, (req: Request, res: Response) => {
   // Route handler processes the sanitized req.body safely
   res.status(201).json({ 
     message: 'Commitment created successfully', 
@@ -42,7 +44,8 @@ router.post('/', validateCommitment, (req: Request, res: Response) => {
 });
 
 // PUT /commitments/:id - Update an existing commitment
-router.put('/:id', validateCommitment, (req: Request, res: Response) => {
+// strictLimiter enforces a 10 req/IP/min cap on this write endpoint.
+router.put('/:id', strictLimiter, validateCommitment, (req: Request, res: Response) => {
   // Route handler processes the sanitized req.body safely
   res.status(200).json({ 
     message: 'Commitment updated successfully', 
