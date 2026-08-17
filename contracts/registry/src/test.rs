@@ -775,10 +775,16 @@ fn test_resolve_dispute_majority_wins_over_dissent() {
 
     // One arbitrator votes Fulfilled, the other two vote Breached: Breached wins.
     client.resolve_dispute(&arb0, &id, &CommitmentStatus::Fulfilled);
-    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+    assert_eq!(
+        client.get_commitment(&id).status,
+        CommitmentStatus::Disputed
+    );
 
     client.resolve_dispute(&arb1, &id, &CommitmentStatus::Breached);
-    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+    assert_eq!(
+        client.get_commitment(&id).status,
+        CommitmentStatus::Disputed
+    );
 
     client.resolve_dispute(&arb2, &id, &CommitmentStatus::Breached);
     let commitment = client.get_commitment(&id);
@@ -804,7 +810,10 @@ fn test_resolve_dispute_arbitrator_cannot_vote_twice() {
     assert_eq!(res, Err(Ok(Error::AlreadyVoted.into())));
 
     // The dispute is still open for the other arbitrators.
-    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+    assert_eq!(
+        client.get_commitment(&id).status,
+        CommitmentStatus::Disputed
+    );
 }
 
 #[test]
@@ -818,7 +827,10 @@ fn test_resolve_dispute_half_the_committee_is_not_enough() {
 
     // With two arbitrators, one vote is exactly half — not a majority.
     client.resolve_dispute(&arb0, &id, &CommitmentStatus::Late);
-    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+    assert_eq!(
+        client.get_commitment(&id).status,
+        CommitmentStatus::Disputed
+    );
 
     // The second (and last) vote reaches unanimity and finalizes.
     client.resolve_dispute(&arb1, &id, &CommitmentStatus::Late);
