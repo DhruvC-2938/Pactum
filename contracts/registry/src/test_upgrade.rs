@@ -44,7 +44,7 @@ fn setup() -> Fixture {
 
     let arbitrator = Address::generate(&env);
     let timelock = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&vec![&env, arbitrator.clone()]);
     client.init_upgrade_admin(&timelock);
 
     Fixture {
@@ -166,7 +166,7 @@ fn test_init_upgrade_admin_requires_arbitrator_auth() {
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&vec![&env, arbitrator]);
 
     env.set_auths(&[]);
     client.init_upgrade_admin(&Address::generate(&env));
@@ -182,7 +182,7 @@ fn test_upgrade_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&Address::generate(&env));
+    client.initialize(&vec![&env, Address::generate(&env)]);
 
     let err = client
         .try_upgrade(&dummy_wasm_hash(&env), &SCHEMA_VERSION_V2)
@@ -249,7 +249,7 @@ fn test_set_upgrade_admin_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&Address::generate(&env));
+    client.initialize(&vec![&env, Address::generate(&env)]);
 
     let err = client
         .try_set_upgrade_admin(&Address::generate(&env))
@@ -674,7 +674,7 @@ mod wasm {
         let client = RegistryContractClient::new(&env, &contract_id);
         let arbitrator = Address::generate(&env);
         let timelock = Address::generate(&env);
-        client.initialize(&arbitrator);
+        client.initialize(&vec![&env, arbitrator.clone()]);
         client.init_upgrade_admin(&timelock);
 
         WasmFixture {
@@ -779,7 +779,63 @@ mod wasm {
 
         // Instance storage survives too, so the next contract cannot reissue id 1.
         assert_eq!(after.read_next_id(), Some(id + 1));
-        assert_eq!(after.read_arbitrator(), Some(f.arbitrator.clone()));
+        assert_eq!(
+            after.read_arbitrators(),
+            Some(vec![&f.env, f.arbitrator.clone()])
+        );
+        // The legacy single-arbitrator key was never written by this deployment.
+        assert_eq!(after.read_arbitrator(), None);
+    }
+
+    #[test]
+    fn test_upgrade_preserves_milestone_records() {
+        let f = setup_wasm();
+        let issuer = Address::generate(&f.env);
+        let counterparty = Address::generate(&f.env);
+        let terms = BytesN::from_array(&f.env, &[7u8; 32]);
+        let id = f.client.create_milestone_commitment(
+            &issuer,
+            &counterparty,
+            &terms,
+            &2_000,
+            &f.arbitrator,
+            &3,
+        );
+        f.client
+            .attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+        f.client
+            .attest_milestone(&issuer, &id, &1, &CommitmentStatus::Late);
+
+        let new_hash = f
+            .env
+            .deployer()
+            .upload_contract_wasm(fixture_contract::WASM);
+        f.client.upgrade(&new_hash, &SCHEMA_VERSION_V2);
+
+        let after = fixture_contract::Client::new(&f.env, &f.contract_id);
+
+        // The per-milestone entries are readable by an independently compiled binary.
+        assert_eq!(
+            after.read_milestone(&id, &0),
+            Some(fixture_contract::CommitmentStatus::Fulfilled)
+        );
+        assert_eq!(
+            after.read_milestone(&id, &1),
+            Some(fixture_contract::CommitmentStatus::Late)
+        );
+        assert_eq!(after.read_milestone(&id, &2), None);
+
+        // And so are the counters that drive resolution.
+        let commitment = after
+            .read_commitment(&id)
+            .expect("milestone commitment survived the executable swap");
+        assert_eq!(commitment.milestone_count, 3);
+        assert_eq!(commitment.milestones_attested, 2);
+        assert_eq!(commitment.late_milestones, 1);
+        assert_eq!(
+            commitment.status,
+            fixture_contract::CommitmentStatus::Pending
+        );
     }
 
     #[test]

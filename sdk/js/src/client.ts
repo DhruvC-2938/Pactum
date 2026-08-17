@@ -237,6 +237,9 @@ export class PactumClient {
   /**
    * Retrieves the designated arbitrator address from the contract.
    *
+   * Returns the first member of the arbitrator set. Prefer {@link getArbitrators}
+   * when the committee can have more than one member.
+   *
    * @example
    * const arb = await client.getArbitrator();
    */
@@ -249,6 +252,26 @@ export class PactumClient {
       [],
     );
     return String(scValToNative(val));
+  }
+
+  /**
+   * Retrieves the full set of designated arbitrators.
+   *
+   * Disputes on committee-routed commitments are settled by a majority vote of
+   * this set rather than by a single point of trust.
+   *
+   * @example
+   * const arbitrators = await client.getArbitrators();
+   */
+  async getArbitrators(): Promise<string[]> {
+    const stubPublicKey = this.opts.contract.address().toString();
+    const val = await queryContract(
+      this.opts,
+      stubPublicKey,
+      'get_arbitrators',
+      [],
+    );
+    return scValToNative(val) as string[];
   }
 
   // ─── Type re-exports for convenience ────────────────────────────────────────
