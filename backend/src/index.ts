@@ -119,10 +119,28 @@ app.get('/metrics', async (req: Request, res: Response) => {
   res.end(await register.metrics());
 });
 
-// Start main API server
-app.listen(port, () => {
-  console.log(`[server]: Pactum Backend API running at http://localhost:${port}`);
-});
+if (process.env.INDEXER_ENABLED !== 'off') {
+  const rpcUrl = process.env.SOROBAN_RPC_URL;
+  const contractId = process.env.SOROBAN_CONTRACT_ID;
+  if (rpcUrl && contractId) {
+    const finalityDepth = parseInt(process.env.INDEXER_FINALITY_DEPTH ?? '0', 10);
+    const pollIntervalMs = parseInt(process.env.INDEXER_POLL_INTERVAL_MS ?? '15000', 10);
+    const startSequence = process.env.INDEXER_START_SEQUENCE
+      ? parseInt(process.env.INDEXER_START_SEQUENCE, 10)
+      : undefined;
+
+    eventIndexer = startEventIndexer({
+      rpcUrl,
+      contractId,
+      finalityDepth: Number.isNaN(finalityDepth) ? 0 : finalityDepth,
+      pollIntervalMs: Number.isNaN(pollIntervalMs) ? 15000 : pollIntervalMs,
+      startSequence: Number.isNaN(startSequence as number) ? undefined : startSequence,
+    });
+    console.log('[indexer] Soroban RPC event listener started');
+  } else {
+    console.log('[indexer] SOROBAN_RPC_URL/SOROBAN_CONTRACT_ID not set, event listener disabled');
+  }
+}
 
 // Start separate metrics server on internal port
 const metricsApp = express();
@@ -130,6 +148,20 @@ metricsApp.get('/metrics', async (req: Request, res: Response) => {
   res.set('Content-Type', register.contentType);
   res.end(await register.metrics());
 });
+
+initCache().finally(() => {
+  const server = app.listen(port, () => {
+    console.log(`[server]: Pactum Backend API running at http://localhost:${port}`);
+  });
+
+  const shutdown = () => {
+    server.close(() => {
+      Promise.allSettled([
+        eventIndexer ? eventIndexer.stop() : Promise.resolve(),
+        closeCache(),
+      ]).finally(() => process.exit(0));
+    });
+  };
 
 metricsApp.listen(metricsPort, () => {
   console.log(`[metrics]: Prometheus metrics endpoint running at http://localhost:${metricsPort}/metrics`);
