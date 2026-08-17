@@ -5,6 +5,20 @@ This document provides a comprehensive reference for all public functions, stora
 ## Contract Architecture
 The registry is an immutable ledger for creating, tracking, and resolving on-chain commitments. The commitment lifecycle spans statuses from `Pending` up to `Fulfilled`, `Late`, `Breached`, and optionally `Disputed`.
 
+## Milestones
+A commitment carries a `milestone_count`. `create_commitment` sets it to `1`, which is the single-shot commitment the rest of this document describes; `create_milestone_commitment` splits the commitment into up to `MAX_MILESTONES` (256) partial attestations that share one commitment ID.
+
+Milestones are attested in order, one at a time, and each one's outcome is stored under `DataKey::Milestone(id, index)`. The commitment itself stays `Pending` until either:
+
+- a milestone is attested `Breached`, which resolves the whole commitment as `Breached` on the spot and blocks the remaining milestones; or
+- the final milestone is attested, which resolves the commitment as `Late` if any milestone came in late and `Fulfilled` otherwise.
+
+Reputation and the trust history are therefore updated exactly once per commitment, at resolution, with the aggregate outcome — never once per milestone. `attested_at` is stamped at the same moment, so the 7-day dispute window opens when the commitment resolves rather than at the first milestone.
+
+Resolution reads the counters on the `Commitment` itself, never the per-milestone entries, so the `DataKey::Milestone` records are a queryable audit trail rather than load-bearing state and an expired one cannot change an outcome.
+
+Records written before the milestone counters existed are migrated on read by `get_commitment_record`, the same path that backfills `resolver_address`: they become single-milestone commitments, already attested if they had resolved.
+
 ## Storage Lifecycle & TTL
 Soroban implements a Time-To-Live (TTL) model for data storage. The registry contract automatically extends the TTL of active data to prevent unexpected expiration.
 - **`TTL_THRESHOLD_LEDGERS`**: `241920` (Approx 14 days)
@@ -12,6 +26,7 @@ Soroban implements a Time-To-Live (TTL) model for data storage. The registry con
 
 ### Persistent Storage
 - **Commitments**: Preserved indefinitely as long as they are queried via `get_commitment` or updated via attest/dispute. Extended up to 30 days upon each access. 
+- **Milestones**: One entry per attested milestone, keyed by `(commitment id, milestone index)`. Written and extended to 30 days when the milestone is attested, and bumped again on each `get_milestone`.
 - **Reputation**: Automatically extended to 30 days on each query or change. It must persist indefinitely as an immutable record of an issuer's reliability.
 - **Trust History**: One entry per address (~52 bytes) holding the bucketed outcome history used by `get_trust_score`. Extended to 30 days on each query or change, mirroring the reputation bump-on-access pattern.
 

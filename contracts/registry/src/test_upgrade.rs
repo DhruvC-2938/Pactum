@@ -783,6 +783,57 @@ mod wasm {
     }
 
     #[test]
+    fn test_upgrade_preserves_milestone_records() {
+        let f = setup_wasm();
+        let issuer = Address::generate(&f.env);
+        let counterparty = Address::generate(&f.env);
+        let terms = BytesN::from_array(&f.env, &[7u8; 32]);
+        let id = f.client.create_milestone_commitment(
+            &issuer,
+            &counterparty,
+            &terms,
+            &2_000,
+            &f.arbitrator,
+            &3,
+        );
+        f.client
+            .attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+        f.client
+            .attest_milestone(&issuer, &id, &1, &CommitmentStatus::Late);
+
+        let new_hash = f
+            .env
+            .deployer()
+            .upload_contract_wasm(fixture_contract::WASM);
+        f.client.upgrade(&new_hash, &SCHEMA_VERSION_V2);
+
+        let after = fixture_contract::Client::new(&f.env, &f.contract_id);
+
+        // The per-milestone entries are readable by an independently compiled binary.
+        assert_eq!(
+            after.read_milestone(&id, &0),
+            Some(fixture_contract::CommitmentStatus::Fulfilled)
+        );
+        assert_eq!(
+            after.read_milestone(&id, &1),
+            Some(fixture_contract::CommitmentStatus::Late)
+        );
+        assert_eq!(after.read_milestone(&id, &2), None);
+
+        // And so are the counters that drive resolution.
+        let commitment = after
+            .read_commitment(&id)
+            .expect("milestone commitment survived the executable swap");
+        assert_eq!(commitment.milestone_count, 3);
+        assert_eq!(commitment.milestones_attested, 2);
+        assert_eq!(commitment.late_milestones, 1);
+        assert_eq!(
+            commitment.status,
+            fixture_contract::CommitmentStatus::Pending
+        );
+    }
+
+    #[test]
     fn test_upgrade_without_a_schema_change_is_allowed() {
         // The shape of an ordinary bug-fix release: swap the code, leave the schema.
         let f = setup_wasm();

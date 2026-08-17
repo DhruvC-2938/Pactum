@@ -44,5 +44,13 @@ pub enum Error {
     MigrationNotEnabled = 18,
     /// The requested migration batch exceeds the maximum batch size.
     BatchTooLarge = 19,
+    /// The requested milestone count is zero or above `MAX_MILESTONES`.
+    InvalidMilestoneCount = 20,
+    /// The requested milestone index is outside the commitment's milestone range.
+    InvalidMilestoneIndex = 21,
+    /// The requested milestone has already been attested.
+    MilestoneAlreadyAttested = 22,
+    /// Milestones must be attested in order and an earlier one is still pending.
+    MilestoneOutOfOrder = 23,
 }
 
