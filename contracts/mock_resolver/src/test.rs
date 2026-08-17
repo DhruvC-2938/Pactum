@@ -25,7 +25,7 @@ fn setup_env() -> (
     let resolver_client = MockResolverClient::new(&env, &resolver_id);
 
     let arbitrator = Address::generate(&env);
-    registry_client.initialize(&arbitrator);
+    registry_client.initialize(&soroban_sdk::vec![&env, arbitrator]);
 
     let controller = Address::generate(&env);
     resolver_client.init(&controller);
