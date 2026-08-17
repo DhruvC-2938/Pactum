@@ -9,6 +9,7 @@ import {
   LedgerCheckpoint,
   LedgerSnapshot,
   LedgerSource,
+  LedgerSnapshot,
 } from './types';
 import client from 'prom-client';
 
@@ -141,6 +142,9 @@ export class FinalityIndexer {
       }
 
       await this.options.store.appendLedger(ledger);
+      // appendLedger is the finality boundary. Await the projector so stale
+      // values cannot survive beyond the millisecond the ledger is committed.
+      await this.options.onLedgerCommitted?.(ledger);
       checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
       nextSequence += 1;
       committed += 1;
