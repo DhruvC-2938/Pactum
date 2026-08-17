@@ -45,26 +45,27 @@ export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProp
           <div style={{ position: 'relative', display: 'inline-block' }}>
             {isConnected && address ? (
               <button
-                onClick={() => setIsWalletModalOpen((prev) => !prev)}
+                onClick={() => setIsWalletModalOpen((prev: boolean) => !prev)}
+                className="wallet-connected-btn"
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '7px',
+                  gap: '6px',
                   background: '#f0fdf4',
                   border: '1px solid #bbf7d0',
                   color: '#15803d',
                   borderRadius: '10px',
-                  padding: '7px 14px',
+                  padding: '6px 10px',
                   fontWeight: '700',
-                  fontSize: '12.5px',
+                  fontSize: '12px',
                   fontFamily: 'monospace',
                   cursor: 'pointer',
                   boxShadow: '0 2px 6px rgba(34, 197, 94, 0.08)'
                 }}
                 title="Click to view wallet details"
               >
-                <CheckCircle2 size={14} color="#22c55e" />
-                {shortenKey(address)}
+                <CheckCircle2 size={13} color="#22c55e" style={{ flexShrink: 0 }} />
+                <span className="wallet-address-text">{shortenKey(address)}</span>
               </button>
             ) : (
               <button

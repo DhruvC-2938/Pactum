@@ -296,6 +296,46 @@ test('rejects a canonical source that breaks the committed parent link', async (
   await assert.rejects(indexer.sync(), (error: unknown) => error instanceof LedgerLinkageError);
 });
 
+test('scopes getEvents to the deployed contract when configured', async () => {
+  const CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
+  const eventRequests: unknown[] = [];
+  const source = new SorobanLedgerSource(
+    {
+      async getLatestLedger() {
+        return { sequence: 2 };
+      },
+      async getLedgers() {
+        return {
+          ledgers: [
+            {
+              sequence: 2,
+              hash: 'ledger-2',
+              ledgerCloseTime: '1786838402',
+              previousHash: 'ledger-1',
+            },
+          ],
+        };
+      },
+      async getEvents(request) {
+        eventRequests.push(request);
+        return { events: [], cursor: undefined };
+      },
+    },
+    { contractId: CONTRACT_ID },
+  );
+
+  const ledger = await source.getLedger(2);
+  assert.ok(ledger);
+  assert.deepEqual(eventRequests, [
+    {
+      filters: [{ type: 'contract', contractIds: [CONTRACT_ID] }],
+      startLedger: 2,
+      endLedger: 3,
+      limit: 100,
+    },
+  ]);
+});
+
 test('maps Soroban RPC ledger headers and events into the indexer model', async () => {
   const firstPageEvents = Array.from({ length: 100 }, (_, index) => ({
     id: `event-2-${index}`,
@@ -380,4 +420,42 @@ test('treats a ledger outside Soroban RPC retention as unavailable', async () =>
   });
 
   assert.equal(await source.getLedger(1), null);
+});
+
+test('reports every committed ledger to the commit hook', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 5));
+  const store = new InMemoryIndexerStore();
+  const committed: number[] = [];
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 2,
+    onLedgerCommitted: (ledger) => {
+      committed.push(ledger.sequence);
+    },
+  });
+
+  await indexer.sync();
+
+  assert.deepEqual(committed, [1, 2, 3]);
+});
+
+test('keeps indexing when the commit hook throws', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 4));
+  const store = new InMemoryIndexerStore();
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 1,
+    onLedgerCommitted: async () => {
+      throw new Error('cache is down');
+    },
+  });
+
+  const result = await indexer.sync();
+
+  assert.equal(result.committed, 3);
+  assert.deepEqual(await store.getCheckpoint(), { sequence: 3, hash: 'main-3' });
 });

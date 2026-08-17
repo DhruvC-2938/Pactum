@@ -37,7 +37,7 @@ fn setup() -> (Env, RegistryContractClient<'static>, Address, Address) {
 fn setup_long_horizon() -> (Env, RegistryContractClient<'static>, Address, Address) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
     (env, client, issuer, counterparty)
 }
 
@@ -84,7 +84,7 @@ fn setup_with_arbitrator() -> (
 ) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     (env, client, issuer, counterparty, arbitrator)
 }
 
@@ -102,12 +102,14 @@ fn create_and_attest(
         l.timestamp = 1000;
         l.sequence_number = 1000;
     });
+    let resolver = Address::generate(env);
     let id = client.create_commitment(
         issuer,
         counterparty,
         &BytesN::from_array(env, &[terms; 32]),
         &2000,
-        &soroban_sdk::Vec::new(env),
+        &resolver,
+        &Vec::new(env),
         &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
@@ -451,12 +453,14 @@ fn test_bucket_boundary_semantics() {
         l.timestamp = 1000;
         l.sequence_number = 9_999;
     });
+    let resolver = Address::generate(&env);
     let id = client.create_commitment(
         &issuer,
         &counterparty,
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
-        &soroban_sdk::Vec::new(&env),
+        &resolver,
+        &Vec::new(&env),
         &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
@@ -466,7 +470,8 @@ fn test_bucket_boundary_semantics() {
         &counterparty,
         &BytesN::from_array(&env, &[2u8; 32]),
         &2000,
-        &soroban_sdk::Vec::new(&env),
+        &resolver,
+        &Vec::new(&env),
         &0,
     );
     client.attest(&issuer, &id2, &CommitmentStatus::Fulfilled);
@@ -584,6 +589,7 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
 
     // One breach per bucket for 1,000 consecutive buckets: every write folds
     // the previous bucket, so the stored state stays constant-size.
+    let resolver = Address::generate(&env);
     for i in 0..1000u32 {
         env.ledger().with_mut(|l| {
             l.timestamp = 1000 + i as u64;
@@ -594,7 +600,8 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
             &counterparty,
             &BytesN::from_array(&env, &[(i % 250) as u8; 32]),
             &2_000_000,
-            &soroban_sdk::Vec::new(&env),
+            &resolver,
+            &Vec::new(&env),
             &0,
         );
         client.attest(&issuer, &id, &CommitmentStatus::Breached);
@@ -671,14 +678,21 @@ fn test_dispute_retracts_aged_breach_from_score() {
 fn test_resolve_dispute_applies_final_outcome_to_score() {
     let (env, client, issuer, counterparty, arbitrator) = setup_with_arbitrator();
 
-    create_and_attest(
-        &env,
-        &client,
+    env.ledger().with_mut(|l| {
+        l.timestamp = 1000;
+        l.sequence_number = 1000;
+    });
+    let id = client.create_commitment(
         &issuer,
         &counterparty,
-        1,
-        CommitmentStatus::Breached,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &2000,
+        &arbitrator,
+        &Vec::new(&env),
+        &0,
     );
+    env.ledger().with_mut(|l| l.timestamp = 1500);
+    client.attest(&issuer, &id, &CommitmentStatus::Breached);
     assert_eq!(client.get_trust_score(&issuer), 0);
 
     advance_ledgers(

@@ -1,36 +1,47 @@
-//! M-of-N attestor voting and fallback timeout logic (Issue 62).
+//! M-of-N attestor voting (Issue 86, Phase 2).
 //!
-//! High-value commitments can require consensus from multiple attestors
-//! (e.g. 3 out of 5 must agree on the outcome). This module implements secure
-//! vote tallying with an O(1) threshold check on every vote, and a fallback
-//! timeout that resolves a commitment to a predefined fallback state if the
-//! threshold is not reached by `due_at + ATTESTOR_VOTE_TIMEOUT_SECONDS`.
+//! A commitment configured with an attestor panel and a vote threshold settles
+//! disputes by panel vote instead of single-resolver fiat. Every panel member
+//! has staked funds at risk: while the dispute is active their stake is
+//! locked, and when the dispute resolves to an outcome they voted against,
+//! 10% of their stake is slashed (the forfeited amount stays in the vault).
+//! If the voting window elapses without the threshold being met, the dispute
+//! falls back to `Breached` and the panel is released.
 
 use crate::commitments::{
-    Commitment, CommitmentStatus, DataKey, VoteTally, ATTESTOR_VOTE_TIMEOUT_SECONDS,
-    TTL_EXTEND_LEDGERS, TTL_THRESHOLD_LEDGERS,
+    get_commitment_record, Commitment, CommitmentStatus, DataKey, TTL_EXTEND_LEDGERS,
+    TTL_THRESHOLD_LEDGERS,
 };
 use crate::errors::Error;
 use crate::events;
-use soroban_sdk::{panic_with_error, Address, Env};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env};
 
-/// The predefined fallback state entered when the vote threshold is not reached
-/// within the timeout window, preventing locked funds/state.
-const FALLBACK_STATUS: CommitmentStatus = CommitmentStatus::Breached;
+/// The window in seconds during which panel attestors may cast votes on a
+/// disputed commitment (7 days = 604,800 seconds). Anchored at the
+/// attestation timestamp that preceded the dispute.
+pub const ATTESTOR_VOTE_TIMEOUT_SECONDS: u64 = 7 * 24 * 60 * 60;
 
-/// Loads a commitment from persistent storage or panics with `CommitmentNotFound`.
-fn load_commitment(env: &Env, id: u64) -> Commitment {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))
-        .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound))
+/// The percentage of a dissenting attestor's stake that is slashed when the
+/// dispute resolves to an outcome they voted against.
+pub const SLASH_PERCENT: u64 = 10;
+
+/// The running tally of votes cast on a disputed commitment.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VoteTally {
+    /// Votes for `Fulfilled`.
+    pub fulfilled: u32,
+    /// Votes for `Late`.
+    pub late: u32,
+    /// Votes for `Breached`.
+    pub breached: u32,
 }
 
-/// Loads the running vote tally for a commitment, defaulting to zeroed counters.
+/// Loads the vote tally for a disputed commitment, defaulting to zeroes.
 fn load_tally(env: &Env, id: u64) -> VoteTally {
     env.storage()
         .persistent()
-        .get(&DataKey::VoteTally(id))
+        .get(&DataKey::DisputeTally(id))
         .unwrap_or(VoteTally {
             fulfilled: 0,
             late: 0,
@@ -38,211 +49,226 @@ fn load_tally(env: &Env, id: u64) -> VoteTally {
         })
 }
 
-/// Persists a vote tally and extends its TTL.
+/// Persists the vote tally and extends its TTL.
 fn save_tally(env: &Env, id: u64, tally: &VoteTally) {
-    env.storage().persistent().set(&DataKey::VoteTally(id), tally);
+    env.storage()
+        .persistent()
+        .set(&DataKey::DisputeTally(id), tally);
     env.storage().persistent().extend_ttl(
-        &DataKey::VoteTally(id),
+        &DataKey::DisputeTally(id),
         TTL_THRESHOLD_LEDGERS,
         TTL_EXTEND_LEDGERS,
     );
 }
 
-/// Returns true if `status` is a valid attestable outcome
-/// (`Fulfilled`, `Late`, or `Breached`).
-fn is_valid_outcome(status: CommitmentStatus) -> bool {
-    matches!(
-        status,
-        CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached
-    )
-}
-
-/// Returns the absolute deadline (Unix seconds) by which the threshold must be met.
-fn vote_deadline(commitment: &Commitment) -> u64 {
-    commitment
-        .due_at
-        .saturating_add(ATTESTOR_VOTE_TIMEOUT_SECONDS)
-}
-
-/// Casts a single attestor vote on an M-of-N commitment, tallying it securely.
-///
-/// # Authorization
-/// * Authorized caller: `caller` (via `require_auth`), which must be one of the
-///   commitment's assigned `attestors`.
-/// * Why: Only assigned attestors are permitted to vote on the commitment's outcome.
-///
-/// # Guarantees
-/// * Each attestor can vote at most once (race-condition safe via `VoteRecord`).
-/// * The threshold check is O(1): votes are stored in a running `VoteTally`
-///   counter rather than by scanning prior votes, so the final (threshold-meeting)
-///   vote never exhausts the gas limit.
-///
-/// # Panics
-/// * `Error::CommitmentNotFound` if the commitment does not exist.
-/// * `Error::AlreadyResolved` if the commitment is no longer `Pending`.
-/// * `Error::NotAttestor` if `caller` is not an assigned attestor.
-/// * `Error::InvalidOutcome` if `outcome` is `Pending` or `Disputed`.
-/// * `Error::VotingClosed` if the vote is cast after `due_at + timeout`.
-/// * `Error::AlreadyVoted` if the attestor has already cast a vote.
-pub fn cast_attestor_vote(env: &Env, caller: Address, id: u64, outcome: CommitmentStatus) {
-    // 1. Require authorization from the voting attestor.
-    caller.require_auth();
-
-    // 2. Load commitment from persistent storage.
-    let mut commitment = load_commitment(env, id);
-
-    // 3. Verify the commitment is still open for voting.
-    if commitment.status != CommitmentStatus::Pending {
-        panic_with_error!(env, Error::AlreadyResolved);
-    }
-
-    // 4. Verify the commitment actually requires attestor consensus.
-    if commitment.attestors.is_empty() {
-        panic_with_error!(env, Error::NotAttestor);
-    }
-
-    // 5. Verify the caller is an assigned attestor.
-    if !commitment.attestors.contains(&caller) {
-        panic_with_error!(env, Error::NotAttestor);
-    }
-
-    // 6. Reject Pending or Disputed as an outcome value.
-    if !is_valid_outcome(outcome) {
-        panic_with_error!(env, Error::InvalidOutcome);
-    }
-
-    // 7. Reject votes cast after the fallback deadline to prevent late votes.
-    let now = env.ledger().timestamp();
-    if now > vote_deadline(&commitment) {
-        panic_with_error!(env, Error::VotingClosed);
-    }
-
-    // 8. Prevent double voting (race-condition safe: presence of VoteRecord
-    //    indicates the attestor already voted).
-    if env
-        .storage()
-        .persistent()
-        .has(&DataKey::VoteRecord(id, caller.clone()))
-    {
-        panic_with_error!(env, Error::AlreadyVoted);
-    }
+/// Persists a single attestor's vote and extends its TTL.
+fn save_vote(env: &Env, id: u64, attestor: &Address, outcome: CommitmentStatus) {
     env.storage()
         .persistent()
-        .set(&DataKey::VoteRecord(id, caller.clone()), &outcome);
+        .set(&DataKey::VoteRecord(id, attestor.clone()), &outcome);
     env.storage().persistent().extend_ttl(
-        &DataKey::VoteRecord(id, caller.clone()),
+        &DataKey::VoteRecord(id, attestor.clone()),
         TTL_THRESHOLD_LEDGERS,
         TTL_EXTEND_LEDGERS,
     );
-
-    // 9. O(1) tally update and threshold check.
-    let mut tally = load_tally(env, id);
-    tally.increment(outcome);
-    let reached_threshold = tally.counter(outcome) >= commitment.threshold;
-
-    if reached_threshold {
-        // 10. Resolve the commitment to the agreed outcome.
-        commitment.status = outcome;
-        commitment.attested_at = Some(now);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Commitment(id), &commitment);
-        env.storage().persistent().extend_ttl(
-            &DataKey::Commitment(id),
-            TTL_THRESHOLD_LEDGERS,
-            TTL_EXTEND_LEDGERS,
-        );
-        save_tally(env, id, &tally);
-
-        // 11. Update reputation (increment).
-        crate::reputation::update_reputation(env, commitment.issuer.clone(), outcome, true);
-
-        // 12. Emit commitment_resolved event.
-        events::commitment_resolved(env, id, outcome);
-    } else {
-        // 13. Persist the tally and emit the vote event.
-        save_tally(env, id, &tally);
-        events::attestor_vote_cast(
-            env,
-            id,
-            &caller,
-            outcome,
-            tally.counter(outcome),
-            commitment.threshold,
-        );
-    }
 }
 
-/// Resolves an M-of-N commitment to the predefined fallback state if the vote
-/// threshold was not reached by `due_at + ATTESTOR_VOTE_TIMEOUT_SECONDS`.
-///
-/// This function is intentionally callable by anyone (no authorization) so that
-/// any party or keeper can unblock a stalled commitment once attestors go
-/// offline, preventing locked funds/state.
-///
-/// # Panics
-/// * `Error::CommitmentNotFound` if the commitment does not exist.
-/// * `Error::AlreadyResolved` if the commitment is no longer `Pending`.
-/// * `Error::InvalidTransition` if the commitment has no assigned attestors.
-/// * `Error::VotesNotMet` if called before the deadline has elapsed.
-pub fn finalize_commitment(env: &Env, id: u64) {
-    // 1. Load commitment from persistent storage.
-    let mut commitment = load_commitment(env, id);
-
-    // 2. Verify the commitment is still awaiting resolution.
-    if commitment.status != CommitmentStatus::Pending {
-        panic_with_error!(env, Error::AlreadyResolved);
-    }
-
-    // 3. Only M-of-N commitments are eligible for the fallback timeout.
-    if commitment.attestors.is_empty() {
-        panic_with_error!(env, Error::InvalidTransition);
-    }
-
-    // 4. Verify the fallback deadline has elapsed without the threshold being met.
-    let now = env.ledger().timestamp();
-    if now <= vote_deadline(&commitment) {
-        panic_with_error!(env, Error::VotesNotMet);
-    }
-
-    // 5. Transition to the predefined fallback state.
-    commitment.status = FALLBACK_STATUS;
-    commitment.attested_at = Some(now);
-
-    // 6. Save updated commitment to storage.
+/// Writes the final outcome onto the commitment, clears `attested_at` to
+/// prevent re-dispute, and updates reputation and trust history to match.
+fn persist_outcome(env: &Env, id: u64, commitment: &mut Commitment, outcome: CommitmentStatus) {
+    commitment.status = outcome;
+    commitment.attested_at = None;
     env.storage()
         .persistent()
-        .set(&DataKey::Commitment(id), &commitment);
+        .set(&DataKey::Commitment(id), commitment);
     env.storage().persistent().extend_ttl(
         &DataKey::Commitment(id),
         TTL_THRESHOLD_LEDGERS,
         TTL_EXTEND_LEDGERS,
     );
-
-    // 7. Update reputation (increment) with the fallback outcome.
-    crate::reputation::update_reputation(env, commitment.issuer.clone(), FALLBACK_STATUS, true);
-
-    // 8. Emit commitment_fallback event.
-    events::commitment_fallback(env, id, FALLBACK_STATUS);
+    crate::reputation::update_reputation(env, commitment.issuer.clone(), outcome, true);
+    crate::trust_score::update_trust_history(env, commitment.issuer.clone(), outcome, true);
 }
 
-/// Returns the running vote tally for a commitment.
-///
-/// # Panics
-/// * `Error::CommitmentNotFound` if the commitment does not exist.
-pub fn get_vote_tally(env: &Env, id: u64) -> VoteTally {
-    load_commitment(env, id);
-    load_tally(env, id)
-}
-
-/// Returns true if the fallback timeout has elapsed and the threshold was not met.
-///
-/// # Panics
-/// * `Error::CommitmentNotFound` if the commitment does not exist.
-pub fn can_finalize_commitment(env: &Env, id: u64) -> bool {
-    let commitment = load_commitment(env, id);
-    if commitment.status != CommitmentStatus::Pending || commitment.attestors.is_empty() {
-        return false;
+/// Releases every panel attestor's stake lock and clears the vote ledger for
+/// the commitment. When `slash_dissenters` is set, attestors who voted for an
+/// outcome other than `winning` are slashed `SLASH_PERCENT` of their stake
+/// first.
+fn unlock_panel_and_clear(
+    env: &Env,
+    id: u64,
+    commitment: &Commitment,
+    slash_dissenters: bool,
+    winning: CommitmentStatus,
+) {
+    for attestor in commitment.attestors.iter() {
+        if slash_dissenters {
+            if let Some(voted) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, CommitmentStatus>(&DataKey::VoteRecord(id, attestor.clone()))
+            {
+                if voted != winning {
+                    crate::staking::slash(env, &attestor, SLASH_PERCENT);
+                }
+            }
+        }
+        crate::staking::set_locked(env, &attestor, false);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::VoteRecord(id, attestor));
     }
-    env.ledger().timestamp() > vote_deadline(&commitment)
+    env.storage()
+        .persistent()
+        .remove(&DataKey::DisputeTally(id));
+}
+
+/// Casts a single attestor's vote on a disputed commitment.
+///
+/// # Authorization
+/// * Authorized caller: `attestor` (via `require_auth`), a member of the
+///   commitment's voting panel who holds staked funds locked by the dispute.
+/// * Why: Panel membership plus at-stake funds give attestors skin in the
+///   game; their stake is slashed if they vote for a losing outcome.
+///
+/// # Panics
+/// * Panics with `Error::CommitmentNotFound` if no commitment has the given ID.
+/// * Panics with `Error::InvalidTransition` if the commitment is not `Disputed`
+///   or has no voting panel configured.
+/// * Panics with `Error::VotingClosed` if the voting window has elapsed.
+/// * Panics with `Error::NotAttestor` if the caller is not on the panel.
+/// * Panics with `Error::InsufficientStake` if the caller holds no stake.
+/// * Panics with `Error::DisputeActive` if the caller's stake is not locked.
+/// * Panics with `Error::AttestorAlreadyVoted` if the caller already voted.
+/// * Panics with `Error::InvalidOutcome` if `outcome` is not a final status.
+pub fn cast_dispute_vote(env: &Env, attestor: Address, id: u64, outcome: CommitmentStatus) {
+    // 0. Enter the reentrancy guard before any external interaction (including
+    //    the require_auth call below, which may invoke a custom account contract).
+    crate::reentrancy::enter(env);
+
+    // 1. Require authorization from the attestor.
+    attestor.require_auth();
+
+    // 2. Load commitment from persistent storage (with legacy record migration).
+    let mut commitment: Commitment = get_commitment_record(env, id)
+        .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
+
+    // 3. Only a disputed, panel-governed commitment is votable.
+    if commitment.status != CommitmentStatus::Disputed {
+        panic_with_error!(env, Error::InvalidTransition);
+    }
+    if commitment.vote_threshold == 0 {
+        panic_with_error!(env, Error::InvalidTransition);
+    }
+
+    // 4. The vote must be one of the final outcomes.
+    match outcome {
+        CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
+        _ => panic_with_error!(env, Error::InvalidOutcome),
+    }
+
+    // 5. Reject votes cast after the window closes.
+    let now = env.ledger().timestamp();
+    let attested_at = commitment.attested_at.unwrap_or(commitment.created_at);
+    let deadline = attested_at.saturating_add(ATTESTOR_VOTE_TIMEOUT_SECONDS);
+    if now > deadline {
+        panic_with_error!(env, Error::VotingClosed);
+    }
+
+    // 6. The caller must be on the panel, staked, and locked by the dispute.
+    if !commitment.attestors.contains(attestor.clone()) {
+        panic_with_error!(env, Error::NotAttestor);
+    }
+    let stake = crate::staking::load_stake(env, &attestor);
+    if stake.staked <= 0 {
+        panic_with_error!(env, Error::InsufficientStake);
+    }
+    if !stake.locked {
+        panic_with_error!(env, Error::DisputeActive);
+    }
+
+    // 7. One vote per attestor per dispute.
+    if env
+        .storage()
+        .persistent()
+        .has(&DataKey::VoteRecord(id, attestor.clone()))
+    {
+        panic_with_error!(env, Error::AttestorAlreadyVoted);
+    }
+
+    // 8. Record the vote and update the tally.
+    let mut tally = load_tally(env, id);
+    let votes = match outcome {
+        CommitmentStatus::Fulfilled => {
+            tally.fulfilled += 1;
+            tally.fulfilled
+        }
+        CommitmentStatus::Late => {
+            tally.late += 1;
+            tally.late
+        }
+        CommitmentStatus::Breached => {
+            tally.breached += 1;
+            tally.breached
+        }
+        _ => unreachable!(),
+    };
+    save_tally(env, id, &tally);
+    save_vote(env, id, &attestor, outcome);
+    events::attestor_vote_cast(env, id, &attestor, outcome);
+
+    // 9. The first outcome to reach the threshold wins: resolve the dispute,
+    //    unlock the panel, and slash dissenting voters.
+    if votes >= commitment.vote_threshold {
+        persist_outcome(env, id, &mut commitment, outcome);
+        unlock_panel_and_clear(env, id, &commitment, true, outcome);
+        events::commitment_resolved(env, id, outcome);
+    }
+
+    // 10. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
+}
+
+/// Finalizes a disputed commitment whose voting window elapsed without the
+/// threshold being reached. The commitment falls back to `Breached`, the
+/// panel's stakes are unlocked, and the vote ledger is cleared. Permissionless:
+/// anyone may finalize an expired dispute.
+///
+/// # Panics
+/// * Panics with `Error::CommitmentNotFound` if no commitment has the given ID.
+/// * Panics with `Error::InvalidTransition` if the commitment is not `Disputed`
+///   or has no voting panel configured.
+/// * Panics with `Error::VotesNotMet` if the voting window has not elapsed yet.
+pub fn check_dispute_timeout(env: &Env, id: u64) {
+    // 0. Enter the reentrancy guard; this function mutates state.
+    crate::reentrancy::enter(env);
+
+    // 1. Load commitment from persistent storage (with legacy record migration).
+    let mut commitment: Commitment = get_commitment_record(env, id)
+        .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
+
+    // 2. Only a disputed, panel-governed commitment can time out.
+    if commitment.status != CommitmentStatus::Disputed {
+        panic_with_error!(env, Error::InvalidTransition);
+    }
+    if commitment.vote_threshold == 0 {
+        panic_with_error!(env, Error::InvalidTransition);
+    }
+
+    // 3. The window must have fully elapsed; otherwise the threshold may
+    //    still be reached.
+    let now = env.ledger().timestamp();
+    let attested_at = commitment.attested_at.unwrap_or(commitment.created_at);
+    let deadline = attested_at.saturating_add(ATTESTOR_VOTE_TIMEOUT_SECONDS);
+    if now <= deadline {
+        panic_with_error!(env, Error::VotesNotMet);
+    }
+
+    // 4. Fall back to Breached, release the panel, and clear the vote ledger.
+    persist_outcome(env, id, &mut commitment, CommitmentStatus::Breached);
+    unlock_panel_and_clear(env, id, &commitment, false, CommitmentStatus::Breached);
+    events::commitment_fallback(env, id, CommitmentStatus::Breached);
+
+    // 5. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
 }

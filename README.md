@@ -27,7 +27,7 @@ There's currently no simple, general-purpose way to record these kinds of ongoin
 Pactum is a lightweight registry, not a payment or custody system. It doesn't hold funds. It records **who promised what to whom, by when — and whether they delivered.**
 
 ```
- create_commitment(issuer, counterparty, terms, due_at, attestors, threshold)
+ create_commitment(issuer, counterparty, terms, due_at)
               │
               ▼
      ┌──────────────────┐
@@ -60,12 +60,20 @@ Pactum is a lightweight registry, not a payment or custody system. It doesn't ho
 ```
 pactum/
 ├── contracts/registry/     # Soroban smart contract (Rust)
+├── contracts/timelock/     # DAO-owned 7-day timelock gating contract upgrades
+├── contracts/scripts/      # Upgrade proposal, review, execution & migration scripts
 ├── backend/                # REST API + on-chain event indexer (TypeScript)
+├── zk/                     # Zero-knowledge Trust Score threshold proofs (Circom + snarkjs)
 ├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
 ├── evm/                    # Pactum EVM Oracle: cross-chain trust score bridge PoC (Solidity)
 ├── docs/                   # Architecture, contract & API reference, integration guide
 └── examples/                # Minimal integration demo
 ```
+
+The registry is upgradeable in place: its logic can be replaced while its address and
+all stored Trust Scores are preserved, and every upgrade must pass a 7-day public
+review window enforced by the timelock. See
+[`docs/upgradeability.md`](./docs/upgradeability.md).
 
 See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
@@ -80,8 +88,10 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Backend API | Node.js + TypeScript + Express |
 | Indexer | Soroban RPC event listener |
 | Database | PostgreSQL + TimescaleDB (time-series analytics) |
+| Cache | Redis (optional read cache for reputation lookups) |
 | SDK | TypeScript, published as `@pactum/sdk` |
-| Testing | Cargo test (contract) · Jest (backend) |
+| ZK proofs | Circom 2 + snarkjs (Groth16 over BN254) |
+| Testing | Cargo test (contract) · Jest (backend) · `node --test` (zk) |
 | CI/CD | GitHub Actions |
 
 ---
@@ -90,14 +100,14 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 
 | Method | Kind | Description |
 |---|---|---|
-| `create_commitment(issuer, counterparty, terms_hash, due_at, attestors, threshold)` | write | Register a new commitment between two addresses (optional M-of-N attestor voting) |
-| `attest(commitment_id, outcome)` | write | Mark a commitment fulfilled, late, or breached |
-| `cast_attestor_vote(commitment_id, outcome)` | write | Cast an attestor vote on an M-of-N commitment |
-| `finalize_commitment(commitment_id)` | write | Resolve an M-of-N commitment to its fallback state after the vote timeout |
+| `create_commitment(issuer, counterparty, terms_hash, due_at)` | write | Register a new commitment between two addresses |
+| `create_milestone_commitment(issuer, counterparty, terms_hash, due_at, resolver, milestone_count)` | write | Register a commitment fulfilled across several milestones |
+| `attest(commitment_id, outcome)` | write | Mark the next pending milestone fulfilled, late, or breached — resolving the commitment if it is the last one |
+| `attest_milestone(commitment_id, milestone_index, outcome)` | write | Mark one milestone of a commitment; the commitment resolves on the last one |
+| `get_milestone(commitment_id, milestone_index)` | read | Fetch a single milestone's outcome, or nothing while it is pending |
 | `dispute(commitment_id, reason)` | write | Flag a commitment as contested rather than resolved |
 | `resolve_dispute(commitment_id, outcome)` | write | Designated arbitrator/oracle settles a disputed commitment |
 | `get_commitment(commitment_id)` | read | Fetch a single commitment's details and status |
-| `get_vote_tally(commitment_id)` | read | Fetch the running per-outcome attestor vote tally |
 | `get_reputation(address)` | read | Aggregate fulfilled / late / breached counts for an address |
 
 Full spec lives in [`docs/contract-reference.md`](./docs/contract-reference.md) as the contract develops.
@@ -175,8 +185,10 @@ The frontend is built to call the API on its own origin, and nginx proxies `/api
 - [ ] Core registry contract — create / attest / dispute / resolve
 - [ ] Per-address reputation aggregation
 - [ ] Oracle-based auto-attestation for measurable commitments (e.g. uptime feeds)
+- [x] Milestone-based commitments — partial attestations against one commitment ID
 - [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
 - [x] Public reputation lookup API
+<<<<<<< HEAD
 
 ### Reputation cache
 
@@ -190,10 +202,14 @@ advances.
 Run `npm run load:reputation` from `backend/` against a warmed local stack to
 enforce the 10,000 req/s and P99 <15ms SLO. Set `LOAD_TEST_URL`,
 `LOAD_TEST_CONNECTIONS`, or `LOAD_TEST_DURATION_SECONDS` to tune the run.
+=======
+>>>>>>> main
 - [ ] JS/TS SDK (`@pactum/sdk`)
 - [ ] Marketplace integration example (check a counterparty's history before a deal)
 - [ ] Rate limiting & spam-commitment protections
-- [ ] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Verifiable reputation export — prove `Trust Score > threshold` in zero knowledge
+      ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
 
 Open an issue if you'd like to pick up any of these — contributions welcome.
 

@@ -32,16 +32,54 @@ pub enum Error {
     /// A state-mutating registry function was re-entered while a call to
     /// another state-mutating registry function was already in progress.
     ReentrantCall = 13,
-    /// The caller is not one of the assigned attestors for the commitment.
-    NotAttestor = 14,
-    /// The attestor has already cast a vote on this commitment.
-    AlreadyVoted = 15,
-    /// The M-of-N threshold is invalid (zero, or greater than the number of attestors).
-    ThresholdInvalid = 16,
-    /// The attestor list contains duplicate addresses.
-    DuplicateAttestor = 17,
-    /// The attestor voting window has closed (`now > due_at + timeout`).
-    VotingClosed = 18,
-    /// The fallback timeout has not elapsed yet or the threshold was already met.
-    VotesNotMet = 19,
+    /// No upgrade admin has been installed, so no upgrade path exists.
+    UpgradeAdminNotSet = 14,
+    /// The bootstrap upgrade-admin path is closed; use the timelocked transfer.
+    UpgradeAdminAlreadySet = 15,
+    /// The requested schema version is lower than the version currently in force.
+    SchemaDowngrade = 16,
+    /// The requested schema version is not understood by this executable.
+    UnsupportedSchemaVersion = 17,
+    /// Reputation migration was requested while the contract is still on schema V1.
+    MigrationNotEnabled = 18,
+    /// The requested migration batch exceeds the maximum batch size.
+    BatchTooLarge = 19,
+    /// The requested milestone count is zero or above `MAX_MILESTONES`.
+    InvalidMilestoneCount = 20,
+    /// The requested milestone index is outside the commitment's milestone range.
+    InvalidMilestoneIndex = 21,
+    /// The requested milestone has already been attested.
+    MilestoneAlreadyAttested = 22,
+    /// Milestones must be attested in order and an earlier one is still pending.
+    MilestoneOutOfOrder = 23,
+    /// The arbitrator set passed to `initialize` was empty.
+    EmptyArbitratorSet = 24,
+    /// An arbitrator attempted to cast a second vote on the same dispute.
+    AlreadyVoted = 25,
+    /// The attestor does not hold a stake sufficient for the requested operation.
+    InsufficientStake = 26,
+    /// An unstake has already been requested and is still pending for this attestor.
+    UnbondingPending = 27,
+    /// The unbonding period for this unstake has not elapsed yet.
+    UnbondingNotElapsed = 28,
+    /// A dispute is active, so the attestor's stake is locked.
+    DisputeActive = 29,
+    /// No staking token has been configured for the registry.
+    StakingTokenNotSet = 30,
+    /// The requested staking amount is zero or negative.
+    ZeroAmount = 31,
+    /// The caller is not a designated attestor on the commitment's voting panel.
+    NotAttestor = 32,
+    /// The attestor has already cast a vote on this disputed commitment.
+    AttestorAlreadyVoted = 33,
+    /// The vote threshold is invalid (zero when a panel exists, above the panel
+    /// size, or a panel is missing while a threshold is set).
+    ThresholdInvalid = 34,
+    /// The attestor voting window for this dispute has closed.
+    VotingClosed = 35,
+    /// The attestor vote threshold has not been reached yet.
+    VotesNotMet = 36,
+    /// This commitment is governed by M-of-N attestor voting; single-resolver
+    /// resolution is not permitted.
+    UseVotingResolution = 37,
 }
