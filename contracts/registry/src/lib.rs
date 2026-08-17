@@ -17,7 +17,7 @@ mod test;
 #[cfg(test)]
 mod attacker_gate;
 
-pub use commitments::{Commitment, CommitmentStatus, DataKey, TemplateType, DISPUTE_WINDOW_SECONDS};
+pub use commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
 pub use upgrade::{SCHEMA_VERSION_V1, SCHEMA_VERSION_V2};
 use errors::Error;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Vec};
@@ -28,29 +28,54 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
-    /// Initializes the contract with a designated arbitrator address.
+    /// Initializes the contract with a committee of designated arbitrators.
     /// Can only be called once.
     ///
+    /// Disputes on commitments that delegate to the committee are settled by a
+    /// majority vote of this set rather than by a single point of trust.
+    ///
     /// # Authorization
-    /// * Authorized caller: `arbitrator` (via `require_auth`).
-    /// * Why: Requiring the designated arbitrator to authorize initialization ensures
-    ///   that an address cannot be appointed as arbitrator without its explicit consent.
+    /// * Authorized caller: every address in `arbitrators` (via `require_auth`).
+    /// * Why: Requiring each designated arbitrator to authorize initialization
+    ///   ensures that no address can be appointed to the committee without its
+    ///   explicit consent.
     ///
     /// # Panics
     /// * Panics with `Error::AlreadyInitialized` if called more than once.
-    pub fn initialize(env: Env, arbitrator: Address) {
-        if env.storage().instance().has(&DataKey::Arbitrator) {
+    /// * Panics with `Error::EmptyArbitratorSet` if `arbitrators` is empty.
+    pub fn initialize(env: Env, arbitrators: Vec<Address>) {
+        // A legacy single-arbitrator deployment recorded a bare Address under
+        // DataKey::Arbitrator; either key means the contract is already live.
+        if env.storage().instance().has(&DataKey::ArbitratorSet)
+            || env.storage().instance().has(&DataKey::Arbitrator)
+        {
             panic_with_error!(&env, Error::AlreadyInitialized);
+        }
+
+        if arbitrators.is_empty() {
+            panic_with_error!(&env, Error::EmptyArbitratorSet);
         }
 
         // Enter the reentrancy guard before any external interaction (including
         // the require_auth call below, which may invoke a custom account contract).
         reentrancy::enter(&env);
 
-        arbitrator.require_auth();
+        // Deduplicate first (so no address authorizes twice in the same
+        // invocation) and require every distinct arbitrator to consent to their
+        // appointment. Deduplicating also keeps the majority threshold computed
+        // over distinct members.
+        let mut deduped = Vec::new(&env);
+        for a in arbitrators.iter() {
+            if !deduped.contains(&a) {
+                deduped.push_back(a.clone());
+            }
+        }
+        for a in deduped.iter() {
+            a.require_auth();
+        }
         env.storage()
             .instance()
-            .set(&DataKey::Arbitrator, &arbitrator);
+            .set(&DataKey::ArbitratorSet, &deduped);
 
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
@@ -61,23 +86,39 @@ impl RegistryContract {
         reentrancy::exit(&env);
     }
 
-    /// Retrieves the designated arbitrator address.
+    /// Retrieves the full set of designated arbitrators.
     ///
     /// # Panics
     /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
-    pub fn get_arbitrator(env: Env) -> Address {
-        let arbitrator = env
-            .storage()
-            .instance()
-            .get(&DataKey::Arbitrator)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+    pub fn get_arbitrators(env: Env) -> Vec<Address> {
+        let arbitrators = commitments::arbitrators(&env);
 
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
 
-        arbitrator
+        arbitrators
+    }
+
+    /// Retrieves the first designated arbitrator.
+    ///
+    /// Kept for backwards compatibility with the original single-arbitrator
+    /// interface; prefer [`RegistryContract::get_arbitrators`] for the full set.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    pub fn get_arbitrator(env: Env) -> Address {
+        let arbitrators = commitments::arbitrators(&env);
+
+        env.storage().instance().extend_ttl(
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
+
+        arbitrators
+            .first()
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
     }
 
     /// Creates and registers a new ongoing commitment between an issuer and a counterparty.
@@ -108,63 +149,60 @@ impl RegistryContract {
         terms_hash: BytesN<32>,
         due_at: u64,
         resolver_address: Address,
-        template: Option<TemplateType>,
     ) -> u64 {
-        // 0. Enter the reentrancy guard before any external interaction (including
-        //    the require_auth call below, which may invoke a custom account contract).
-        reentrancy::enter(&env);
-
-        // 1. Require authorization from the issuer.
-        issuer.require_auth();
-
-        // 2. Validate due_at is in the future relative to the current ledger timestamp.
-        let now = env.ledger().timestamp();
-        if due_at <= now {
-            panic_with_error!(&env, Error::DueAtInPast);
-        }
-
-        // 3. Assign the next available ID.
-        let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
-        let next_id = id
-            .checked_add(1)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
-        env.storage().instance().set(&DataKey::NextId, &next_id);
-        env.storage().instance().extend_ttl(
-            commitments::TTL_THRESHOLD_LEDGERS,
-            commitments::TTL_EXTEND_LEDGERS,
-        );
-
-        // 4. Create the Commitment object with Pending status.
-        let commitment = Commitment {
-            id,
-            issuer: issuer.clone(),
-            counterparty: counterparty.clone(),
+        commitments::create(
+            &env,
+            issuer,
+            counterparty,
             terms_hash,
             due_at,
-            status: CommitmentStatus::Pending,
-            created_at: now,
-            attested_at: None,
             resolver_address,
-            template: commitments::OptTemplate(template),
-        };
+            1,
+        )
+    }
 
-        // 5. Store in persistent storage keyed by id and extend TTL.
-        env.storage()
-            .persistent()
-            .set(&DataKey::Commitment(id), &commitment);
-        env.storage().persistent().extend_ttl(
-            &DataKey::Commitment(id),
-            commitments::TTL_THRESHOLD_LEDGERS,
-            commitments::TTL_EXTEND_LEDGERS,
-        );
-
-        // 6. Emit Created event.
-        events::commitment_created(&env, id, &issuer, &counterparty);
-
-        // 7. Release the reentrancy guard.
-        reentrancy::exit(&env);
-
-        id
+    /// Creates a commitment that is fulfilled across `milestone_count` partial
+    /// attestations rather than a single one.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `issuer` (via `require_auth`).
+    /// * Why: Only the party issuing (promising) the commitment should be able to create
+    ///   and bind themselves to a new commitment on-chain.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `issuer` - The address making the commitment. Must authorize the call.
+    /// * `counterparty` - The address to whom the commitment is owed.
+    /// * `terms_hash` - A 32-byte hash representing the off-chain terms of the commitment.
+    /// * `due_at` - Unix timestamp (seconds) when the commitment is due. Must be in the future.
+    /// * `resolver_address` - The address of the custom resolver delegated to resolve disputes.
+    /// * `milestone_count` - How many milestones the commitment is split into.
+    ///
+    /// # Returns
+    /// * `u64` - The unique identifier assigned to the created commitment.
+    ///
+    /// # Panics
+    /// * Panics with `Error::DueAtInPast` if `due_at` is less than or equal to the current ledger timestamp.
+    /// * Panics with `Error::InvalidMilestoneCount` if `milestone_count` is zero or above
+    ///   `commitments::MAX_MILESTONES`.
+    pub fn create_milestone_commitment(
+        env: Env,
+        issuer: Address,
+        counterparty: Address,
+        terms_hash: BytesN<32>,
+        due_at: u64,
+        resolver_address: Address,
+        milestone_count: u32,
+    ) -> u64 {
+        commitments::create(
+            &env,
+            issuer,
+            counterparty,
+            terms_hash,
+            due_at,
+            resolver_address,
+            milestone_count,
+        )
     }
 
     /// Retrieves an existing commitment by its unique ID.
@@ -226,6 +264,61 @@ impl RegistryContract {
         attestation::attest(&env, caller, id, outcome);
     }
 
+    /// Attests a single milestone of a commitment.
+    ///
+    /// The commitment as a whole stays `Pending` until the final milestone is
+    /// attested, at which point it becomes `Fulfilled`, or `Late` if any
+    /// milestone came in late. A `Breached` milestone resolves the whole
+    /// commitment as `Breached` immediately.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `caller` (via `require_auth`), which must be either the
+    ///   commitment's `issuer` or `counterparty`.
+    /// * Why: Only the participating parties involved in the commitment are authorized
+    ///   to attest to its outcome.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `caller` - The address attesting to the milestone. Must authorize the call and be issuer or counterparty.
+    /// * `id` - The unique identifier of the commitment to attest.
+    /// * `milestone_index` - Zero-based index of the milestone. Milestones are attested in order.
+    /// * `outcome` - The milestone status (`Fulfilled`, `Late`, or `Breached`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
+    /// * Panics with `Error::Unauthorized` if `caller` is neither `issuer` nor `counterparty`.
+    /// * Panics with `Error::InvalidOutcome` if `outcome` is `CommitmentStatus::Pending` or `Disputed`.
+    /// * Panics with `Error::AlreadyResolved` if the commitment is not currently `Pending`.
+    /// * Panics with `Error::InvalidMilestoneIndex` if `milestone_index` is outside the commitment's range.
+    /// * Panics with `Error::MilestoneAlreadyAttested` if that milestone was already attested.
+    /// * Panics with `Error::MilestoneOutOfOrder` if an earlier milestone is still pending.
+    pub fn attest_milestone(
+        env: Env,
+        caller: Address,
+        id: u64,
+        milestone_index: u32,
+        outcome: CommitmentStatus,
+    ) {
+        attestation::attest_milestone(&env, caller, id, milestone_index, outcome);
+    }
+
+    /// Retrieves the attested outcome of a single milestone.
+    ///
+    /// # Arguments
+    /// * `env` - The Soroban execution environment.
+    /// * `id` - The unique identifier of the commitment.
+    /// * `milestone_index` - Zero-based index of the milestone.
+    ///
+    /// # Returns
+    /// * `Option<CommitmentStatus>` - The milestone's outcome, or `None` while it is pending.
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if the commitment does not exist.
+    /// * Panics with `Error::InvalidMilestoneIndex` if `milestone_index` is outside the commitment's range.
+    pub fn get_milestone(env: Env, id: u64, milestone_index: u32) -> Option<CommitmentStatus> {
+        attestation::get_milestone(&env, id, milestone_index)
+    }
+
     /// Checks whether a commitment is overdue.
     ///
     /// # Arguments
@@ -259,15 +352,24 @@ impl RegistryContract {
 
     /// Resolves a disputed commitment to a final outcome.
     ///
+    /// A commitment whose `resolver_address` is a custom resolver outside the
+    /// arbitrator committee is settled directly by that resolver. A commitment
+    /// that names an arbitrator as its resolver is settled by majority vote of
+    /// the committee: each call records the calling arbitrator's vote and the
+    /// dispute only finalizes once the votes for an outcome exceed half the
+    /// committee size.
+    ///
     /// # Authorization
-    /// * Authorized caller: `caller` (via `require_auth`), which must exactly match
-    ///   the commitment's designated `resolver_address`.
-    /// * Why: Dispute resolution authority is delegated strictly to the custom resolver
-    ///   address chosen for this commitment at creation time.
+    /// * Authorized caller: `caller` (via `require_auth`), which must either be the
+    ///   commitment's designated custom `resolver_address`, or a member of the
+    ///   arbitrator committee for a committee-routed commitment.
+    /// * Why: Dispute resolution authority is delegated either to the resolver
+    ///   chosen at creation time, or to a majority of the mutually trusted
+    ///   arbitrators — never a single point of trust.
     ///
     /// # Arguments
     /// * `env` - The Soroban execution environment.
-    /// * `caller` - The designated resolver address resolving the dispute. Must authorize the call.
+    /// * `caller` - The resolver or arbitrator casting the vote/resolution. Must authorize the call.
     /// * `id` - The unique identifier of the disputed commitment.
     /// * `final_outcome` - The resolution status (`Fulfilled`, `Late`, or `Breached`).
     pub fn resolve_dispute(env: Env, caller: Address, id: u64, final_outcome: CommitmentStatus) {
@@ -310,9 +412,9 @@ impl RegistryContract {
     /// Installs the initial upgrade admin — in production, the Timelock contract.
     ///
     /// # Authorization
-    /// * Authorized caller: the `arbitrator` recorded by `initialize` (via `require_auth`).
+    /// * Authorized caller: the `arbitrators` recorded by `initialize` (via `require_auth`).
     /// * Why: at bootstrap no upgrade admin exists yet to authorize its own creation,
-    ///   and the arbitrator is the only authority the contract already trusts. The path
+    ///   and the arbitrator committee is the only authority the contract already trusts. The path
     ///   closes permanently once used; later changes go through `set_upgrade_admin`,
     ///   which only the timelock can call.
     ///
