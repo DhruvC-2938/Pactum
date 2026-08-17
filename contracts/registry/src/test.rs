@@ -1860,6 +1860,74 @@ fn test_legacy_commitment_storage_migration() {
     assert_eq!(final_comm.status, CommitmentStatus::Breached);
 }
 
+/// Shape of a record written after milestone support landed but before
+/// attestor-panel voting (`attestors` / `vote_threshold`) was added.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PreAttestorVotingCommitment {
+    id: u64,
+    issuer: Address,
+    counterparty: Address,
+    terms_hash: BytesN<32>,
+    due_at: u64,
+    status: CommitmentStatus,
+    created_at: u64,
+    attested_at: Option<u64>,
+    resolver_address: Address,
+    milestone_count: u32,
+    milestones_attested: u32,
+    late_milestones: u32,
+    oracle: Option<Address>,
+    schema_id: Option<u32>,
+}
+
+#[test]
+fn test_mid_tier_milestone_commitment_migration_preserves_counters() {
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+
+    let mid_id = 77u64;
+    let mid_comm = PreAttestorVotingCommitment {
+        id: mid_id,
+        issuer: issuer.clone(),
+        counterparty: counterparty.clone(),
+        terms_hash: BytesN::from_array(&env, &[6u8; 32]),
+        due_at: 2000,
+        status: CommitmentStatus::Pending,
+        created_at: 1000,
+        attested_at: None,
+        resolver_address: resolver.clone(),
+        milestone_count: 3,
+        milestones_attested: 1,
+        late_milestones: 0,
+        oracle: None,
+        schema_id: None,
+    };
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&commitments::DataKey::Commitment(mid_id), &mid_comm);
+    });
+
+    // The real milestone counters must survive migration rather than being
+    // collapsed to a single already-resolved milestone.
+    let migrated = client.get_commitment(&mid_id);
+    assert_eq!(migrated.id, mid_id);
+    assert_eq!(migrated.resolver_address, resolver);
+    assert_eq!(migrated.milestone_count(), 3);
+    assert_eq!(migrated.milestones_attested(), 1);
+    assert_eq!(migrated.late_milestones(), 0);
+    assert!(migrated.attestors.is_empty());
+    assert_eq!(migrated.vote_threshold(), 0);
+
+    // The commitment stays usable: the next milestone can still be attested.
+    client.attest_milestone(&issuer, &mid_id, &1, &CommitmentStatus::Fulfilled);
+    assert_eq!(
+        client.get_commitment(&mid_id).milestones_attested(),
+        2
+    );
+}
+
 #[test]
 fn test_legacy_commitment_migration_fails_if_uninitialized() {
     // Set up uninitialized contract

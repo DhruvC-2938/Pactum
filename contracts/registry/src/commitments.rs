@@ -332,7 +332,10 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
         && map.contains_key(attestors_sym.clone())
         && map.contains_key(threshold_sym.clone())
     {
-        let id: u64 = map.get(Symbol::new(env, "id"))?.try_into_val(env).ok()?;
+        let stored_id: u64 = map.get(Symbol::new(env, "id"))?.try_into_val(env).ok()?;
+        if stored_id != id {
+            return None;
+        }
         let issuer: Address = map
             .get(Symbol::new(env, "issuer"))?
             .try_into_val(env)
@@ -401,6 +404,94 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
                 milestones_attested,
                 late_milestones,
                 vote_threshold,
+            ),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Commitment(id), &migrated);
+
+        return Some(migrated);
+    }
+
+    // Mid-tier record: written after milestone support (`milestone_count` /
+    // `milestones_attested` / `late_milestones` / `resolver_address`) landed
+    // but before attestor-panel voting (`attestors` / `vote_threshold`) did.
+    // Preserve the real milestone counters instead of collapsing them to a
+    // single milestone, and default the not-yet-invented voting fields to
+    // "no panel configured".
+    if map.contains_key(resolver_sym.clone()) && map.contains_key(milestone_sym.clone()) {
+        let stored_id: u64 = map.get(Symbol::new(env, "id"))?.try_into_val(env).ok()?;
+        if stored_id != id {
+            return None;
+        }
+        let issuer: Address = map
+            .get(Symbol::new(env, "issuer"))?
+            .try_into_val(env)
+            .ok()?;
+        let counterparty: Address = map
+            .get(Symbol::new(env, "counterparty"))?
+            .try_into_val(env)
+            .ok()?;
+        let terms_hash: BytesN<32> = map
+            .get(Symbol::new(env, "terms_hash"))?
+            .try_into_val(env)
+            .ok()?;
+        let due_at: u64 = map
+            .get(Symbol::new(env, "due_at"))?
+            .try_into_val(env)
+            .ok()?;
+        let status: CommitmentStatus = map
+            .get(Symbol::new(env, "status"))?
+            .try_into_val(env)
+            .ok()?;
+        let created_at: u64 = map
+            .get(Symbol::new(env, "created_at"))?
+            .try_into_val(env)
+            .ok()?;
+        let attested_at: Option<u64> = match map.get(Symbol::new(env, "attested_at")) {
+            Some(v) => v.try_into_val(env).ok()?,
+            None => None,
+        };
+        let oracle: Option<Address> = match map.get(Symbol::new(env, "oracle")) {
+            Some(v) => v.try_into_val(env).ok()?,
+            None => None,
+        };
+        let schema_id: Option<u32> = match map.get(Symbol::new(env, "schema_id")) {
+            Some(v) => v.try_into_val(env).ok()?,
+            None => None,
+        };
+        let resolver_address: Address = map.get(resolver_sym)?.try_into_val(env).ok()?;
+        let milestone_count: u32 = map.get(milestone_sym)?.try_into_val(env).ok()?;
+        let milestones_attested: u32 = map
+            .get(Symbol::new(env, "milestones_attested"))?
+            .try_into_val(env)
+            .ok()?;
+        let late_milestones: u32 = map
+            .get(Symbol::new(env, "late_milestones"))?
+            .try_into_val(env)
+            .ok()?;
+
+        let migrated = Commitment {
+            id,
+            issuer,
+            counterparty,
+            terms_hash,
+            due_at,
+            status,
+            created_at,
+            attested_at,
+            resolver_address,
+            oracle,
+            schema_id,
+            // Pre-attestor-voting record: no panel existed yet.
+            attestors: Vec::new(env),
+            counters: Commitment::pack_counters(
+                env,
+                milestone_count,
+                milestones_attested,
+                late_milestones,
+                0,
             ),
         };
 
