@@ -1,3 +1,9 @@
+import pool from '../db/timescale';
+import { insertCommitmentOutcome, updateCommitmentOutcome } from '../workers/timescaleSnapshot';
+import { invalidateLedger } from './cache';
+import { CommitmentCreatedEvent, parseLedgerEvents } from './events';
+import { createSorobanRpcLedgerClient, SorobanLedgerSource } from './rpc-source';
+import { PostgresIndexerStore } from './store';
 import {
   IndexerStore,
   LedgerCheckpoint,
@@ -162,3 +168,124 @@ export class FinalityIndexer {
     return floor === this.startSequence && sawCanonicalCandidate ? 0 : null;
   }
 }
+
+export interface EventIndexerConfig {
+  rpcUrl: string;
+  contractId: string;
+  finalityDepth?: number;
+  startSequence?: number;
+  maxBatchSize?: number;
+  pollIntervalMs?: number;
+}
+
+export interface EventIndexer {
+  sync(): Promise<SyncResult | null>;
+  stop(): Promise<void>;
+  /** The in-memory cache of commitments parsed so far, keyed by commitment id. */
+  cachedCommitments(): ReadonlyMap<string, CommitmentCreatedEvent>;
+}
+
+/**
+ * Boots the running event listener: a Soroban RPC source scoped to the deployed
+ * contract, the PostgreSQL ledger store, and a finality-aware indexer whose
+ * commit hook parses each ledger's contract events, persists them into the
+ * Timescale `commitment_outcomes` table reputation routes read from, and
+ * invalidates the Redis reputation cache for every touched address. A poll
+ * loop keeps the indexer caught up; failures are logged and retried on the
+ * next tick so a flaky RPC never takes the service down.
+ */
+export const startEventIndexer = (config: EventIndexerConfig): EventIndexer => {
+  const pollIntervalMs = Math.max(1_000, config.pollIntervalMs ?? 15_000);
+  const commitments = new Map<string, CommitmentCreatedEvent>();
+  let indexer: FinalityIndexer | null = null;
+  let timer: NodeJS.Timeout | null = null;
+  let stopped = false;
+  let syncing = false;
+
+  const commit = async (ledger: LedgerSnapshot): Promise<void> => {
+    const closedAt = new Date(ledger.closedAt);
+    const events = await parseLedgerEvents(ledger);
+
+    for (const event of events) {
+      switch (event.type) {
+        case 'created':
+          // The created event is the only one carrying the parties, so it seeds
+          // the outcome row; later events enrich that same commitment id. The
+          // in-memory map guards replays (e.g. after a reorg) from duplicating.
+          if (commitments.has(event.commitmentId)) break;
+          commitments.set(event.commitmentId, event);
+          await insertCommitmentOutcome({
+            commitmentId: event.commitmentId,
+            partyA: event.issuer,
+            partyB: event.counterparty,
+            amount: 0,
+            status: 'created',
+            outcome: 'pending',
+            dueDate: closedAt,
+          });
+          break;
+        case 'attested':
+          await updateCommitmentOutcome(event.commitmentId, 'attested', event.outcome, closedAt);
+          break;
+        case 'disputed':
+          await updateCommitmentOutcome(event.commitmentId, 'disputed', 'disputed', closedAt);
+          break;
+        case 'resolved':
+          await updateCommitmentOutcome(event.commitmentId, 'resolved', event.outcome, closedAt);
+          break;
+      }
+    }
+
+    await invalidateLedger(ledger);
+  };
+
+  const sync = async (): Promise<SyncResult | null> => {
+    if (!indexer || stopped || syncing) return null;
+    syncing = true;
+    try {
+      return await indexer.sync();
+    } catch (error) {
+      console.error('[indexer] Poll failed:', error);
+      return null;
+    } finally {
+      syncing = false;
+    }
+  };
+
+  const bootstrap = async (): Promise<void> => {
+    const { rpc } = await import('@stellar/stellar-sdk');
+    const server = new rpc.Server(config.rpcUrl, { allowHttp: true });
+    const source = new SorobanLedgerSource(
+      createSorobanRpcLedgerClient(server),
+      { contractId: config.contractId },
+    );
+    indexer = new FinalityIndexer({
+      source,
+      store: new PostgresIndexerStore(pool),
+      finalityDepth: config.finalityDepth ?? 0,
+      startSequence: config.startSequence,
+      maxBatchSize: config.maxBatchSize,
+      onLedgerCommitted: commit,
+    });
+
+    await sync();
+    if (!stopped) {
+      timer = setInterval(() => void sync(), pollIntervalMs);
+      timer.unref?.();
+    }
+  };
+
+  const ready = bootstrap().catch((error: unknown) => {
+    console.error('[indexer] Startup failed, the listener will not poll:', error);
+  });
+
+  return {
+    sync,
+    cachedCommitments: () => commitments,
+    stop: async () => {
+      stopped = true;
+      if (timer) clearInterval(timer);
+      await ready;
+    },
+  };
+};
