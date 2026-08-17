@@ -56,7 +56,30 @@ pub enum Error {
     EmptyArbitratorSet = 24,
     /// An arbitrator attempted to cast a second vote on the same dispute.
     AlreadyVoted = 25,
-    /// The protocol has been paused by the admin (emergency halt). State-mutating
-    /// entry points revert with this error while reads keep working.
-    ProtocolPaused = 26,
+    /// The attestor does not hold a stake sufficient for the requested operation.
+    InsufficientStake = 26,
+    /// An unstake has already been requested and is still pending for this attestor.
+    UnbondingPending = 27,
+    /// The unbonding period for this unstake has not elapsed yet.
+    UnbondingNotElapsed = 28,
+    /// A dispute is active, so the attestor's stake is locked.
+    DisputeActive = 29,
+    /// No staking token has been configured for the registry.
+    StakingTokenNotSet = 30,
+    /// The requested staking amount is zero or negative.
+    ZeroAmount = 31,
+    /// The caller is not a designated attestor on the commitment's voting panel.
+    NotAttestor = 32,
+    /// The attestor has already cast a vote on this disputed commitment.
+    AttestorAlreadyVoted = 33,
+    /// The vote threshold is invalid (zero when a panel exists, above the panel
+    /// size, or a panel is missing while a threshold is set).
+    ThresholdInvalid = 34,
+    /// The attestor voting window for this dispute has closed.
+    VotingClosed = 35,
+    /// The attestor vote threshold has not been reached yet.
+    VotesNotMet = 36,
+    /// This commitment is governed by M-of-N attestor voting; single-resolver
+    /// resolution is not permitted.
+    UseVotingResolution = 37,
 }

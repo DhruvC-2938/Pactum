@@ -70,6 +70,12 @@
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "vec": []
+                },
+                {
+                  "u32": 0
                 }
               ]
             }
@@ -135,6 +141,14 @@
                         "symbol": "attested_at"
                       },
                       "val": "void"
+                    },
+                    {
+                      "key": {
+                        "symbol": "attestors"
+                      },
+                      "val": {
+                        "vec": []
+                      }
                     },
                     {
                       "key": {
@@ -226,6 +240,14 @@
                       },
                       "val": {
                         "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "vote_threshold"
+                      },
+                      "val": {
+                        "u32": 0
                       }
                     }
                   ]

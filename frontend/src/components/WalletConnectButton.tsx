@@ -1,0 +1,100 @@
+import React, { useState } from 'react';
+import { Wallet, CheckCircle2 } from 'lucide-react';
+import { useWallet } from '../context/WalletContext';
+import { truncateAddress } from '../lib/wallet';
+import WalletConnectModal from './WalletConnectModal';
+
+export interface WalletConnectButtonProps {
+  variant?: 'dark' | 'light';
+  className?: string;
+}
+
+const variantStyles: Record<'dark' | 'light', React.CSSProperties> = {
+  dark: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '7px',
+    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+    color: '#ffffff',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: '10px',
+    padding: '8px 18px',
+    fontSize: '12.5px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.15)',
+    transition: 'all 0.15s ease',
+  },
+  light: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    background: '#ffffff',
+    border: '1px solid #e2e8f0',
+    borderRadius: '8px',
+    padding: '6px 14px',
+    fontSize: '12.5px',
+    fontWeight: '700',
+    color: '#475569',
+    cursor: 'pointer',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+    transition: 'all 0.15s ease',
+  },
+};
+
+const connectedStyles: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  background: '#f0fdf4',
+  borderColor: '#bbf7d0',
+  color: '#15803d',
+  fontWeight: '700',
+  fontFamily: 'monospace',
+  borderRadius: '10px',
+  padding: '7px 14px',
+  fontSize: '12.5px',
+  border: '1px solid #bbf7d0',
+  cursor: 'pointer',
+  boxShadow: '0 2px 6px rgba(34, 197, 94, 0.08)',
+};
+
+export const WalletConnectButton: React.FC<WalletConnectButtonProps> = ({
+  variant = 'dark',
+  className,
+}) => {
+  const { address, isConnected, isConnecting } = useWallet();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const toggle = () => setIsOpen((prev) => !prev);
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <WalletConnectModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+      {isConnected && address ? (
+        <button
+          onClick={toggle}
+          className={className}
+          style={connectedStyles}
+          title="Click to view wallet details"
+        >
+          <CheckCircle2 size={14} color="#22c55e" />
+          {truncateAddress(address)}
+        </button>
+      ) : (
+        <button
+          onClick={toggle}
+          disabled={isConnecting}
+          className={className}
+          style={{ ...variantStyles[variant], cursor: isConnecting ? 'wait' : 'pointer' }}
+          title="Connect your Stellar wallet"
+        >
+          <Wallet size={variant === 'dark' ? 15 : 14} />
+          {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+        </button>
+      )}
+    </div>
+  );
+};
+
+export default WalletConnectButton;

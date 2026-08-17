@@ -4,7 +4,7 @@ use super::*;
 use registry::errors::Error;
 use registry::RegistryContract;
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, Vec};
 
 fn setup_env() -> (
     Env,
@@ -60,6 +60,8 @@ fn test_mock_resolver_cross_contract_dispute_resolution() {
         &terms_hash,
         &due_at,
         &resolver_client.address,
+        &Vec::new(&env),
+        &0,
     );
 
     let commitment = registry_client.get_commitment(&id);
@@ -93,12 +95,7 @@ fn test_mock_resolver_cross_contract_dispute_resolution() {
 
     // 6. Authorized controller resolving via MockResolver succeeds
     env.ledger().with_mut(|l| l.timestamp = 1700);
-    resolver_client.resolve_dispute(
-        &controller,
-        &registry_id,
-        &id,
-        &CommitmentStatus::Breached,
-    );
+    resolver_client.resolve_dispute(&controller, &registry_id, &id, &CommitmentStatus::Breached);
 
     let resolved_comm = registry_client.get_commitment(&id);
     assert_eq!(resolved_comm.status, CommitmentStatus::Breached);
@@ -125,6 +122,8 @@ fn test_mock_resolver_rejected_if_not_designated_resolver() {
         &terms_hash,
         &due_at,
         &other_resolver,
+        &Vec::new(&env),
+        &0,
     );
 
     env.ledger().with_mut(|l| l.timestamp = 1500);

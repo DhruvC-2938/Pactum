@@ -42,6 +42,11 @@ function isLedgerOutsideRetention(error: unknown): boolean {
     && /start ledger .* must be between the oldest ledger:/i.test(candidate.message);
 }
 
+export interface RpcEventFilter {
+  type: 'contract';
+  contractIds: string[];
+}
+
 export interface SorobanRpcLedgerClient {
   getLatestLedger(): Promise<{ sequence: number }>;
   getLedgers(request: {
@@ -50,13 +55,13 @@ export interface SorobanRpcLedgerClient {
   }): Promise<{ ledgers: RpcLedger[] }>;
   getEvents(request:
     | {
-        filters: [];
+        filters: RpcEventFilter[];
         startLedger: number;
         endLedger: number;
         limit: number;
       }
     | {
-        filters: [];
+        filters: RpcEventFilter[];
         cursor: string;
         limit: number;
       }
@@ -130,12 +135,29 @@ function toEvents(sequence: number, events: RpcEvent[]): LedgerEvent[] {
     }));
 }
 
+export interface SorobanLedgerSourceOptions {
+  /**
+   * When set, `getEvents` is scoped to this deployed contract, so the indexer
+   * only sees events emitted by the Pactum registry.
+   */
+  contractId?: string;
+}
+
 /**
  * Adapts Stellar Soroban RPC responses to the finality indexer's deterministic
  * ledger model. The RPC header supplies the parent hash used for fork checks.
  */
 export class SorobanLedgerSource implements LedgerSource {
-  constructor(private readonly rpc: SorobanRpcLedgerClient) {}
+  private readonly eventFilters: RpcEventFilter[];
+
+  constructor(
+    private readonly rpc: SorobanRpcLedgerClient,
+    options: SorobanLedgerSourceOptions = {},
+  ) {
+    this.eventFilters = options.contractId
+      ? [{ type: 'contract', contractIds: [options.contractId] }]
+      : [];
+  }
 
   async getLatestLedger(): Promise<{ sequence: number }> {
     return this.rpc.getLatestLedger();
@@ -162,7 +184,7 @@ export class SorobanLedgerSource implements LedgerSource {
     }
 
     let eventResponse = await this.rpc.getEvents({
-      filters: [],
+      filters: this.eventFilters,
       startLedger: sequence,
       endLedger: sequence + 1,
       limit: EVENT_PAGE_LIMIT,
@@ -172,7 +194,7 @@ export class SorobanLedgerSource implements LedgerSource {
 
     while (eventResponse.events.length === EVENT_PAGE_LIMIT && cursor) {
       eventResponse = await this.rpc.getEvents({
-        filters: [],
+        filters: this.eventFilters,
         cursor,
         limit: EVENT_PAGE_LIMIT,
       });

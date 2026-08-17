@@ -23,3 +23,6 @@ evm/typechain-types/
 .DS_Store
 *.swp
 *.swo
+
+# Soroban test snapshots
+test_snapshots/
