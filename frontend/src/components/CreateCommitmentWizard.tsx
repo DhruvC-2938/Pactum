@@ -377,7 +377,7 @@ export default function CreateCommitmentWizard({ onSubmit, onSuccess }: CreateCo
               ) : (
                 <button
                   type="button"
-                  onClick={connectWallet}
+                  onClick={() => connectWallet()}
                   style={{
                     background: '#ea580c',
                     color: '#ffffff',
