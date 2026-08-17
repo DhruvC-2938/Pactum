@@ -76,6 +76,15 @@ pub fn commitment_fallback(env: &Env, id: u64, fallback_outcome: CommitmentStatu
     env.events()
         .publish((symbol_short!("votefall"), id), fallback_outcome);
 }
+pub fn protocol_paused(env: &Env) {
+    let topics = (symbol_short!("paused"),);
+    env.events().publish(topics, ());
+}
+
+pub fn protocol_unpaused(env: &Env) {
+    let topics = (symbol_short!("unpaused"),);
+    env.events().publish(topics, ());
+}
 
 /// Publishes an event when the contract's executable is replaced.
 ///

@@ -60,7 +60,13 @@ router.get('/:id', (req: Request, res: Response) => {
 
 // GET /commitments - List commitments
 router.get('/', (req: Request, res: Response) => {
-  res.status(200).json({ message: 'List commitments' });
+  const { template } = req.query;
+  // In a real implementation this filters from DB by template field.
+  // For now return a stub that acknowledges the filter parameter.
+  res.status(200).json({
+    message: 'List commitments',
+    filter: template ? { template } : {},
+  });
 });
 
 export default router;

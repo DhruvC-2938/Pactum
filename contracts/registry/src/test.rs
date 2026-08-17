@@ -424,7 +424,7 @@ fn setup_test_with_arbitrator() -> (
 ) {
     let (env, client, issuer, counterparty, resolver) = setup_test();
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     (env, client, issuer, counterparty, resolver)
 }
 
@@ -1030,7 +1030,7 @@ fn test_resolve_dispute_requires_auth() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     env.mock_all_auths();
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     let id = client.create_commitment(
         &issuer,
         &counterparty,
@@ -1055,7 +1055,7 @@ fn test_initialize_requires_auth() {
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
 
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
 }
 
 // -----------------------------------------------------------------------------
@@ -1508,14 +1508,14 @@ fn test_pause_blocks_write_functions() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &soroban_sdk::Vec::new(&env), &0);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
     client.pause(&arbitrator);
     assert!(client.is_paused());
 
     // create_commitment reverts with ProtocolPaused
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &3000, &resolver);
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &3000, &resolver, &soroban_sdk::Vec::new(&env), &0);
     assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
 
     // attest reverts with ProtocolPaused
@@ -1547,6 +1547,8 @@ fn test_read_functions_succeed_while_paused() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
         &resolver,
+        &soroban_sdk::Vec::new(&env),
+        &0,
     );
 
     client.pause(&arbitrator);
@@ -1611,13 +1613,13 @@ fn test_unpause_restores_write_functions() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     client.pause(&arbitrator);
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver, &soroban_sdk::Vec::new(&env), &0);
     assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
 
     client.unpause(&arbitrator);
     assert!(!client.is_paused());
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver, &soroban_sdk::Vec::new(&env), &0);
     assert_eq!(id, 1);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     let commitment = client.get_commitment(&id);
@@ -1633,7 +1635,7 @@ fn test_pause_requires_auth() {
     let arbitrator = Address::generate(&env);
 
     env.mock_all_auths();
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
 
     env.mock_auths(&[]);
     client.pause(&arbitrator);
@@ -1648,7 +1650,7 @@ fn test_unpause_requires_auth() {
     let arbitrator = Address::generate(&env);
 
     env.mock_all_auths();
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     client.pause(&arbitrator);
 
     env.mock_auths(&[]);
