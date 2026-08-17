@@ -46,13 +46,25 @@ pub fn get_milestone(env: &Env, id: u64, milestone_index: u32) -> Option<Commitm
     }
 
     let key = DataKey::Milestone(id, milestone_index);
-    let outcome = env.storage().temporary().get(&key);
 
-    // Bump on access like get_commitment and get_reputation do, so an early
-    // milestone cannot expire out from under a live commitment and start
-    // reading back as pending.
-    if outcome.is_some() {
+    if let Some(outcome) = env.storage().temporary().get(&key) {
+        // Bump on access like get_commitment and get_reputation do, so an
+        // early milestone cannot expire out from under a live commitment and
+        // start reading back as pending.
         env.storage().temporary().extend_ttl(
+            &key,
+            crate::commitments::TTL_THRESHOLD_LEDGERS,
+            crate::commitments::TTL_EXTEND_LEDGERS,
+        );
+        return Some(outcome);
+    }
+
+    // Fall back to persistent storage for milestone records written before
+    // this key moved from Persistent to Temporary storage, so they don't
+    // become invisible after upgrade.
+    let outcome = env.storage().persistent().get(&key);
+    if outcome.is_some() {
+        env.storage().persistent().extend_ttl(
             &key,
             crate::commitments::TTL_THRESHOLD_LEDGERS,
             crate::commitments::TTL_EXTEND_LEDGERS,

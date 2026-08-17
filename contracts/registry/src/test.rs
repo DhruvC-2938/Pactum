@@ -2207,6 +2207,25 @@ fn test_get_milestone_returns_recorded_outcomes() {
 }
 
 #[test]
+fn test_get_milestone_falls_back_to_legacy_persistent_storage() {
+    let (_env, client, _issuer, _counterparty, id) = setup_milestone_commitment(2);
+
+    // Simulate a milestone outcome written before Milestone records moved
+    // from Persistent to Temporary storage.
+    _env.as_contract(&client.address, || {
+        _env.storage().persistent().set(
+            &commitments::DataKey::Milestone(id, 0),
+            &CommitmentStatus::Fulfilled,
+        );
+    });
+
+    assert_eq!(
+        client.get_milestone(&id, &0),
+        Some(CommitmentStatus::Fulfilled)
+    );
+}
+
+#[test]
 fn test_get_milestone_rejects_an_out_of_range_index() {
     let (_env, client, _issuer, _counterparty, id) = setup_milestone_commitment(2);
 
