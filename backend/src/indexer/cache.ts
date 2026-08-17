@@ -4,7 +4,7 @@ import { LedgerSnapshot } from './types';
 
 // ─── Redis reputation cache (upstream) ───────────────────────────────────────
 
-type RedisClient = ReturnType<typeof createClient>;
+type RedisClient = any;
 
 const DEFAULT_TTL_SECONDS = 60;
 
@@ -54,7 +54,7 @@ export const initCache = async (): Promise<void> => {
     disableOfflineQueue: true,
     socket: {
       connectTimeout: connectTimeoutMs(),
-      reconnectStrategy: (retries) => Math.min(retries * 200, 5000),
+      reconnectStrategy: (retries: number) => Math.min(retries * 200, 5000),
     },
   });
 
