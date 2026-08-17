@@ -56,4 +56,7 @@ pub enum Error {
     EmptyArbitratorSet = 24,
     /// An arbitrator attempted to cast a second vote on the same dispute.
     AlreadyVoted = 25,
+    /// The protocol has been paused by the admin (emergency halt). State-mutating
+    /// entry points revert with this error while reads keep working.
+    ProtocolPaused = 26,
 }

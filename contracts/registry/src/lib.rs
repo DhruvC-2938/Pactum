@@ -158,6 +158,9 @@ impl RegistryContract {
         due_at: u64,
         resolver_address: Address,
     ) -> u64 {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         commitments::create(
             &env,
             issuer,
@@ -202,6 +205,9 @@ impl RegistryContract {
         resolver_address: Address,
         milestone_count: u32,
     ) -> u64 {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         commitments::create(
             &env,
             issuer,
@@ -269,6 +275,9 @@ impl RegistryContract {
     /// * Panics with `Error::InvalidOutcome` if `outcome` is `CommitmentStatus::Pending` or `Disputed`.
     /// * Panics with `Error::AlreadyResolved` if the commitment is not currently `Pending`.
     pub fn attest(env: Env, caller: Address, id: u64, outcome: CommitmentStatus) {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         attestation::attest(&env, caller, id, outcome);
     }
 
@@ -307,6 +316,9 @@ impl RegistryContract {
         milestone_index: u32,
         outcome: CommitmentStatus,
     ) {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         attestation::attest_milestone(&env, caller, id, milestone_index, outcome);
     }
 
@@ -355,6 +367,9 @@ impl RegistryContract {
     /// * `caller` - The address initiating the dispute. Must authorize the call.
     /// * `id` - The unique identifier of the commitment to dispute.
     pub fn dispute(env: Env, caller: Address, id: u64) {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         disputes::dispute(&env, caller, id);
     }
 
@@ -386,6 +401,9 @@ impl RegistryContract {
         id: u64,
         final_outcome: CommitmentStatus,
     ) {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         disputes::resolve_dispute(&env, caller, id, final_outcome);
     }
 
@@ -399,6 +417,82 @@ impl RegistryContract {
     /// * `Reputation` - The accumulated fulfilled, late, and breached counts for the address as an issuer.
     pub fn get_reputation(env: Env, address: Address) -> reputation::Reputation {
         reputation::get_reputation(&env, address)
+    }
+
+    /// Returns whether the protocol is currently paused (emergency halt).
+    ///
+    /// Read functions remain fully operational while paused; only
+    /// state-mutating entry points are halted.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the protocol is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        pausable::is_paused(&env)
+    }
+
+    /// Pauses the protocol, halting every state-mutating entry point with
+    /// `Error::ProtocolPaused` while leaving reads fully operational.
+    ///
+    /// This is the emergency kill-switch used in the event of a zero-day
+    /// exploit. Admin lifecycle operations (`pause`, `unpause`, `upgrade`)
+    /// are deliberately exempt so the admin can end the halt or deploy an
+    /// emergency patch while the protocol is paused.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), a current member of
+    ///   the designated arbitrator committee.
+    /// * Why: Only the mutually trusted committee is authorized to trigger the
+    ///   emergency halt.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if `admin` is not on the committee.
+    pub fn pause(env: Env, admin: Address) {
+        // Enter the reentrancy guard before any external interaction (including
+        // the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
+        admin.require_auth();
+
+        let committee = commitments::arbitrators(&env);
+        if !committee.contains(admin.clone()) {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+
+        pausable::set_paused(&env, true);
+        events::protocol_paused(&env);
+
+        // Release the reentrancy guard.
+        reentrancy::exit(&env);
+    }
+
+    /// Unpauses the protocol, restoring its state-mutating entry points.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), a current member of
+    ///   the designated arbitrator committee.
+    /// * Why: Only the mutually trusted committee is authorized to end the halt.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if `admin` is not on the committee.
+    pub fn unpause(env: Env, admin: Address) {
+        // Enter the reentrancy guard before any external interaction (including
+        // the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
+        admin.require_auth();
+
+        let committee = commitments::arbitrators(&env);
+        if !committee.contains(admin.clone()) {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+
+        pausable::set_paused(&env, false);
+        events::protocol_unpaused(&env);
+
+        // Release the reentrancy guard.
+        reentrancy::exit(&env);
     }
 
     // ---------------------------------------------------------------------
@@ -509,6 +603,9 @@ impl RegistryContract {
     /// * Panics with `Error::BatchTooLarge` if the batch exceeds
     ///   `upgrade::MAX_MIGRATION_BATCH` addresses.
     pub fn migrate_reputation_batch(env: Env, addresses: Vec<Address>) -> u32 {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         reputation::migrate_reputation_batch(&env, addresses)
     }
 

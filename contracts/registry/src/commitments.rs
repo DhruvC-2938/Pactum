@@ -116,6 +116,8 @@ pub enum DataKey {
     /// Only written by pre-multi-arbitrator deployments; read once to lazily
     /// migrate into [`DataKey::ArbitratorSet`].
     Arbitrator,
+    /// Instance storage key for the protocol paused (emergency halt) flag.
+    Paused,
     /// Persistent storage key for the running vote tally of a disputed
     /// commitment, keyed by commitment ID.
     Votes(u64),
