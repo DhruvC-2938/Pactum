@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import './LandingPage.css';
 import { useWallet } from '../context/WalletContext';
-import { Wallet, CheckCircle2 } from 'lucide-react';
 import FreighterInstallModal from './FreighterInstallModal';
-import WalletConnectModal from './WalletConnectModal';
+import WalletConnectButton from './WalletConnectButton';
 
 interface LandingPageProps {
   onLaunchApp: () => void;
@@ -11,20 +9,15 @@ interface LandingPageProps {
 }
 
 export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProps) {
-  const { address, isConnected, isConnecting, error, clearError } = useWallet();
-  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
-
-  const shortenKey = (key: string) => {
-    if (!key || key.length < 10) return key;
-    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
-  };
+  const { error, errorCode, clearError } = useWallet();
 
   return (
     <div className="landing">
 
       {/* ── Modern Pop-Up Modals ── */}
-      <WalletConnectModal isOpen={isWalletModalOpen} onClose={() => setIsWalletModalOpen(false)} />
-      <FreighterInstallModal error={error} onDismiss={clearError} />
+      {errorCode === 'NOT_INSTALLED' && (
+        <FreighterInstallModal error={error} onDismiss={clearError} />
+      )}
 
       {/* ── Nav ── */}
       <nav className="lp-nav">
@@ -41,60 +34,8 @@ export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProp
           <a className="lp-nav-link" href="https://github.com/amankoli09/Pactum" target="_blank" rel="noopener noreferrer">GitHub</a>
           <a className="lp-nav-link" href="https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E" target="_blank" rel="noopener noreferrer">Explorer</a>
 
-          {/* Freighter Wallet Connect Dropdown Menu */}
-          <div style={{ position: 'relative', display: 'inline-block' }}>
-            {isConnected && address ? (
-              <button
-                onClick={() => setIsWalletModalOpen((prev: boolean) => !prev)}
-                className="wallet-connected-btn"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#f0fdf4',
-                  border: '1px solid #bbf7d0',
-                  color: '#15803d',
-                  borderRadius: '10px',
-                  padding: '6px 10px',
-                  fontWeight: '700',
-                  fontSize: '12px',
-                  fontFamily: 'monospace',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(34, 197, 94, 0.08)'
-                }}
-                title="Click to view wallet details"
-              >
-                <CheckCircle2 size={13} color="#22c55e" style={{ flexShrink: 0 }} />
-                <span className="wallet-address-text">{shortenKey(address)}</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => setIsWalletModalOpen((prev) => !prev)}
-                disabled={isConnecting}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '7px',
-                  background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-                  color: '#ffffff',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '10px',
-                  padding: '8px 18px',
-                  fontSize: '12.5px',
-                  fontWeight: '700',
-                  cursor: isConnecting ? 'wait' : 'pointer',
-                  boxShadow: '0 4px 14px rgba(15, 23, 42, 0.15)',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Wallet size={15} />
-                {isConnecting ? 'Connecting...' : 'Connect Freighter'}
-              </button>
-            )}
-
-            <WalletConnectModal isOpen={isWalletModalOpen} onClose={() => setIsWalletModalOpen(false)} />
-          </div>
-
+{/* Wallet Connect Dropdown Button */}
+          <WalletConnectButton variant="dark" />
           <button className="lp-btn-primary lp-btn-sm" onClick={onLaunchApp}>Launch App →</button>
         </div>
       </nav>
