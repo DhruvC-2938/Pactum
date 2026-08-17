@@ -9,8 +9,8 @@
  * CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E
  */
 import { Contract, Keypair, rpc, scValToNative } from '@stellar/stellar-sdk';
-import { DEFAULT_CONTRACT_ID, resolveNetwork } from './networks.js';
-import { invokeContract, queryContract, type TxOptions } from './transaction.js';
+import { DEFAULT_CONTRACT_ID, resolveNetwork } from './networks';
+import { invokeContract, queryContract, type TxOptions } from './transaction';
 import {
   encodeAddress,
   encodeAddressVec,
@@ -20,7 +20,7 @@ import {
   encodeU64,
   decodeCommitment,
   decodeReputation,
-} from './xdr.js';
+} from './xdr';
 import type {
   AttestParams,
   Commitment,
@@ -30,10 +30,18 @@ import type {
   PactumClientConfig,
   Reputation,
   ResolveDisputeParams,
-} from './types.js';
+} from './types';
+import {
+  PactumEventType,
+  ContractEventMap,
+  EventCallback,
+  RawSorobanEvent,
+  decodeSorobanEvent,
+} from './events';
 
 export class PactumClient {
   private readonly opts: TxOptions;
+  private listeners: Map<PactumEventType, Set<EventCallback<any>>> = new Map();
 
   /**
    * Constructs a PactumClient connected to the specified network.
@@ -41,14 +49,15 @@ export class PactumClient {
    * @example
    * const client = new PactumClient({ network: 'testnet' });
    */
-  constructor(config: PactumClientConfig) {
+  constructor(config: PactumClientConfig = { network: 'testnet' }) {
+    const targetNetwork = config?.network || 'testnet';
     const { rpcUrl, networkPassphrase } = resolveNetwork(
-      config.network,
-      config.rpcUrl,
-      config.networkPassphrase,
+      targetNetwork,
+      config?.rpcUrl,
+      config?.networkPassphrase,
     );
 
-    const contractId = config.contractId ?? DEFAULT_CONTRACT_ID;
+    const contractId = config?.contractId ?? DEFAULT_CONTRACT_ID;
 
     this.opts = {
       rpcServer: new rpc.Server(rpcUrl, { allowHttp: false }),
@@ -57,27 +66,108 @@ export class PactumClient {
     };
   }
 
+  // ─── Event Listener Methods ───────────────────────────────────────────────
+
+  /**
+   * Registers a strongly typed event listener for contract events.
+   * TypeScript strictly enforces that the callback payload matches the specified eventType.
+   *
+   * @param eventType Event type to listen for ('created' | 'attested' | 'disputed' | 'resolved')
+   * @param callback Callback function receiving the strongly typed event payload
+   * @returns Unsubscribe cleanup function
+   */
+  public on<K extends PactumEventType>(
+    eventType: K,
+    callback: EventCallback<K>,
+  ): () => void {
+    if (!this.listeners.has(eventType)) {
+      this.listeners.set(eventType, new Set());
+    }
+    this.listeners.get(eventType)!.add(callback);
+
+    return () => {
+      this.off(eventType, callback);
+    };
+  }
+
+  /**
+   * Unsubscribes a callback from a specific event type.
+   */
+  public off<K extends PactumEventType>(
+    eventType: K,
+    callback: EventCallback<K>,
+  ): void {
+    const callbackSet = this.listeners.get(eventType);
+    if (callbackSet) {
+      callbackSet.delete(callback);
+    }
+  }
+
+  /**
+   * Manually emits a typed event to all registered listeners.
+   */
+  public emit<K extends PactumEventType>(
+    eventType: K,
+    payload: ContractEventMap[K],
+    rawEvent?: RawSorobanEvent,
+  ): void {
+    const callbackSet = this.listeners.get(eventType);
+    if (callbackSet) {
+      callbackSet.forEach(cb => {
+        try {
+          cb(payload, rawEvent);
+        } catch (error) {
+          console.error(`[PactumClient] Error in '${eventType}' event callback:`, error);
+        }
+      });
+    }
+  }
+
+  /**
+   * Decodes a raw Soroban XDR / RPC event and dispatches it to registered typed listeners.
+   *
+   * @param rawEvent Raw Soroban event object containing topics and values
+   * @returns True if decoded and dispatched, false otherwise
+   */
+  public handleRawEvent(rawEvent: RawSorobanEvent): boolean {
+    const decoded = decodeSorobanEvent(rawEvent);
+    if (!decoded) {
+      return false;
+    }
+
+    this.emit(decoded.type, decoded.payload, rawEvent);
+    return true;
+  }
+
+  /**
+   * Removes all registered event listeners.
+   */
+  public removeAllListeners(eventType?: PactumEventType): void {
+    if (eventType) {
+      this.listeners.delete(eventType);
+    } else {
+      this.listeners.clear();
+    }
+  }
+
+  /**
+   * Returns the count of registered listeners for an event type.
+   */
+  public listenerCount(eventType: PactumEventType): number {
+    return this.listeners.get(eventType)?.size || 0;
+  }
+
   // ─── Write methods ──────────────────────────────────────────────────────────
 
   /**
    * Creates and registers a new commitment on-chain.
    *
    * @returns The unique commitment ID assigned by the contract.
-   *
-   * @example
-   * const id = await client.createCommitment({
-   *   issuer: 'G...',
-   *   issuerSecret: 'S...',
-   *   counterparty: 'G...',
-   *   termsHash: 'abcd...', // 32-byte hex
-   *   dueAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
-   * });
    */
   async createCommitment(params: CreateCommitmentParams): Promise<bigint> {
     const attestors = params.attestors ?? [];
     const threshold = params.threshold ?? 0;
 
-    // issuerSecret is required: derive the public key from it for getAccount.
     const keypair = Keypair.fromSecret(params.issuerSecret);
     if (keypair.publicKey() !== params.issuer) {
       throw new Error(
@@ -99,14 +189,6 @@ export class PactumClient {
       ],
     );
 
-    // The contract returns the new commitment ID. We resolve it by querying
-    // the latest commitment via get_commitment with a best-effort scan.
-    // Since Soroban doesn't return the return value of submitted (vs simulated)
-    // transactions in the standard send flow, we extract the ID from the
-    // transaction meta via pollTransaction's returnValue.
-    //
-    // The pollTransaction result for a successful tx contains a `returnValue`
-    // on the `rpc.Api.GetSuccessfulTransactionResponse` type.
     const pollResult = await this.opts.rpcServer.getTransaction(txHash);
     if (
       pollResult.status === rpc.Api.GetTransactionStatus.SUCCESS &&
@@ -125,14 +207,6 @@ export class PactumClient {
    * Attests to the outcome of a commitment.
    *
    * @returns The transaction hash.
-   *
-   * @example
-   * await client.attest({
-   *   caller: 'G...',
-   *   callerSecret: 'S...',
-   *   id: 1n,
-   *   outcome: CommitmentStatus.Fulfilled,
-   * });
    */
   async attest(params: AttestParams): Promise<string> {
     return invokeContract(this.opts, params.callerSecret, 'attest', [
@@ -146,9 +220,6 @@ export class PactumClient {
    * Raises a dispute on an attested commitment within the 7-day dispute window.
    *
    * @returns The transaction hash.
-   *
-   * @example
-   * await client.dispute({ caller: 'G...', callerSecret: 'S...', id: 1n });
    */
   async dispute(params: DisputeParams): Promise<string> {
     return invokeContract(this.opts, params.callerSecret, 'dispute', [
@@ -161,14 +232,6 @@ export class PactumClient {
    * Resolves a disputed commitment to a final outcome (arbitrator only).
    *
    * @returns The transaction hash.
-   *
-   * @example
-   * await client.resolveDispute({
-   *   arbitrator: 'G...',
-   *   arbitratorSecret: 'S...',
-   *   id: 1n,
-   *   finalOutcome: CommitmentStatus.Breached,
-   * });
    */
   async resolveDispute(params: ResolveDisputeParams): Promise<string> {
     return invokeContract(
@@ -187,15 +250,8 @@ export class PactumClient {
 
   /**
    * Retrieves a commitment by its unique ID.
-   *
-   * Uses a read-only simulation so no signing is required.
-   *
-   * @example
-   * const commitment = await client.getCommitment(1n);
    */
   async getCommitment(id: bigint): Promise<Commitment> {
-    // Use a well-known Stellar account (the contract itself) as a read-only
-    // stub. Any valid public key works here since the tx is never submitted.
     const stubPublicKey = this.opts.contract.address().toString();
     const val = await queryContract(this.opts, stubPublicKey, 'get_commitment', [
       encodeU64(id),
@@ -205,9 +261,6 @@ export class PactumClient {
 
   /**
    * Returns true if the commitment is still Pending and its due date has passed.
-   *
-   * @example
-   * const overdue = await client.isOverdue(1n);
    */
   async isOverdue(id: bigint): Promise<boolean> {
     const stubPublicKey = this.opts.contract.address().toString();
@@ -219,9 +272,6 @@ export class PactumClient {
 
   /**
    * Retrieves the aggregate reputation for a given address.
-   *
-   * @example
-   * const rep = await client.getReputation('G...');
    */
   async getReputation(address: string): Promise<Reputation> {
     const stubPublicKey = this.opts.contract.address().toString();
