@@ -15,29 +15,32 @@ use soroban_sdk::{panic_with_error, Address, Env};
 /// * Why: Only the participating parties to the commitment have standing to contest
 ///   an attested outcome and initiate a dispute.
 pub fn dispute(env: &Env, caller: Address, id: u64) {
-    // 0. Enter the reentrancy guard before any external interaction (including
+    // 0. Fail fast if the protocol has been paused (emergency halt).
+    crate::pausable::require_not_paused(env);
+
+    // 1. Enter the reentrancy guard before any external interaction (including
     //    the require_auth call below, which may invoke a custom account contract).
     crate::reentrancy::enter(env);
 
-    // 1. Require authorization from the caller.
+    // 2. Require authorization from the caller.
     caller.require_auth();
 
-    // 2. Load commitment from persistent storage (with legacy record migration).
+    // 3. Load commitment from persistent storage (with legacy record migration).
     let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 3. Verify caller is either issuer or counterparty.
+    // 4. Verify caller is either issuer or counterparty.
     if caller != commitment.issuer && caller != commitment.counterparty {
         panic_with_error!(env, Error::Unauthorized);
     }
 
-    // 4. Verify commitment is currently Fulfilled, Late, or Breached (i.e. already attested).
+    // 5. Verify commitment is currently Fulfilled, Late, or Breached (i.e. already attested).
     match commitment.status {
         CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
         _ => panic_with_error!(env, Error::InvalidTransition),
     }
 
-    // 5. Verify the dispute is raised within the dispute window.
+    // 6. Verify the dispute is raised within the dispute window.
     let attested_at = commitment
         .attested_at
         .unwrap_or_else(|| panic_with_error!(env, Error::InvalidTransition));

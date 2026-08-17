@@ -1495,6 +1495,210 @@ fn test_get_trust_score_reflects_outcomes() {
     client.attest(&issuer, &id3, &CommitmentStatus::Breached);
     assert_eq!(client.get_trust_score(&issuer), 0);
 }
+// -----------------------------------------------------------------------------
+// Pausable Protocol - Emergency Halt Tests
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_pause_blocks_write_functions() {
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let due_at = 2000;
+
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver);
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+
+    client.pause(&arbitrator);
+    assert!(client.is_paused());
+
+    // create_commitment reverts with ProtocolPaused
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &3000, &resolver);
+    assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
+
+    // attest reverts with ProtocolPaused
+    let res = client.try_attest(&issuer, &id, &CommitmentStatus::Late);
+    assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
+
+    // dispute reverts with ProtocolPaused
+    let res = client.try_dispute(&counterparty, &id);
+    assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
+
+    // resolve_dispute reverts with ProtocolPaused
+    let res = client.try_resolve_dispute(&arbitrator, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
+
+    // State is unchanged while paused.
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+}
+
+#[test]
+fn test_read_functions_succeed_while_paused() {
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &2000,
+        &resolver,
+    );
+
+    client.pause(&arbitrator);
+
+    // get_commitment continues to work.
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.id, id);
+
+    // get_reputation continues to work.
+    let rep = client.get_reputation(&issuer);
+    assert_eq!(rep.fulfilled_count, 0);
+    assert_eq!(rep.late_count, 0);
+    assert_eq!(rep.breached_count, 0);
+
+    // get_trust_score continues to work.
+    assert_eq!(client.get_trust_score(&issuer), 50);
+
+    // get_arbitrator continues to work.
+    assert_eq!(client.get_arbitrator(), arbitrator);
+
+    // is_overdue continues to work.
+    assert!(!client.is_overdue(&id));
+
+    // is_paused reflects the paused state.
+    assert!(client.is_paused());
+}
+
+#[test]
+fn test_pause_requires_arbitrator() {
+    let (_env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
+
+    let stranger = Address::generate(&_env);
+    let res = client.try_pause(&stranger);
+    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+
+    let res = client.try_unpause(&stranger);
+    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+
+    assert!(!client.is_paused());
+    let _ = arbitrator; // suppress unused warning
+}
+
+#[test]
+fn test_pause_fails_if_not_initialized() {
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test();
+    let admin = Address::generate(&env);
+
+    let res = client.try_pause(&admin);
+    assert_eq!(res, Err(Ok(Error::NotInitialized.into())));
+
+    let res = client.try_unpause(&admin);
+    assert_eq!(res, Err(Ok(Error::NotInitialized.into())));
+}
+
+#[test]
+fn test_unpause_restores_write_functions() {
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    client.pause(&arbitrator);
+    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
+    assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
+
+    client.unpause(&arbitrator);
+    assert!(!client.is_paused());
+
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
+    assert_eq!(id, 1);
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+}
+
+#[test]
+#[should_panic]
+fn test_pause_requires_auth() {
+    let env = Env::default();
+    let contract_id = env.register(RegistryContract, ());
+    let client = RegistryContractClient::new(&env, &contract_id);
+    let arbitrator = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+
+    env.mock_auths(&[]);
+    client.pause(&arbitrator);
+}
+
+#[test]
+#[should_panic]
+fn test_unpause_requires_auth() {
+    let env = Env::default();
+    let contract_id = env.register(RegistryContract, ());
+    let client = RegistryContractClient::new(&env, &contract_id);
+    let arbitrator = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    client.pause(&arbitrator);
+
+    env.mock_auths(&[]);
+    client.unpause(&arbitrator);
+}
+
+#[test]
+fn test_pause_and_unpause_events_emitted() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{symbol_short, IntoVal, Val, Vec};
+
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
+
+    client.pause(&arbitrator);
+
+    let events_after_pause = env.events().all();
+    let paused_event = events_after_pause.get(events_after_pause.len() - 1).unwrap();
+    let expected_paused_topics: Vec<Val> = (symbol_short!("paused"),).into_val(&env);
+    assert_eq!(paused_event.1, expected_paused_topics);
+
+    client.unpause(&arbitrator);
+
+    let events_after_unpause = env.events().all();
+    let unpaused_event = events_after_unpause.get(events_after_unpause.len() - 1).unwrap();
+    let expected_unpaused_topics: Vec<Val> = (symbol_short!("unpaused"),).into_val(&env);
+    assert_eq!(unpaused_event.1, expected_unpaused_topics);
+}
+
+#[test]
+fn test_admin_lifecycle_operations_exempt_from_pause() {
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let arbitrator = client.get_arbitrator();
+
+    client.pause(&arbitrator);
+    assert!(client.is_paused());
+
+    // upgrade is an admin lifecycle operation exempt from the pause: with no
+    // upgrade admin installed it is still rejected by the admin gate
+    // (UpgradeAdminNotSet), not by the pause gate (ProtocolPaused).
+    let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
+    let res = client.try_upgrade(&mock_wasm_hash, &SCHEMA_VERSION_V1);
+    assert_eq!(res, Err(Ok(Error::UpgradeAdminNotSet.into())));
+
+    // pause/unpause remain callable by the admin while paused.
+    client.pause(&arbitrator);
+    assert!(client.is_paused());
+    client.unpause(&arbitrator);
+    assert!(!client.is_paused());
+}
 
 #[test]
 fn test_custom_resolver_delegation() {
