@@ -53,6 +53,10 @@ pub struct Commitment {
     pub created_at: u64,
     /// Unix timestamp (seconds) when the commitment was attested, if it has been attested.
     pub attested_at: Option<u64>,
+    /// Optional designated oracle for automated attestation.
+    pub oracle: Option<Address>,
+    /// Optional identifier for the schema used to generate terms_hash.
+    pub schema_id: Option<u32>,
 }
 
 /// Storage keys used for persisting commitments and contract state.

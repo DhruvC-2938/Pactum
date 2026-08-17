@@ -110,6 +110,8 @@ impl RegistryContract {
         counterparty: Address,
         terms_hash: BytesN<32>,
         due_at: u64,
+        oracle: Option<Address>,
+        schema_id: Option<u32>,
     ) -> u64 {
         // 0. Enter the reentrancy guard before any external interaction (including
         //    the require_auth call below, which may invoke a custom account contract).
@@ -145,6 +147,8 @@ impl RegistryContract {
             status: CommitmentStatus::Pending,
             created_at: now,
             attested_at: None,
+            oracle,
+            schema_id,
         };
 
         // 5. Store in persistent storage keyed by id and extend TTL.
@@ -158,7 +162,7 @@ impl RegistryContract {
         );
 
         // 6. Emit Created event.
-        events::commitment_created(&env, id, &issuer, &counterparty);
+        events::commitment_created(&env, id, &issuer, &counterparty, &commitment.oracle, commitment.schema_id);
 
         // 7. Release the reentrancy guard.
         reentrancy::exit(&env);

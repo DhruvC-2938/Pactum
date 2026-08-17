@@ -37,8 +37,8 @@ pub fn attest(
         .get(&DataKey::Commitment(id))
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 4. Verify caller is either issuer or counterparty.
-    if caller != commitment.issuer && caller != commitment.counterparty {
+    // 4. Verify caller is either issuer, counterparty, or designated oracle.
+    if caller != commitment.issuer && caller != commitment.counterparty && Some(caller) != commitment.oracle {
         panic_with_error!(env, Error::Unauthorized);
     }
 
