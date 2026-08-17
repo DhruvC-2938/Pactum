@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Added
+- Multi-arbitrator support with majority-vote dispute resolution (#11):
+  `initialize()` now accepts a `Vec<Address>` arbitrator committee stored as
+  `DataKey::ArbitratorSet`, `resolve_dispute()` records per-dispute votes under
+  `DataKey::Votes(commitment_id)` and finalizes only when votes exceed half the
+  committee size, and a new `get_arbitrators()` exposes the full set. Commitments
+  that name a custom resolver outside the committee keep direct resolution.
 
 ## [Phase 4]
 ### Added

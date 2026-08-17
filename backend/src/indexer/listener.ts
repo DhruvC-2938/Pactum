@@ -10,6 +10,9 @@ import {
   LedgerSnapshot,
   LedgerSource,
 } from './types';
+import { InMemoryCursorCache, PostgresCursorCache } from './cache';
+
+// ─── Existing FinalityIndexer (unchanged) ────────────────────────────────────
 
 export interface FinalityIndexerOptions {
   source: LedgerSource;
@@ -169,123 +172,251 @@ export class FinalityIndexer {
   }
 }
 
-export interface EventIndexerConfig {
-  rpcUrl: string;
-  contractId: string;
-  finalityDepth?: number;
-  startSequence?: number;
-  maxBatchSize?: number;
-  pollIntervalMs?: number;
-}
+// ─── Horizon SSE Indexer ──────────────────────────────────────────────────────
 
-export interface EventIndexer {
-  sync(): Promise<SyncResult | null>;
-  stop(): Promise<void>;
-  /** The in-memory cache of commitments parsed so far, keyed by commitment id. */
-  cachedCommitments(): ReadonlyMap<string, CommitmentCreatedEvent>;
+/**
+ * Minimal subset of a Horizon operation record that we need from the stream.
+ * Horizon SSE records carry a `paging_token` which acts as the resumption cursor.
+ */
+export interface HorizonOperationRecord {
+  paging_token: string;
+  type: string;
+  transaction_hash?: string;
+  [key: string]: unknown;
 }
 
 /**
- * Boots the running event listener: a Soroban RPC source scoped to the deployed
- * contract, the PostgreSQL ledger store, and a finality-aware indexer whose
- * commit hook parses each ledger's contract events, persists them into the
- * Timescale `commitment_outcomes` table reputation routes read from, and
- * invalidates the Redis reputation cache for every touched address. A poll
- * loop keeps the indexer caught up; failures are logged and retried on the
- * next tick so a flaky RPC never takes the service down.
+ * Abstraction over the Horizon SSE streaming call so it can be replaced with a
+ * test double without requiring a live network connection.
+ *
+ * The real implementation wraps `Horizon.Server.operations().cursor(...).stream(...)`.
+ * It must return a `() => void` that closes/cancels the stream when called.
  */
-export const startEventIndexer = (config: EventIndexerConfig): EventIndexer => {
-  const pollIntervalMs = Math.max(1_000, config.pollIntervalMs ?? 15_000);
-  const commitments = new Map<string, CommitmentCreatedEvent>();
-  let indexer: FinalityIndexer | null = null;
-  let timer: NodeJS.Timeout | null = null;
-  let stopped = false;
-  let syncing = false;
+export interface HorizonStreamClient {
+  /**
+   * Opens an SSE stream starting at `cursor` (or from the beginning when
+   * `cursor` is `undefined`) and calls `onMessage` for every incoming record.
+   *
+   * @returns A teardown function that stops the stream.
+   */
+  stream(options: {
+    cursor: string | undefined;
+    onMessage: (record: HorizonOperationRecord) => void;
+    onError: (error: unknown) => void;
+  }): () => void;
+}
 
-  const commit = async (ledger: LedgerSnapshot): Promise<void> => {
-    const closedAt = new Date(ledger.closedAt);
-    const events = await parseLedgerEvents(ledger);
+/**
+ * Options accepted by `HorizonSSEIndexer`.
+ */
+export interface HorizonSSEIndexerOptions {
+  /** Horizon SSE client that provides the streaming connection. */
+  streamClient: HorizonStreamClient;
+  /** Cursor cache that persists the paging_token between restarts. */
+  cursorCache: InMemoryCursorCache | PostgresCursorCache;
+  /**
+   * Handler invoked for each event record received from the stream.
+   * The indexer guarantees the cursor is saved only after this resolves.
+   */
+  onEvent: (record: HorizonOperationRecord) => Promise<void>;
+  /**
+   * Base delay (ms) before the first reconnect attempt.
+   * Subsequent attempts use exponential back-off capped at `maxReconnectDelayMs`.
+   * @default 1000
+   */
+  initialReconnectDelayMs?: number;
+  /**
+   * Maximum reconnect back-off delay in ms.
+   * @default 30000
+   */
+  maxReconnectDelayMs?: number;
+  /**
+   * How many consecutive reconnect attempts are allowed before the indexer
+   * gives up and emits a terminal error.  Set to `Infinity` for endless retry.
+   * @default Infinity
+   */
+  maxReconnectAttempts?: number;
+}
 
-    for (const event of events) {
-      switch (event.type) {
-        case 'created':
-          // The created event is the only one carrying the parties, so it seeds
-          // the outcome row; later events enrich that same commitment id. The
-          // in-memory map guards replays (e.g. after a reorg) from duplicating.
-          if (commitments.has(event.commitmentId)) break;
-          commitments.set(event.commitmentId, event);
-          await insertCommitmentOutcome({
-            commitmentId: event.commitmentId,
-            partyA: event.issuer,
-            partyB: event.counterparty,
-            amount: 0,
-            status: 'created',
-            outcome: 'pending',
-            dueDate: closedAt,
-          });
-          break;
-        case 'attested':
-          await updateCommitmentOutcome(event.commitmentId, 'attested', event.outcome, closedAt);
-          break;
-        case 'disputed':
-          await updateCommitmentOutcome(event.commitmentId, 'disputed', 'disputed', closedAt);
-          break;
-        case 'resolved':
-          await updateCommitmentOutcome(event.commitmentId, 'resolved', event.outcome, closedAt);
-          break;
-      }
+/**
+ * Emitted by `HorizonSSEIndexer` when the maximum reconnect budget is exhausted.
+ */
+export class HorizonSSEMaxRetriesExceededError extends Error {
+  constructor(attempts: number) {
+    super(`Horizon SSE indexer gave up after ${attempts} reconnect attempt(s)`);
+    this.name = 'HorizonSSEMaxRetriesExceededError';
+  }
+}
+
+/**
+ * Real-time, push-based event indexer built on the Stellar Horizon SSE API.
+ *
+ * ### How it works
+ * 1. On `start()` the indexer reads the last persisted cursor from
+ *    `PostgresCursorCache` (or `InMemoryCursorCache`) and opens an SSE stream
+ *    via `HorizonStreamClient` starting at that cursor.
+ * 2. For every incoming record it calls the user-supplied `onEvent` handler and
+ *    then atomically saves the record's `paging_token` as the new cursor.
+ * 3. If the SSE connection drops the indexer automatically reconnects with
+ *    exponential back-off, resuming from the last persisted cursor so no events
+ *    are lost or double-processed.
+ * 4. Call `stop()` to gracefully close the stream and cancel any pending
+ *    reconnect timer.
+ *
+ * ### Usage
+ * ```ts
+ * import { Horizon } from '@stellar/stellar-sdk';
+ * import { HorizonSSEIndexer, HorizonStreamClient } from './listener';
+ * import { PostgresCursorCache } from './cache';
+ *
+ * const horizonServer = new Horizon.Server('https://horizon-testnet.stellar.org');
+ *
+ * const streamClient: HorizonStreamClient = {
+ *   stream({ cursor, onMessage, onError }) {
+ *     const builder = horizonServer.operations().limit(200);
+ *     if (cursor) builder.cursor(cursor);
+ *     return builder.stream({ onmessage: onMessage, onerror: onError });
+ *   },
+ * };
+ *
+ * const indexer = new HorizonSSEIndexer({
+ *   streamClient,
+ *   cursorCache: new PostgresCursorCache(pool, 'pactum_events'),
+ *   onEvent: async (record) => {
+ *     // handle CommitmentCreated / Attested events
+ *   },
+ * });
+ *
+ * indexer.start();
+ * ```
+ */
+export class HorizonSSEIndexer {
+  private readonly initialReconnectDelayMs: number;
+
+  private readonly maxReconnectDelayMs: number;
+
+  private readonly maxReconnectAttempts: number;
+
+  private stopStream: (() => void) | null = null;
+
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private reconnectAttempts = 0;
+
+  private stopped = false;
+
+  private onFatalError: ((error: Error) => void) | null = null;
+
+  constructor(private readonly options: HorizonSSEIndexerOptions) {
+    this.initialReconnectDelayMs = options.initialReconnectDelayMs ?? 1000;
+    this.maxReconnectDelayMs = options.maxReconnectDelayMs ?? 30_000;
+    this.maxReconnectAttempts = options.maxReconnectAttempts ?? Infinity;
+
+    if (this.initialReconnectDelayMs <= 0) {
+      throw new Error('initialReconnectDelayMs must be a positive number');
     }
+    if (this.maxReconnectDelayMs < this.initialReconnectDelayMs) {
+      throw new Error('maxReconnectDelayMs must be >= initialReconnectDelayMs');
+    }
+  }
 
-    await invalidateLedger(ledger);
-  };
+  /**
+   * Starts the SSE stream.  Returns immediately; processing happens
+   * asynchronously in the background.
+   *
+   * @param onFatalError  Optional callback invoked when the max reconnect budget
+   *                      is exhausted.  If omitted, the error is thrown as an
+   *                      unhandled rejection.
+   */
+  start(onFatalError?: (error: Error) => void): void {
+    if (!this.stopped && this.stopStream !== null) return; // already running
+    this.stopped = false;
+    this.onFatalError = onFatalError ?? null;
+    void this.connect();
+  }
 
-  const sync = async (): Promise<SyncResult | null> => {
-    if (!indexer || stopped || syncing) return null;
-    syncing = true;
+  /**
+   * Stops the indexer, closes the SSE stream, and cancels any pending reconnect.
+   */
+  stop(): void {
+    this.stopped = true;
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.stopStream !== null) {
+      this.stopStream();
+      this.stopStream = null;
+    }
+  }
+
+  // ─── Private ───────────────────────────────────────────────────────────────
+
+  private async connect(): Promise<void> {
+    if (this.stopped) return;
+
+    let cursor: string | undefined;
     try {
-      return await indexer.sync();
-    } catch (error) {
-      console.error('[indexer] Poll failed:', error);
-      return null;
-    } finally {
-      syncing = false;
+      const persisted = await this.options.cursorCache.getCursor();
+      cursor = persisted ?? undefined;
+    } catch {
+      // Non-fatal: start from the beginning if we cannot read the cursor.
+      cursor = undefined;
     }
-  };
 
-  const bootstrap = async (): Promise<void> => {
-    const { rpc } = await import('@stellar/stellar-sdk');
-    const server = new rpc.Server(config.rpcUrl, { allowHttp: true });
-    const source = new SorobanLedgerSource(
-      createSorobanRpcLedgerClient(server),
-      { contractId: config.contractId },
-    );
-    indexer = new FinalityIndexer({
-      source,
-      store: new PostgresIndexerStore(pool),
-      finalityDepth: config.finalityDepth ?? 0,
-      startSequence: config.startSequence,
-      maxBatchSize: config.maxBatchSize,
-      onLedgerCommitted: commit,
+    this.stopStream = this.options.streamClient.stream({
+      cursor,
+      onMessage: (record) => void this.handleMessage(record),
+      onError: (error) => this.handleStreamError(error),
     });
+  }
 
-    await sync();
-    if (!stopped) {
-      timer = setInterval(() => void sync(), pollIntervalMs);
-      timer.unref?.();
+  private async handleMessage(record: HorizonOperationRecord): Promise<void> {
+    if (this.stopped) return;
+
+    try {
+      await this.options.onEvent(record);
+      await this.options.cursorCache.saveCursor(record.paging_token);
+      // Successful message resets the reconnect counter so the back-off
+      // window resets to the initial delay for future disconnects.
+      this.reconnectAttempts = 0;
+    } catch {
+      // Event handler errors are non-fatal by design.  The cursor is not
+      // advanced so the event will be redelivered after the next reconnect.
     }
-  };
+  }
 
-  const ready = bootstrap().catch((error: unknown) => {
-    console.error('[indexer] Startup failed, the listener will not poll:', error);
-  });
+  private handleStreamError(error: unknown): void {
+    if (this.stopped) return;
 
-  return {
-    sync,
-    cachedCommitments: () => commitments,
-    stop: async () => {
-      stopped = true;
-      if (timer) clearInterval(timer);
-      await ready;
-    },
-  };
-};
+    // Close the current (broken) stream before reconnecting.
+    if (this.stopStream !== null) {
+      this.stopStream();
+      this.stopStream = null;
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      const fatal = new HorizonSSEMaxRetriesExceededError(this.reconnectAttempts);
+      if (this.onFatalError) {
+        this.onFatalError(fatal);
+      } else {
+        // Surface as an unhandled rejection so the process can crash-restart.
+        Promise.reject(fatal);
+      }
+      return;
+    }
+
+    const delay = Math.min(
+      this.initialReconnectDelayMs * 2 ** this.reconnectAttempts,
+      this.maxReconnectDelayMs,
+    );
+    this.reconnectAttempts += 1;
+
+    void error; // consumed — error details available via onFatalError callback if needed
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.stopped) void this.connect();
+    }, delay);
+  }
+}

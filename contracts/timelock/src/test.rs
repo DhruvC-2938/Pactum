@@ -44,7 +44,7 @@ fn setup() -> Gov {
     let registry_id = env.register(RegistryContract, ());
     let registry = RegistryContractClient::new(&env, &registry_id);
     let arbitrator = Address::generate(&env);
-    registry.initialize(&arbitrator);
+    registry.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     registry.init_upgrade_admin(&timelock_id);
 
     Gov {
