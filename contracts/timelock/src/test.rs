@@ -724,6 +724,8 @@ mod wasm {
             &hash(&g.env, 0x11),
             &(START + 100_000),
             &g.arbitrator,
+            &soroban_sdk::Vec::new(&g.env),
+            &0,
         );
         g.registry.attest(
             &issuer,
