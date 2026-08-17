@@ -549,7 +549,7 @@
 }
 
 @media (max-width: 900px) {
-  .lp-nav { padding: 16px 24px; }
+  .lp-nav { padding: 14px 20px; }
   .lp-hero { padding: 64px 24px 56px; }
   .lp-stats { flex-wrap: wrap; padding: 40px 24px; gap: 24px; }
   .lp-stat-divider { display: none; }
@@ -562,6 +562,21 @@
 }
 
 @media (max-width: 600px) {
+  .lp-nav { padding: 12px 14px; gap: 8px; }
   .lp-features { grid-template-columns: 1fr; }
   .lp-nav-links .lp-nav-link { display: none; }
+  .wallet-address-text {
+    max-width: 85px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+  }
 }
+
+@media (max-width: 420px) {
+  .lp-logo-name { display: none; }
+  .wallet-address-text { max-width: 65px; }
+}
+
