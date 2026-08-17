@@ -22,7 +22,7 @@
 //! already written under the `Reputation` variant. The tests in
 //! `registry/src/test_upgrade.rs` assert this end to end.
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, Vec};
 
 /// Mirror of `registry::reputation::Reputation` (V1).
 #[contracttype]
@@ -98,7 +98,9 @@ pub enum DataKey {
     Commitment(u64),
     Milestone(u64, u32),
     NextId,
+    ArbitratorSet,
     Arbitrator,
+    Votes(u64),
 }
 
 /// A contract that reads Pactum registry state without being the Pactum registry.
@@ -156,7 +158,13 @@ impl UpgradeFixture {
         env.storage().instance().get(&DataKey::NextId)
     }
 
-    /// Reads the arbitrator recorded at initialization.
+    /// Reads the arbitrator set recorded at initialization.
+    pub fn read_arbitrators(env: Env) -> Option<Vec<Address>> {
+        env.storage().instance().get(&DataKey::ArbitratorSet)
+    }
+
+    /// Reads the legacy single-arbitrator key, if a pre-multi-arbitrator
+    /// deployment ever wrote one.
     pub fn read_arbitrator(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::Arbitrator)
     }

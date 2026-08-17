@@ -18,15 +18,9 @@ pub fn commitment_created(
 }
 
 /// Publishes an event when a commitment status is attested.
-pub fn commitment_attested(
-    env: &Env,
-    id: u64,
-    status: CommitmentStatus,
-) {
-    env.events().publish(
-        (symbol_short!("attested"), id),
-        status,
-    );
+pub fn commitment_attested(env: &Env, id: u64, status: CommitmentStatus) {
+    env.events()
+        .publish((symbol_short!("attested"), id), status);
 }
 
 /// Publishes an event when a single milestone of a multi-milestone commitment
@@ -38,25 +32,32 @@ pub fn milestone_attested(env: &Env, id: u64, milestone_index: u32, status: Comm
 }
 
 /// Publishes an event when a commitment is disputed by a party.
-pub fn commitment_disputed(
-    env: &Env,
-    id: u64,
-) {
-    env.events().publish(
-        (symbol_short!("disputed"), id),
-        (),
-    );
+pub fn commitment_disputed(env: &Env, id: u64) {
+    env.events().publish((symbol_short!("disputed"), id), ());
 }
 
 /// Publishes an event when a dispute on a commitment is resolved by the arbitrator.
-pub fn dispute_resolved(
+pub fn dispute_resolved(env: &Env, id: u64, final_outcome: CommitmentStatus) {
+    env.events()
+        .publish((symbol_short!("resolved"), id), final_outcome);
+}
+
+/// Publishes an event when an arbitrator casts a vote on a committee-routed
+/// dispute that has not yet reached a majority.
+///
+/// The data payload carries the voted outcome, the running tally for that
+/// outcome, and how many votes are needed to finalize.
+pub fn arbitrator_vote_cast(
     env: &Env,
     id: u64,
-    final_outcome: CommitmentStatus,
+    voter: &Address,
+    outcome: CommitmentStatus,
+    votes_for: u32,
+    votes_needed: u32,
 ) {
     env.events().publish(
-        (symbol_short!("resolved"), id),
-        final_outcome,
+        (symbol_short!("vote"), id, voter.clone()),
+        (outcome, votes_for, votes_needed),
     );
 }
 
@@ -80,10 +81,8 @@ pub fn upgraded(
 ///
 /// `old` is `None` only for the one-time bootstrap installation.
 pub fn upgrade_admin_changed(env: &Env, old: Option<&Address>, new: &Address) {
-    env.events().publish(
-        (symbol_short!("upgadmin"), new.clone()),
-        old.cloned(),
-    );
+    env.events()
+        .publish((symbol_short!("upgadmin"), new.clone()), old.cloned());
 }
 
 /// Publishes an event when an address's reputation row is rewritten from V1 to V2.
@@ -93,4 +92,3 @@ pub fn reputation_migrated(env: &Env, address: &Address, migrated: &ReputationV2
         migrated.clone(),
     );
 }
-
