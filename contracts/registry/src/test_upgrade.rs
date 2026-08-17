@@ -556,6 +556,8 @@ fn test_write_path_migrates_lazily() {
         &BytesN::from_array(&f.env, &[1u8; 32]),
         &2_000,
         &f.arbitrator,
+        &Vec::new(&f.env),
+        &0,
     );
     f.client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     assert_eq!(f.client.get_reputation(&issuer).fulfilled_count, 1);
@@ -571,6 +573,8 @@ fn test_write_path_migrates_lazily() {
         &BytesN::from_array(&f.env, &[2u8; 32]),
         &3_000,
         &f.arbitrator,
+        &Vec::new(&f.env),
+        &0,
     );
     f.client.attest(&issuer, &id2, &CommitmentStatus::Late);
 
@@ -598,6 +602,8 @@ fn test_v2_write_path_decrements_direct_count_on_dispute() {
         &BytesN::from_array(&f.env, &[3u8; 32]),
         &2_000,
         &f.arbitrator,
+        &Vec::new(&f.env),
+        &0,
     );
     f.client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     assert_eq!(raw_v2(&f, &issuer).unwrap().direct_count, 1);
@@ -624,9 +630,15 @@ fn test_commitments_are_untouched_by_the_schema_switch() {
 
     f.env.ledger().with_mut(|l| l.timestamp = 1_000);
     let terms = BytesN::from_array(&f.env, &[9u8; 32]);
-    let id = f
-        .client
-        .create_commitment(&issuer, &counterparty, &terms, &2_000, &f.arbitrator);
+    let id = f.client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms,
+        &2_000,
+        &f.arbitrator,
+        &Vec::new(&f.env),
+        &0,
+    );
     let before = f.client.get_commitment(&id);
 
     force_schema_v2(&f);
@@ -703,6 +715,8 @@ mod wasm {
                 &BytesN::from_array(&f.env, &[i as u8; 32]),
                 &2_000,
                 &f.arbitrator,
+                &Vec::new(&f.env),
+                &0,
             );
             f.client.attest(issuer, &id, outcome);
         }
@@ -754,9 +768,15 @@ mod wasm {
         let issuer = Address::generate(&f.env);
         let counterparty = Address::generate(&f.env);
         let terms = BytesN::from_array(&f.env, &[42u8; 32]);
-        let id = f
-            .client
-            .create_commitment(&issuer, &counterparty, &terms, &2_000, &f.arbitrator);
+        let id = f.client.create_commitment(
+            &issuer,
+            &counterparty,
+            &terms,
+            &2_000,
+            &f.arbitrator,
+            &Vec::new(&f.env),
+            &0,
+        );
 
         let new_hash = f
             .env
@@ -800,6 +820,8 @@ mod wasm {
             &2_000,
             &f.arbitrator,
             &3,
+            &Vec::new(&f.env),
+            &0,
         );
         f.client
             .attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
