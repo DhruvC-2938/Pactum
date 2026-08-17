@@ -1189,14 +1189,28 @@ fn test_custom_resolver_delegation() {
     assert_eq!(resolved.status, CommitmentStatus::Breached);
 }
 
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PreOracleCommitment {
+    id: u64,
+    issuer: Address,
+    counterparty: Address,
+    terms_hash: BytesN<32>,
+    due_at: u64,
+    status: CommitmentStatus,
+    created_at: u64,
+    attested_at: Option<u64>,
+}
+
 #[test]
 fn test_legacy_commitment_storage_migration() {
     let (env, client, issuer, counterparty, _default_resolver) = setup_test_with_arbitrator();
 
+
     // Directly seed a LegacyCommitment in persistent storage (simulating pre-upgrade storage)
     let arbitrator = client.get_arbitrator();
     let legacy_id = 99u64;
-    let legacy_comm = commitments::LegacyCommitment {
+    let legacy_comm = PreOracleCommitment {
         id: legacy_id,
         issuer: issuer.clone(),
         counterparty: counterparty.clone(),
@@ -1205,9 +1219,8 @@ fn test_legacy_commitment_storage_migration() {
         status: CommitmentStatus::Fulfilled,
         created_at: 1000,
         attested_at: Some(1500),
-        oracle: None,
-        schema_id: None,
     };
+
 
     env.as_contract(&client.address, || {
         env.storage()
@@ -1220,6 +1233,9 @@ fn test_legacy_commitment_storage_migration() {
     assert_eq!(migrated.id, legacy_id);
     assert_eq!(migrated.resolver_address, arbitrator);
     assert_eq!(migrated.status, CommitmentStatus::Fulfilled);
+    assert_eq!(migrated.oracle, None);
+    assert_eq!(migrated.schema_id, None);
+
 
     // Raising a dispute on the migrated commitment works and resolves with the fallback arbitrator
     env.ledger().with_mut(|l| l.timestamp = 1600);
@@ -1236,7 +1252,7 @@ fn test_legacy_commitment_migration_fails_if_uninitialized() {
     let (env, client, issuer, counterparty, _resolver) = setup_test();
 
     let legacy_id = 101u64;
-    let legacy_comm = commitments::LegacyCommitment {
+    let legacy_comm = PreOracleCommitment {
         id: legacy_id,
         issuer: issuer.clone(),
         counterparty: counterparty.clone(),
@@ -1245,9 +1261,8 @@ fn test_legacy_commitment_migration_fails_if_uninitialized() {
         status: CommitmentStatus::Fulfilled,
         created_at: 1000,
         attested_at: Some(1500),
-        oracle: None,
-        schema_id: None,
     };
+
 
     env.as_contract(&client.address, || {
         env.storage()
@@ -1266,7 +1281,7 @@ fn test_legacy_commitment_migration_fails_if_payload_id_mismatch() {
 
     let storage_key_id = 200u64;
     let payload_id = 999u64; // Inconsistent with storage key
-    let legacy_comm = commitments::LegacyCommitment {
+    let legacy_comm = PreOracleCommitment {
         id: payload_id,
         issuer: issuer.clone(),
         counterparty: counterparty.clone(),
@@ -1275,9 +1290,8 @@ fn test_legacy_commitment_migration_fails_if_payload_id_mismatch() {
         status: CommitmentStatus::Pending,
         created_at: 1000,
         attested_at: None,
-        oracle: None,
-        schema_id: None,
     };
+
 
     env.as_contract(&client.address, || {
         env.storage()
@@ -1333,12 +1347,35 @@ fn test_oracle_attest_success() {
 
     let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &Some(oracle.clone()), &Some(123));
 
+    // Verify commitment data
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.oracle, Some(oracle.clone()));
+    assert_eq!(commitment.schema_id, Some(123));
+
+    // Verify created event
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{symbol_short, IntoVal, Val, Vec};
+    let events = env.events().all();
+    let created_event = events.get(0).unwrap();
+    let expected_topics: Vec<Val> = (
+        symbol_short!("created"),
+        issuer.clone(),
+        counterparty.clone(),
+        Some(oracle.clone()),
+    )
+        .into_val(&env);
+    assert_eq!(created_event.1, expected_topics);
+    assert_eq!(
+        <(u64, Option<u32>)::from_val(&env, &created_event.2),
+        (1u64, Some(123))
+    );
+
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&oracle, &id, &CommitmentStatus::Fulfilled);
 
-    let commitment = client.get_commitment(&id);
-    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
-    assert_eq!(commitment.attested_at, Some(1500));
+    let commitment_after = client.get_commitment(&id);
+    assert_eq!(commitment_after.status, CommitmentStatus::Fulfilled);
+    assert_eq!(commitment_after.attested_at, Some(1500));
 }
 
 #[test]
