@@ -52,8 +52,21 @@ pub enum Error {
     MilestoneAlreadyAttested = 22,
     /// Milestones must be attested in order and an earlier one is still pending.
     MilestoneOutOfOrder = 23,
+<<<<<<< HEAD
     /// The arbitrator set passed to `initialize` was empty.
     EmptyArbitratorSet = 24,
     /// An arbitrator attempted to cast a second vote on the same dispute.
     AlreadyVoted = 25,
+    /// The attestor does not hold a stake sufficient for the requested operation.
+    InsufficientStake = 26,
+    /// An unstake has already been requested and is still pending for this attestor.
+    UnbondingPending = 27,
+    /// The unbonding period for this unstake has not elapsed yet.
+    UnbondingNotElapsed = 28,
+    /// A dispute is active, so the attestor's stake is locked.
+    DisputeActive = 29,
+    /// No staking token has been configured for the registry.
+    StakingTokenNotSet = 30,
+    /// The requested staking amount is zero or negative.
+    ZeroAmount = 31,
 }

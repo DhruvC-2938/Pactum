@@ -7,6 +7,7 @@ pub mod errors;
 pub mod events;
 mod reentrancy;
 pub mod reputation;
+pub mod staking;
 pub mod trust_gate;
 pub mod trust_score;
 pub mod upgrade;
@@ -16,6 +17,10 @@ mod test_trust_score;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod test_staking;
+
 #[cfg(test)]
 mod test_upgrade;
 
@@ -26,6 +31,7 @@ mod attacker_gate;
 mod demo;
 
 pub use commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
+pub use staking::AttestorStake;
 pub use upgrade::{SCHEMA_VERSION_V1, SCHEMA_VERSION_V2};
 use errors::Error;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Vec};
@@ -526,5 +532,70 @@ impl RegistryContract {
     /// * `u32` - The trust score in the range 0..=100 (50 = neutral baseline).
     pub fn get_trust_score(env: Env, address: Address) -> u32 {
         trust_score::get_trust_score(&env, address)
+    }
+
+    // ---------------------------------------------------------------------
+    // Attestor staking
+    //
+    // Phase 1 of the M-of-N cryptoeconomic arbitration network (Issue 86).
+    // Attestors lock native Stellar tokens into the contract vault and can
+    // withdraw them after a 14-day unbonding period. Voting and slashing
+    // build on top of these entry points in later phases.
+    // ---------------------------------------------------------------------
+
+    /// Configures the token used for attestor staking.
+    ///
+    /// # Authorization
+    /// * Authorized caller: the designated `arbitrator` (via `require_auth`).
+    /// * Why: only the incumbent authority may bind the network to a staking asset.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotArbitrator` if `caller` is not the arbitrator.
+    /// * Panics with `Error::AlreadyInitialized` if a staking token is already set.
+    pub fn set_staking_token(env: Env, caller: Address, token: Address) {
+        staking::set_staking_token(&env, caller, token);
+    }
+
+    /// Locks `amount` of the staking token from the attestor into the registry vault.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `attestor` (via `require_auth`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::ZeroAmount` if `amount` is zero or negative.
+    /// * Panics with `Error::StakingTokenNotSet` if no staking token is configured.
+    pub fn stake_attestor(env: Env, attestor: Address, amount: i128) {
+        staking::stake_attestor(&env, attestor, amount);
+    }
+
+    /// Requests an unstake, starting the 14-day unbonding period.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `attestor` (via `require_auth`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::InsufficientStake` if the attestor has no stake.
+    /// * Panics with `Error::UnbondingPending` if an unstake is already pending.
+    /// * Panics with `Error::DisputeActive` if the attestor's stake is locked.
+    pub fn request_unstake(env: Env, attestor: Address) {
+        staking::request_unstake(&env, attestor);
+    }
+
+    /// Withdraws the full stake after the unbonding period has elapsed.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `attestor` (via `require_auth`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::InsufficientStake` if no unstake was requested.
+    /// * Panics with `Error::UnbondingNotElapsed` if the unbonding period has not elapsed.
+    /// * Panics with `Error::DisputeActive` if the attestor's stake is locked.
+    pub fn finalize_unstake(env: Env, attestor: Address) {
+        staking::finalize_unstake(&env, attestor);
+    }
+
+    /// Returns the staking record for an attestor (zeroed if it has never staked).
+    pub fn get_stake_info(env: Env, attestor: Address) -> AttestorStake {
+        staking::get_stake_info(&env, attestor)
     }
 }

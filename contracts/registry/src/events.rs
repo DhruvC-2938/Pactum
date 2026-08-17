@@ -89,3 +89,27 @@ pub fn reputation_migrated(env: &Env, address: &Address, migrated: &ReputationV2
         migrated.clone(),
     );
 }
+
+/// Publishes an event when an attestor stakes tokens into the registry vault.
+pub fn staked(env: &Env, attestor: &Address, amount: i128) {
+    env.events().publish(
+        (symbol_short!("staked"), attestor.clone()),
+        amount,
+    );
+}
+
+/// Publishes an event when an attestor requests an unstake, starting the unbonding period.
+pub fn unstake_requested(env: &Env, attestor: &Address, unbonding_until: u64) {
+    env.events().publish(
+        (symbol_short!("unbndreq"), attestor.clone()),
+        unbonding_until,
+    );
+}
+
+/// Publishes an event when an attestor withdraws their stake after the unbonding period.
+pub fn unstaked(env: &Env, attestor: &Address, amount: i128) {
+    env.events().publish(
+        (symbol_short!("unstaked"), attestor.clone()),
+        amount,
+    );
+}

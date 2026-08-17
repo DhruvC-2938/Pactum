@@ -119,6 +119,10 @@ pub enum DataKey {
     /// Persistent storage key for the running vote tally of a disputed
     /// commitment, keyed by commitment ID.
     Votes(u64),
+    /// Persistent storage key for an attestor's staking record.
+    Stake(Address),
+    /// Instance storage key for the address of the staking (vault) token.
+    StakingToken,
 }
 
 /// Running tally of arbitrator votes on a single disputed commitment.
