@@ -3,14 +3,17 @@ use crate::reputation::ReputationV2;
 use soroban_sdk::{symbol_short, Address, BytesN, Env};
 
 /// Publishes an event when a new commitment is created.
-pub fn commitment_created(env: &Env, id: u64, issuer: &Address, counterparty: &Address) {
+pub fn commitment_created(
+    env: &Env,
+    id: u64,
+    issuer: &Address,
+    counterparty: &Address,
+    oracle: &Option<Address>,
+    schema_id: Option<u32>,
+) {
     env.events().publish(
-        (
-            symbol_short!("created"),
-            issuer.clone(),
-            counterparty.clone(),
-        ),
-        id,
+        (symbol_short!("created"), issuer.clone(), counterparty.clone(), oracle.clone()),
+        (id, schema_id),
     );
 }
 

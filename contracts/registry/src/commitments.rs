@@ -71,6 +71,10 @@ pub struct Commitment {
     pub milestones_attested: u32,
     /// How many of the attested milestones came in `Late`.
     pub late_milestones: u32,
+    /// Optional designated oracle for automated attestation.
+    pub oracle: Option<Address>,
+    /// Optional identifier for the schema used to generate terms_hash.
+    pub schema_id: Option<u32>,
     /// The panel of staked attestors that vote on disputes for this commitment.
     /// An empty panel keeps the commitment on the single-resolver dispute path.
     pub attestors: Vec<Address>,
@@ -100,6 +104,10 @@ pub struct LegacyCommitment {
     pub created_at: u64,
     /// Unix timestamp (seconds) when the commitment was attested, if it has been attested.
     pub attested_at: Option<u64>,
+    /// Optional designated oracle for automated attestation.
+    pub oracle: Option<Address>,
+    /// Optional identifier for the schema used to generate terms_hash.
+    pub schema_id: Option<u32>,
 }
 
 /// Storage keys used for persisting commitments and contract state.
@@ -281,6 +289,14 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
         Some(v) => v.try_into_val(env).ok()?,
         None => None,
     };
+    let oracle: Option<Address> = match map.get(Symbol::new(env, "oracle")) {
+        Some(v) => v.try_into_val(env).ok()?,
+        None => None,
+    };
+    let schema_id: Option<u32> = match map.get(Symbol::new(env, "schema_id")) {
+        Some(v) => v.try_into_val(env).ok()?,
+        None => None,
+    };
 
     let resolver_address: Address = match map.get(resolver_sym) {
         Some(v) => v.try_into_val(env).ok()?,
@@ -308,6 +324,8 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
         milestone_count: 1,
         milestones_attested: if resolved { 1 } else { 0 },
         late_milestones: u32::from(status == CommitmentStatus::Late),
+        oracle,
+        schema_id,
         // A legacy record predates attestor voting: it has no panel and stays
         // on the single-resolver dispute path.
         attestors: Vec::new(env),
@@ -335,6 +353,8 @@ pub fn create(
     due_at: u64,
     resolver_address: Address,
     milestone_count: u32,
+    oracle: Option<Address>,
+    schema_id: Option<u32>,
     attestors: Vec<Address>,
     vote_threshold: u32,
 ) -> u64 {
@@ -387,6 +407,8 @@ pub fn create(
         milestone_count,
         milestones_attested: 0,
         late_milestones: 0,
+        oracle,
+        schema_id,
         attestors,
         vote_threshold,
     };
@@ -402,7 +424,14 @@ pub fn create(
     );
 
     // 8. Emit Created event.
-    crate::events::commitment_created(env, id, &issuer, &counterparty);
+    crate::events::commitment_created(
+        env,
+        id,
+        &issuer,
+        &counterparty,
+        &commitment.oracle,
+        commitment.schema_id,
+    );
 
     // 9. Release the reentrancy guard.
     crate::reentrancy::exit(env);

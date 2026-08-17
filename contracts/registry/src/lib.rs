@@ -181,6 +181,8 @@ impl RegistryContract {
         terms_hash: BytesN<32>,
         due_at: u64,
         resolver_address: Address,
+        oracle: Option<Address>,
+        schema_id: Option<u32>,
         attestors: Vec<Address>,
         vote_threshold: u32,
     ) -> u64 {
@@ -195,6 +197,8 @@ impl RegistryContract {
             due_at,
             resolver_address,
             1,
+            oracle,
+            schema_id,
             attestors,
             vote_threshold,
         )
@@ -216,6 +220,8 @@ impl RegistryContract {
     /// * `due_at` - Unix timestamp (seconds) when the commitment is due. Must be in the future.
     /// * `resolver_address` - The address of the custom resolver delegated to resolve disputes.
     /// * `milestone_count` - How many milestones the commitment is split into.
+    /// * `oracle` - Optional designated oracle for automated attestation.
+    /// * `schema_id` - Optional identifier for the schema used to generate terms_hash.
     /// * `attestors` - The panel of staked attestors that votes on disputes for
     ///   this commitment. Pass an empty vector to keep the single-resolver path.
     /// * `vote_threshold` - How many matching attestor votes are required to
@@ -240,6 +246,8 @@ impl RegistryContract {
         due_at: u64,
         resolver_address: Address,
         milestone_count: u32,
+        oracle: Option<Address>,
+        schema_id: Option<u32>,
         attestors: Vec<Address>,
         vote_threshold: u32,
     ) -> u64 {
@@ -254,6 +262,8 @@ impl RegistryContract {
             due_at,
             resolver_address,
             milestone_count,
+            oracle,
+            schema_id,
             attestors,
             vote_threshold,
         )
