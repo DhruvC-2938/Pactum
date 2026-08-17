@@ -37,7 +37,7 @@ fn setup() -> (Env, RegistryContractClient<'static>, Address, Address) {
 fn setup_long_horizon() -> (Env, RegistryContractClient<'static>, Address, Address) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
     (env, client, issuer, counterparty)
 }
 
@@ -84,7 +84,7 @@ fn setup_with_arbitrator() -> (
 ) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     (env, client, issuer, counterparty, arbitrator)
 }
 

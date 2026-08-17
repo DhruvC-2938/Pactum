@@ -52,5 +52,8 @@ pub enum Error {
     MilestoneAlreadyAttested = 22,
     /// Milestones must be attested in order and an earlier one is still pending.
     MilestoneOutOfOrder = 23,
+    /// The arbitrator set passed to `initialize` was empty.
+    EmptyArbitratorSet = 24,
+    /// An arbitrator attempted to cast a second vote on the same dispute.
+    AlreadyVoted = 25,
 }
-
