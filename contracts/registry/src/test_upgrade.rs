@@ -44,7 +44,7 @@ fn setup() -> Fixture {
 
     let arbitrator = Address::generate(&env);
     let timelock = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&vec![&env, arbitrator.clone()]);
     client.init_upgrade_admin(&timelock);
 
     Fixture {
@@ -166,7 +166,7 @@ fn test_init_upgrade_admin_requires_arbitrator_auth() {
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&vec![&env, arbitrator]);
 
     env.set_auths(&[]);
     client.init_upgrade_admin(&Address::generate(&env));
@@ -182,7 +182,7 @@ fn test_upgrade_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&Address::generate(&env));
+    client.initialize(&vec![&env, Address::generate(&env)]);
 
     let err = client
         .try_upgrade(&dummy_wasm_hash(&env), &SCHEMA_VERSION_V2)
@@ -249,7 +249,7 @@ fn test_set_upgrade_admin_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&Address::generate(&env));
+    client.initialize(&vec![&env, Address::generate(&env)]);
 
     let err = client
         .try_set_upgrade_admin(&Address::generate(&env))
@@ -674,7 +674,7 @@ mod wasm {
         let client = RegistryContractClient::new(&env, &contract_id);
         let arbitrator = Address::generate(&env);
         let timelock = Address::generate(&env);
-        client.initialize(&arbitrator);
+        client.initialize(&vec![&env, arbitrator.clone()]);
         client.init_upgrade_admin(&timelock);
 
         WasmFixture {
@@ -779,7 +779,12 @@ mod wasm {
 
         // Instance storage survives too, so the next contract cannot reissue id 1.
         assert_eq!(after.read_next_id(), Some(id + 1));
-        assert_eq!(after.read_arbitrator(), Some(f.arbitrator.clone()));
+        assert_eq!(
+            after.read_arbitrators(),
+            Some(vec![&f.env, f.arbitrator.clone()])
+        );
+        // The legacy single-arbitrator key was never written by this deployment.
+        assert_eq!(after.read_arbitrator(), None);
     }
 
     #[test]

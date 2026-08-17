@@ -307,17 +307,73 @@ fn setup_test_with_arbitrator() -> (
 ) {
     let (env, client, issuer, counterparty, resolver) = setup_test();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
     (env, client, issuer, counterparty, resolver)
+}
+
+/// Initializes the contract with a committee of `count` fresh arbitrators and
+/// returns the committee alongside the usual test fixtures.
+fn setup_test_with_arbitrators(
+    count: u32,
+) -> (
+    Env,
+    RegistryContractClient<'static>,
+    soroban_sdk::Vec<Address>,
+    Address,
+    Address,
+    Address,
+) {
+    let (env, client, issuer, counterparty, resolver) = setup_test();
+    let mut arbitrators = soroban_sdk::Vec::new(&env);
+    for _ in 0..count {
+        arbitrators.push_back(Address::generate(&env));
+    }
+    client.initialize(&arbitrators);
+    (env, client, arbitrators, issuer, counterparty, resolver)
 }
 
 #[test]
 fn test_initialize_can_only_run_once() {
-    let (_env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
     let arbitrator = client.get_arbitrator();
-    let res = client.try_initialize(&arbitrator);
+    let res = client.try_initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     assert_eq!(res, Err(Ok(Error::AlreadyInitialized.into())));
     assert_eq!(client.get_arbitrator(), arbitrator);
+}
+
+#[test]
+fn test_initialize_rejects_an_empty_arbitrator_set() {
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test();
+    let res = client.try_initialize(&soroban_sdk::Vec::new(&env));
+    assert_eq!(res, Err(Ok(Error::EmptyArbitratorSet.into())));
+}
+
+#[test]
+fn test_initialize_stores_and_deduplicates_the_arbitrator_set() {
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test();
+
+    let a = Address::generate(&env);
+    let b = Address::generate(&env);
+    let c = Address::generate(&env);
+    let mut input = soroban_sdk::Vec::new(&env);
+    input.push_back(a.clone());
+    input.push_back(b.clone());
+    input.push_back(a.clone()); // duplicate: must be dropped
+    input.push_back(c.clone());
+
+    client.initialize(&input);
+
+    let expected = soroban_sdk::vec![&env, a.clone(), b.clone(), c.clone()];
+    assert_eq!(client.get_arbitrators(), expected);
+    // Backwards-compatible accessor returns the first member.
+    assert_eq!(client.get_arbitrator(), a);
+}
+
+#[test]
+fn test_get_arbitrators_fails_if_uninitialized() {
+    let (_env, client, _issuer, _counterparty, _resolver) = setup_test();
+    let res = client.try_get_arbitrators();
+    assert_eq!(res, Err(Ok(Error::NotInitialized.into())));
 }
 
 #[test]
@@ -471,6 +527,167 @@ fn test_resolve_dispute_rejects_invalid_final_outcome() {
     assert_eq!(res2, Err(Ok(Error::InvalidOutcome.into())));
 }
 
+// -----------------------------------------------------------------------------
+// Multi-arbitrator majority-vote resolution (issue #11)
+// -----------------------------------------------------------------------------
+
+/// Creates an attested, disputed commitment whose resolver is `resolver`.
+fn setup_disputed_commitment(
+    env: &Env,
+    client: &RegistryContractClient<'static>,
+    issuer: &Address,
+    counterparty: &Address,
+    resolver: &Address,
+) -> u64 {
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let id = client.create_commitment(
+        issuer,
+        counterparty,
+        &BytesN::from_array(env, &[1u8; 32]),
+        &2000,
+        resolver,
+    );
+    env.ledger().with_mut(|l| l.timestamp = 1500);
+    client.attest(issuer, &id, &CommitmentStatus::Fulfilled);
+    env.ledger().with_mut(|l| l.timestamp = 1600);
+    client.dispute(counterparty, &id);
+    id
+}
+
+#[test]
+fn test_resolve_dispute_requires_a_majority_vote() {
+    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+        setup_test_with_arbitrators(3);
+    let arb0 = arbitrators.get(0).unwrap();
+    let arb1 = arbitrators.get(1).unwrap();
+    let arb2 = arbitrators.get(2).unwrap();
+
+    // Naming an arbitrator as the resolver routes the dispute to the committee.
+    let id = setup_disputed_commitment(&env, &client, &issuer, &counterparty, &arb0);
+
+    // A single vote is not a majority of three (need > 3/2 = 1).
+    client.resolve_dispute(&arb0, &id, &CommitmentStatus::Breached);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Disputed);
+
+    // A second, agreeing arbitrator reaches the majority and finalizes.
+    client.resolve_dispute(&arb1, &id, &CommitmentStatus::Breached);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Breached);
+    assert_eq!(commitment.attested_at, None);
+
+    // Reputation is applied exactly once, with the final majority outcome.
+    let rep = client.get_reputation(&issuer);
+    assert_eq!(rep.breached_count, 1);
+    assert_eq!(rep.fulfilled_count, 0);
+
+    // Once resolved, no further votes are accepted.
+    let res = client.try_resolve_dispute(&arb2, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::InvalidTransition.into())));
+}
+
+#[test]
+fn test_resolve_dispute_majority_wins_over_dissent() {
+    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+        setup_test_with_arbitrators(3);
+    let arb0 = arbitrators.get(0).unwrap();
+    let arb1 = arbitrators.get(1).unwrap();
+    let arb2 = arbitrators.get(2).unwrap();
+
+    let id = setup_disputed_commitment(&env, &client, &issuer, &counterparty, &arb0);
+
+    // One arbitrator votes Fulfilled, the other two vote Breached: Breached wins.
+    client.resolve_dispute(&arb0, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+
+    client.resolve_dispute(&arb1, &id, &CommitmentStatus::Breached);
+    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+
+    client.resolve_dispute(&arb2, &id, &CommitmentStatus::Breached);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Breached);
+
+    let rep = client.get_reputation(&issuer);
+    assert_eq!(rep.breached_count, 1);
+    assert_eq!(rep.fulfilled_count, 0);
+}
+
+#[test]
+fn test_resolve_dispute_arbitrator_cannot_vote_twice() {
+    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+        setup_test_with_arbitrators(3);
+    let arb0 = arbitrators.get(0).unwrap();
+
+    let id = setup_disputed_commitment(&env, &client, &issuer, &counterparty, &arb0);
+
+    client.resolve_dispute(&arb0, &id, &CommitmentStatus::Breached);
+
+    // The same arbitrator casting a second vote is rejected.
+    let res = client.try_resolve_dispute(&arb0, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::AlreadyVoted.into())));
+
+    // The dispute is still open for the other arbitrators.
+    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+}
+
+#[test]
+fn test_resolve_dispute_half_the_committee_is_not_enough() {
+    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+        setup_test_with_arbitrators(2);
+    let arb0 = arbitrators.get(0).unwrap();
+    let arb1 = arbitrators.get(1).unwrap();
+
+    let id = setup_disputed_commitment(&env, &client, &issuer, &counterparty, &arb0);
+
+    // With two arbitrators, one vote is exactly half — not a majority.
+    client.resolve_dispute(&arb0, &id, &CommitmentStatus::Late);
+    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Disputed);
+
+    // The second (and last) vote reaches unanimity and finalizes.
+    client.resolve_dispute(&arb1, &id, &CommitmentStatus::Late);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Late);
+    assert_eq!(client.get_reputation(&issuer).late_count, 1);
+}
+
+#[test]
+fn test_resolve_dispute_single_arbitrator_finalizes_on_first_vote() {
+    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+        setup_test_with_arbitrators(1);
+    let arb0 = arbitrators.get(0).unwrap();
+
+    let id = setup_disputed_commitment(&env, &client, &issuer, &counterparty, &arb0);
+
+    // One arbitrator: the first vote already exceeds half (1 > 0).
+    client.resolve_dispute(&arb0, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(
+        client.get_commitment(&id).status,
+        CommitmentStatus::Fulfilled
+    );
+}
+
+#[test]
+fn test_resolve_dispute_committee_cannot_vote_on_custom_resolver_commitment() {
+    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+        setup_test_with_arbitrators(3);
+    let arb0 = arbitrators.get(0).unwrap();
+
+    // A custom resolver outside the committee keeps full control of its dispute.
+    let custom_resolver = Address::generate(&env);
+    let id = setup_disputed_commitment(&env, &client, &issuer, &counterparty, &custom_resolver);
+
+    // No committee member may vote on it.
+    let res = client.try_resolve_dispute(&arb0, &id, &CommitmentStatus::Breached);
+    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+
+    // The designated custom resolver still resolves it directly.
+    client.resolve_dispute(&custom_resolver, &id, &CommitmentStatus::Breached);
+    assert_eq!(
+        client.get_commitment(&id).status,
+        CommitmentStatus::Breached
+    );
+}
+
 #[test]
 fn test_dispute_fails_if_pending() {
     let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
@@ -587,7 +804,7 @@ fn test_resolve_dispute_requires_auth() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     env.mock_all_auths();
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
     let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     client.dispute(&counterparty, &id);
@@ -604,7 +821,7 @@ fn test_initialize_requires_auth() {
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
 
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
 }
 
 // -----------------------------------------------------------------------------
@@ -814,7 +1031,7 @@ fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
     let attacker_id = env.register(AttackerGate, ());
     let attacker_client = AttackerGateClient::new(&env, &attacker_id);
 
-    client.initialize(&attacker_id);
+    client.initialize(&soroban_sdk::vec![&env, attacker_id.clone()]);
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let id = client.create_commitment(

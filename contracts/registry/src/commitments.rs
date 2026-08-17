@@ -1,4 +1,7 @@
-use soroban_sdk::{contracttype, Address, BytesN, Map, Symbol, TryFromVal, TryIntoVal, Val};
+use soroban_sdk::{
+    contracttype, panic_with_error, Address, BytesN, Env, Map, Symbol, TryFromVal, TryIntoVal, Val,
+    Vec,
+};
 
 /// The default dispute window in seconds (7 days = 604,800 seconds).
 /// A party may raise a dispute within this duration after an attestation occurs.
@@ -103,8 +106,105 @@ pub enum DataKey {
     Milestone(u64, u32),
     /// Instance storage key for the incrementing counter of IDs.
     NextId,
-    /// Instance storage key for the designated Arbitrator address.
+    /// Instance storage key for the set of designated arbitrators.
+    ///
+    /// A `Vec<Address>` so disputes can be settled by a majority of the
+    /// committee instead of a single point of trust.
+    ArbitratorSet,
+    /// Legacy instance storage key for a single designated arbitrator.
+    ///
+    /// Only written by pre-multi-arbitrator deployments; read once to lazily
+    /// migrate into [`DataKey::ArbitratorSet`].
     Arbitrator,
+    /// Persistent storage key for the running vote tally of a disputed
+    /// commitment, keyed by commitment ID.
+    Votes(u64),
+}
+
+/// Running tally of arbitrator votes on a single disputed commitment.
+///
+/// Votes are keyed by voter address so each arbitrator can vote at most once,
+/// and the per-outcome counters make the majority check O(1) on every vote
+/// rather than scanning prior votes.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeVotes {
+    /// Votes cast for `Fulfilled`.
+    pub fulfilled: u32,
+    /// Votes cast for `Late`.
+    pub late: u32,
+    /// Votes cast for `Breached`.
+    pub breached: u32,
+    /// Arbitrators that have already voted, mapped to the outcome they chose.
+    pub voters: Map<Address, CommitmentStatus>,
+}
+
+impl DisputeVotes {
+    /// Creates an empty tally for a new dispute.
+    pub fn new(env: &Env) -> Self {
+        Self {
+            fulfilled: 0,
+            late: 0,
+            breached: 0,
+            voters: Map::new(env),
+        }
+    }
+
+    /// Returns the number of votes currently cast for `outcome`.
+    pub fn count(&self, outcome: CommitmentStatus) -> u32 {
+        match outcome {
+            CommitmentStatus::Fulfilled => self.fulfilled,
+            CommitmentStatus::Late => self.late,
+            CommitmentStatus::Breached => self.breached,
+            // Pending / Disputed are rejected before a vote is ever recorded.
+            _ => 0,
+        }
+    }
+
+    /// Records one vote for `outcome` by `voter`.
+    ///
+    /// Callers must check [`DisputeVotes::voters`] for an existing vote first;
+    /// this method does not guard against double voting.
+    pub fn record(&mut self, voter: &Address, outcome: CommitmentStatus) {
+        self.voters.set(voter.clone(), outcome);
+        match outcome {
+            CommitmentStatus::Fulfilled => self.fulfilled = self.fulfilled.saturating_add(1),
+            CommitmentStatus::Late => self.late = self.late.saturating_add(1),
+            CommitmentStatus::Breached => self.breached = self.breached.saturating_add(1),
+            _ => {}
+        }
+    }
+}
+
+/// Loads the arbitrator set, panicking with [`crate::errors::Error::NotInitialized`]
+/// if the contract has not been initialized.
+///
+/// Lazily migrates a pre-multi-arbitrator deployment: a contract initialized
+/// under the old single-arbitrator model stored a bare `Address` under
+/// [`DataKey::Arbitrator`]. It is wrapped into a one-member set and persisted
+/// on first read, mirroring the lazy-migration pattern used for commitments
+/// and reputation rows.
+pub fn arbitrators(env: &Env) -> Vec<Address> {
+    if let Some(set) = env
+        .storage()
+        .instance()
+        .get::<DataKey, Vec<Address>>(&DataKey::ArbitratorSet)
+    {
+        return set;
+    }
+
+    let legacy: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Arbitrator)
+        .unwrap_or_else(|| panic_with_error!(env, crate::errors::Error::NotInitialized));
+
+    let set = soroban_sdk::vec![env, legacy];
+    env.storage().instance().set(&DataKey::ArbitratorSet, &set);
+    env.storage()
+        .instance()
+        .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+    set
 }
 
 /// Loads a commitment from persistent storage, transparently migrating legacy records
@@ -113,10 +213,7 @@ pub enum DataKey {
 /// fallback `resolver_address`, and become single-milestone commitments whose
 /// milestone is already attested if the record was resolved.
 pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitment> {
-    let val: Val = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Commitment(id))?;
+    let val: Val = env.storage().persistent().get(&DataKey::Commitment(id))?;
 
     let map = Map::<Symbol, Val>::try_from_val(env, &val).ok()?;
     let resolver_sym = Symbol::new(env, "resolver_address");
@@ -131,12 +228,30 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
     if stored_id != id {
         return None;
     }
-    let issuer: Address = map.get(Symbol::new(env, "issuer"))?.try_into_val(env).ok()?;
-    let counterparty: Address = map.get(Symbol::new(env, "counterparty"))?.try_into_val(env).ok()?;
-    let terms_hash: BytesN<32> = map.get(Symbol::new(env, "terms_hash"))?.try_into_val(env).ok()?;
-    let due_at: u64 = map.get(Symbol::new(env, "due_at"))?.try_into_val(env).ok()?;
-    let status: CommitmentStatus = map.get(Symbol::new(env, "status"))?.try_into_val(env).ok()?;
-    let created_at: u64 = map.get(Symbol::new(env, "created_at"))?.try_into_val(env).ok()?;
+    let issuer: Address = map
+        .get(Symbol::new(env, "issuer"))?
+        .try_into_val(env)
+        .ok()?;
+    let counterparty: Address = map
+        .get(Symbol::new(env, "counterparty"))?
+        .try_into_val(env)
+        .ok()?;
+    let terms_hash: BytesN<32> = map
+        .get(Symbol::new(env, "terms_hash"))?
+        .try_into_val(env)
+        .ok()?;
+    let due_at: u64 = map
+        .get(Symbol::new(env, "due_at"))?
+        .try_into_val(env)
+        .ok()?;
+    let status: CommitmentStatus = map
+        .get(Symbol::new(env, "status"))?
+        .try_into_val(env)
+        .ok()?;
+    let created_at: u64 = map
+        .get(Symbol::new(env, "created_at"))?
+        .try_into_val(env)
+        .ok()?;
     let attested_at: Option<u64> = match map.get(Symbol::new(env, "attested_at")) {
         Some(v) => v.try_into_val(env).ok()?,
         None => None,
@@ -144,14 +259,13 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
 
     let resolver_address: Address = match map.get(resolver_sym) {
         Some(v) => v.try_into_val(env).ok()?,
-        // Pre-resolver record: fall back to the contract's arbitrator.
-        None => env
-            .storage()
-            .instance()
-            .get::<DataKey, Address>(&DataKey::Arbitrator)
-            .unwrap_or_else(|| {
-                soroban_sdk::panic_with_error!(env, crate::errors::Error::NotInitialized)
-            }),
+        // Pre-resolver record: fall back to the first member of the arbitrator
+        // set. Naming an arbitrator as the resolver routes the dispute through
+        // the committee's majority vote, exactly like a fresh commitment that
+        // delegates to the committee.
+        None => arbitrators(env).first().unwrap_or_else(|| {
+            soroban_sdk::panic_with_error!(env, crate::errors::Error::NotInitialized)
+        }),
     };
 
     // A pre-milestone record is one milestone, already attested if it resolved.
@@ -213,9 +327,9 @@ pub fn create(
 
     // 4. Assign the next available ID.
     let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
-    let next_id = id.checked_add(1).unwrap_or_else(|| {
-        soroban_sdk::panic_with_error!(env, crate::errors::Error::Overflow)
-    });
+    let next_id = id
+        .checked_add(1)
+        .unwrap_or_else(|| soroban_sdk::panic_with_error!(env, crate::errors::Error::Overflow));
     env.storage().instance().set(&DataKey::NextId, &next_id);
     env.storage()
         .instance()

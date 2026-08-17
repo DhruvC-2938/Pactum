@@ -36,29 +36,54 @@ pub struct RegistryContract;
 
 #[contractimpl]
 impl RegistryContract {
-    /// Initializes the contract with a designated arbitrator address.
+    /// Initializes the contract with a committee of designated arbitrators.
     /// Can only be called once.
     ///
+    /// Disputes on commitments that delegate to the committee are settled by a
+    /// majority vote of this set rather than by a single point of trust.
+    ///
     /// # Authorization
-    /// * Authorized caller: `arbitrator` (via `require_auth`).
-    /// * Why: Requiring the designated arbitrator to authorize initialization ensures
-    ///   that an address cannot be appointed as arbitrator without its explicit consent.
+    /// * Authorized caller: every address in `arbitrators` (via `require_auth`).
+    /// * Why: Requiring each designated arbitrator to authorize initialization
+    ///   ensures that no address can be appointed to the committee without its
+    ///   explicit consent.
     ///
     /// # Panics
     /// * Panics with `Error::AlreadyInitialized` if called more than once.
-    pub fn initialize(env: Env, arbitrator: Address) {
-        if env.storage().instance().has(&DataKey::Arbitrator) {
+    /// * Panics with `Error::EmptyArbitratorSet` if `arbitrators` is empty.
+    pub fn initialize(env: Env, arbitrators: Vec<Address>) {
+        // A legacy single-arbitrator deployment recorded a bare Address under
+        // DataKey::Arbitrator; either key means the contract is already live.
+        if env.storage().instance().has(&DataKey::ArbitratorSet)
+            || env.storage().instance().has(&DataKey::Arbitrator)
+        {
             panic_with_error!(&env, Error::AlreadyInitialized);
+        }
+
+        if arbitrators.is_empty() {
+            panic_with_error!(&env, Error::EmptyArbitratorSet);
         }
 
         // Enter the reentrancy guard before any external interaction (including
         // the require_auth call below, which may invoke a custom account contract).
         reentrancy::enter(&env);
 
-        arbitrator.require_auth();
+        // Deduplicate first (so no address authorizes twice in the same
+        // invocation) and require every distinct arbitrator to consent to their
+        // appointment. Deduplicating also keeps the majority threshold computed
+        // over distinct members.
+        let mut deduped = Vec::new(&env);
+        for a in arbitrators.iter() {
+            if !deduped.contains(&a) {
+                deduped.push_back(a.clone());
+            }
+        }
+        for a in deduped.iter() {
+            a.require_auth();
+        }
         env.storage()
             .instance()
-            .set(&DataKey::Arbitrator, &arbitrator);
+            .set(&DataKey::ArbitratorSet, &deduped);
 
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
@@ -69,23 +94,39 @@ impl RegistryContract {
         reentrancy::exit(&env);
     }
 
-    /// Retrieves the designated arbitrator address.
+    /// Retrieves the full set of designated arbitrators.
     ///
     /// # Panics
     /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
-    pub fn get_arbitrator(env: Env) -> Address {
-        let arbitrator = env
-            .storage()
-            .instance()
-            .get(&DataKey::Arbitrator)
-            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+    pub fn get_arbitrators(env: Env) -> Vec<Address> {
+        let arbitrators = commitments::arbitrators(&env);
 
         env.storage().instance().extend_ttl(
             commitments::TTL_THRESHOLD_LEDGERS,
             commitments::TTL_EXTEND_LEDGERS,
         );
 
-        arbitrator
+        arbitrators
+    }
+
+    /// Retrieves the first designated arbitrator.
+    ///
+    /// Kept for backwards compatibility with the original single-arbitrator
+    /// interface; prefer [`RegistryContract::get_arbitrators`] for the full set.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    pub fn get_arbitrator(env: Env) -> Address {
+        let arbitrators = commitments::arbitrators(&env);
+
+        env.storage().instance().extend_ttl(
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
+
+        arbitrators
+            .first()
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
     }
 
     /// Creates and registers a new ongoing commitment between an issuer and a counterparty.
@@ -318,15 +359,24 @@ impl RegistryContract {
 
     /// Resolves a disputed commitment to a final outcome.
     ///
+    /// A commitment whose `resolver_address` is a custom resolver outside the
+    /// arbitrator committee is settled directly by that resolver. A commitment
+    /// that names an arbitrator as its resolver is settled by majority vote of
+    /// the committee: each call records the calling arbitrator's vote and the
+    /// dispute only finalizes once the votes for an outcome exceed half the
+    /// committee size.
+    ///
     /// # Authorization
-    /// * Authorized caller: `caller` (via `require_auth`), which must exactly match
-    ///   the commitment's designated `resolver_address`.
-    /// * Why: Dispute resolution authority is delegated strictly to the custom resolver
-    ///   address chosen for this commitment at creation time.
+    /// * Authorized caller: `caller` (via `require_auth`), which must either be the
+    ///   commitment's designated custom `resolver_address`, or a member of the
+    ///   arbitrator committee for a committee-routed commitment.
+    /// * Why: Dispute resolution authority is delegated either to the resolver
+    ///   chosen at creation time, or to a majority of the mutually trusted
+    ///   arbitrators — never a single point of trust.
     ///
     /// # Arguments
     /// * `env` - The Soroban execution environment.
-    /// * `caller` - The designated resolver address resolving the dispute. Must authorize the call.
+    /// * `caller` - The resolver or arbitrator casting the vote/resolution. Must authorize the call.
     /// * `id` - The unique identifier of the disputed commitment.
     /// * `final_outcome` - The resolution status (`Fulfilled`, `Late`, or `Breached`).
     pub fn resolve_dispute(
@@ -374,9 +424,9 @@ impl RegistryContract {
     /// Installs the initial upgrade admin — in production, the Timelock contract.
     ///
     /// # Authorization
-    /// * Authorized caller: the `arbitrator` recorded by `initialize` (via `require_auth`).
+    /// * Authorized caller: the `arbitrators` recorded by `initialize` (via `require_auth`).
     /// * Why: at bootstrap no upgrade admin exists yet to authorize its own creation,
-    ///   and the arbitrator is the only authority the contract already trusts. The path
+    ///   and the arbitrator committee is the only authority the contract already trusts. The path
     ///   closes permanently once used; later changes go through `set_upgrade_admin`,
     ///   which only the timelock can call.
     ///

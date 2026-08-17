@@ -31,17 +31,32 @@ Soroban implements a Time-To-Live (TTL) model for data storage. The registry con
 - **Trust History**: One entry per address (~52 bytes) holding the bucketed outcome history used by `get_trust_score`. Extended to 30 days on each query or change, mirroring the reputation bump-on-access pattern.
 
 ### Instance Storage
-- **NextId & Arbitrator**: Extended to 30 days every time a new commitment is created or the arbitrator is retrieved. 
+- **NextId & ArbitratorSet**: Extended to 30 days every time a new commitment is created or the arbitrator set is retrieved. A pre-multi-arbitrator deployment that stored a single `Arbitrator` address is lazily migrated into a one-member `ArbitratorSet` on first read.
+
+### Dispute Vote Tallies
+- **Votes**: One persistent entry per disputed, committee-routed commitment, holding the running tally of arbitrator votes plus the set of arbitrators that already voted. Written and extended to 30 days on every vote that does not yet reach a majority.
 
 ## Public Functions
 
 ### `initialize`
-Initializes the contract with a designated arbitrator address. Can only be called once.
+Initializes the contract with a committee of designated arbitrators. Can only be called once.
 - **Parameters**: 
   - `env: Env`
-  - `arbitrator: Address`: The address of the mutually trusted arbitrator.
-- **Authorization**: Requires authorization from `arbitrator`.
-- **Panics**: `Error::AlreadyInitialized` if already initialized.
+  - `arbitrators: Vec<Address>`: The committee of mutually trusted arbitrators. Duplicates are dropped, and the set must not be empty.
+- **Authorization**: Requires authorization from every distinct arbitrator in the set.
+- **Panics**: `Error::AlreadyInitialized` if already initialized (including a legacy single-arbitrator deployment), `Error::EmptyArbitratorSet` if the set is empty.
+
+### `get_arbitrators`
+Retrieves the full set of designated arbitrators.
+- **Parameters**: `env: Env`
+- **Returns**: `Vec<Address>` — the arbitrator committee.
+- **Panics**: `Error::NotInitialized` if the contract has not been initialized.
+
+### `get_arbitrator`
+Retrieves the first designated arbitrator.
+- **Parameters**: `env: Env`
+- **Returns**: `Address` — the first member of the arbitrator set. Kept for backwards compatibility; prefer `get_arbitrators`.
+- **Panics**: `Error::NotInitialized` if the contract has not been initialized.
 
 ### `create_commitment`
 Creates and registers a new ongoing commitment between an issuer and a counterparty.
@@ -93,11 +108,14 @@ Raises a dispute on an attested commitment within the dispute window (7 days).
 Resolves a disputed commitment to a final outcome.
 - **Parameters**:
   - `env: Env`
-  - `arbitrator: Address`: The designated arbitrator resolving the dispute.
+  - `caller: Address`: The resolver or arbitrator casting the resolution/vote.
   - `id: u64`
   - `final_outcome: CommitmentStatus`: The final adjudicated outcome.
-- **Authorization**: Requires authorization from the designated `arbitrator`.
-- **Panics**: `Error::NotArbitrator` if the caller is not the initialized arbitrator.
+- **Authorization**: Requires authorization from `caller`.
+- **Two paths**:
+  - *Custom resolver* — a commitment whose `resolver_address` is outside the arbitrator committee is settled directly by that resolver in a single call (plugin delegation).
+  - *Arbitrator committee* — naming an arbitrator as the `resolver_address` routes the dispute through the committee: each call records the calling arbitrator's vote under `DataKey::Votes(id)`, and the dispute finalizes only once the votes for one outcome **exceed half the arbitrator count**. No single arbitrator can settle the dispute alone.
+- **Panics**: `Error::NotArbitrator` if the caller is neither the designated custom resolver nor a committee member eligible to vote, `Error::AlreadyVoted` if a committee member votes twice on the same dispute, `Error::InvalidTransition` if the commitment is not `Disputed`, `Error::InvalidOutcome` if `final_outcome` is `Pending` or `Disputed`.
 
 #### Re-dispute prevention (intentional invariant)
 
@@ -171,7 +189,7 @@ Installs the initial upgrade admin (the Timelock contract). Bootstrap path only;
 - **Parameters**:
   - `env: Env`
   - `admin: Address`: The address to grant upgrade authority to.
-- **Authorization**: Requires authorization from the `arbitrator` recorded by `initialize`.
+- **Authorization**: Requires authorization from every arbitrator recorded by `initialize` — the whole committee must consent, so no single arbitrator can unilaterally install an upgrade admin they control.
 - **Panics**: `Error::NotInitialized` if the contract has not been initialized, `Error::UpgradeAdminAlreadySet` if an upgrade admin is already installed.
 
 ### `set_upgrade_admin`
