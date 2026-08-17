@@ -109,6 +109,8 @@ fn create_and_attest(
         &BytesN::from_array(env, &[terms; 32]),
         &2000,
         &resolver,
+        &Vec::new(env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(issuer, &id, &outcome);
@@ -458,6 +460,8 @@ fn test_bucket_boundary_semantics() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
         &resolver,
+        &Vec::new(&env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Breached);
@@ -467,6 +471,8 @@ fn test_bucket_boundary_semantics() {
         &BytesN::from_array(&env, &[2u8; 32]),
         &2000,
         &resolver,
+        &Vec::new(&env),
+        &0,
     );
     client.attest(&issuer, &id2, &CommitmentStatus::Fulfilled);
 
@@ -595,6 +601,8 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
             &BytesN::from_array(&env, &[(i % 250) as u8; 32]),
             &2_000_000,
             &resolver,
+            &Vec::new(&env),
+            &0,
         );
         client.attest(&issuer, &id, &CommitmentStatus::Breached);
     }
@@ -680,6 +688,8 @@ fn test_resolve_dispute_applies_final_outcome_to_score() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
         &arbitrator,
+        &Vec::new(&env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Breached);

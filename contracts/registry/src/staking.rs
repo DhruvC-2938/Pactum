@@ -32,7 +32,8 @@ pub struct AttestorStake {
 }
 
 /// Loads the staking record for an attestor, defaulting to a zeroed record.
-fn load_stake(env: &Env, attestor: &Address) -> AttestorStake {
+/// `pub(crate)` so the voting phase can check stake eligibility.
+pub(crate) fn load_stake(env: &Env, attestor: &Address) -> AttestorStake {
     env.storage()
         .persistent()
         .get(&DataKey::Stake(attestor.clone()))
@@ -53,6 +54,44 @@ fn save_stake(env: &Env, attestor: &Address, stake: &AttestorStake) {
         TTL_THRESHOLD_LEDGERS,
         TTL_EXTEND_LEDGERS,
     );
+}
+
+/// Sets the dispute-panel lock on an attestor's stake. Called by the voting
+/// phase when the attestor joins an active dispute panel, and cleared again
+/// when the dispute resolves. Missing records are left untouched.
+pub(crate) fn set_locked(env: &Env, attestor: &Address, locked: bool) {
+    let mut stake = load_stake(env, attestor);
+    if stake.staked == 0 {
+        return;
+    }
+    if stake.locked == locked {
+        return;
+    }
+    stake.locked = locked;
+    save_stake(env, attestor, &stake);
+}
+
+/// Reduces an attestor's staked amount by `percent` percent of its current
+/// value, leaving the forfeited amount in the vault. Called by the voting
+/// phase to slash dissenting attestors when a dispute resolves.
+pub(crate) fn slash(env: &Env, attestor: &Address, percent: u64) {
+    let mut stake = load_stake(env, attestor);
+    if stake.staked <= 0 {
+        return;
+    }
+    let cut = stake
+        .staked
+        .checked_mul(percent as i128)
+        .and_then(|v| v.checked_div(100))
+        .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
+    if cut <= 0 {
+        return;
+    }
+    stake.staked = stake
+        .staked
+        .checked_sub(cut)
+        .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
+    save_stake(env, attestor, &stake);
 }
 
 /// Returns the configured staking asset, or panics if none has been installed.

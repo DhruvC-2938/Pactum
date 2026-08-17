@@ -52,7 +52,6 @@ pub enum Error {
     MilestoneAlreadyAttested = 22,
     /// Milestones must be attested in order and an earlier one is still pending.
     MilestoneOutOfOrder = 23,
-<<<<<<< HEAD
     /// The arbitrator set passed to `initialize` was empty.
     EmptyArbitratorSet = 24,
     /// An arbitrator attempted to cast a second vote on the same dispute.
@@ -69,4 +68,18 @@ pub enum Error {
     StakingTokenNotSet = 30,
     /// The requested staking amount is zero or negative.
     ZeroAmount = 31,
+    /// The caller is not a designated attestor on the commitment's voting panel.
+    NotAttestor = 32,
+    /// The attestor has already cast a vote on this disputed commitment.
+    AttestorAlreadyVoted = 33,
+    /// The vote threshold is invalid (zero when a panel exists, above the panel
+    /// size, or a panel is missing while a threshold is set).
+    ThresholdInvalid = 34,
+    /// The attestor voting window for this dispute has closed.
+    VotingClosed = 35,
+    /// The attestor vote threshold has not been reached yet.
+    VotesNotMet = 36,
+    /// This commitment is governed by M-of-N attestor voting; single-resolver
+    /// resolution is not permitted.
+    UseVotingResolution = 37,
 }
