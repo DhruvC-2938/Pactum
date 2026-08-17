@@ -82,28 +82,34 @@ fn attest_inner(
     milestone_index: Option<u32>,
     outcome: CommitmentStatus,
 ) {
-    // 0. Enter the reentrancy guard before any external interaction (including
+    // 0. Fail fast if the protocol has been paused (emergency halt).
+    crate::pausable::require_not_paused(env);
+
+    // 1. Enter the reentrancy guard before any external interaction (including
     //    the require_auth call below, which may invoke a custom account contract).
     crate::reentrancy::enter(env);
 
-    // 1. Require authorization from the caller.
+    // 2. Require authorization from the caller.
     caller.require_auth();
 
-    // 2. Reject Pending or Disputed as an outcome value.
+    // 3. Reject Pending or Disputed as an outcome value.
     if outcome == CommitmentStatus::Pending || outcome == CommitmentStatus::Disputed {
         panic_with_error!(env, Error::InvalidOutcome);
     }
 
-    // 3. Load commitment from persistent storage (with legacy record migration).
+    // 4. Load commitment from persistent storage (with legacy record migration).
     let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 4. Verify caller is either issuer, counterparty, or designated oracle.
-    if caller != commitment.issuer && caller != commitment.counterparty && Some(caller) != commitment.oracle {
+    // 5. Verify caller is either issuer, counterparty, or designated oracle.
+    if caller != commitment.issuer
+        && caller != commitment.counterparty
+        && Some(caller) != commitment.oracle
+    {
         panic_with_error!(env, Error::Unauthorized);
     }
 
-    // 5. Verify commitment is currently Pending.
+    // 6. Verify commitment is currently Pending.
     if commitment.status != CommitmentStatus::Pending {
         panic_with_error!(env, Error::AlreadyResolved);
     }

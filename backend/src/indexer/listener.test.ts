@@ -91,6 +91,25 @@ test('limits each sync to the configured maximum batch size', async () => {
   assert.equal(await store.getLedger(4), null);
 });
 
+test('awaits the cache projector immediately after each finalized commit', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 2));
+  const store = new InMemoryIndexerStore();
+  const projected: number[] = [];
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 0,
+    async onLedgerCommitted(ledger) {
+      assert.deepEqual(await store.getCheckpoint(), { sequence: ledger.sequence, hash: ledger.hash });
+      projected.push(ledger.sequence);
+    },
+  });
+
+  await indexer.sync();
+  assert.deepEqual(projected, [1, 2]);
+});
+
 test('rolls back to the last common ledger and replays the canonical fork', async () => {
   const source = new SimulatedLedgerSource();
   const mainChain = makeChain('main', 6);
@@ -275,6 +294,46 @@ test('rejects a canonical source that breaks the committed parent link', async (
   ]);
 
   await assert.rejects(indexer.sync(), (error: unknown) => error instanceof LedgerLinkageError);
+});
+
+test('scopes getEvents to the deployed contract when configured', async () => {
+  const CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
+  const eventRequests: unknown[] = [];
+  const source = new SorobanLedgerSource(
+    {
+      async getLatestLedger() {
+        return { sequence: 2 };
+      },
+      async getLedgers() {
+        return {
+          ledgers: [
+            {
+              sequence: 2,
+              hash: 'ledger-2',
+              ledgerCloseTime: '1786838402',
+              previousHash: 'ledger-1',
+            },
+          ],
+        };
+      },
+      async getEvents(request) {
+        eventRequests.push(request);
+        return { events: [], cursor: undefined };
+      },
+    },
+    { contractId: CONTRACT_ID },
+  );
+
+  const ledger = await source.getLedger(2);
+  assert.ok(ledger);
+  assert.deepEqual(eventRequests, [
+    {
+      filters: [{ type: 'contract', contractIds: [CONTRACT_ID] }],
+      startLedger: 2,
+      endLedger: 3,
+      limit: 100,
+    },
+  ]);
 });
 
 test('maps Soroban RPC ledger headers and events into the indexer model', async () => {

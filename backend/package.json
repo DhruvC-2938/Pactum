@@ -9,7 +9,9 @@
     "build": "tsc && npm run copy:migrations",
     "copy:migrations": "node -e \"require('fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
     "test": "npm run test:indexer",
-    "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src/indexer -type f -name '*.test.js' -exec node --test {} +",
+    "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src -type f -name '*.test.js' -exec node --test {} +",
+    "load:reputation": "node scripts/load-reputation.js",
+    "indexer": "node dist/workers/indexer.js",
     "analytics:worker": "node dist/workers/analyticsWorker.js",
     "migrate:timescale": "node dist/db/migrate.js"
   },
@@ -21,10 +23,12 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "ioredis": "^5.11.1",
     "jose": "^5.2.2",
     "node-cron": "^4.6.0",
     "pg": "^8.23.0",
-    "redis": "^5.12.1",
+    "prom-client": "^15.1.3",
+    "redis": "^6.2.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -32,6 +36,8 @@
     "@types/express": "^5.0.6",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.21.0",
+    "@types/redis": "^4.0.10",
+    "autocannon": "^8.0.0",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.2"

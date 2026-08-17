@@ -1,21 +1,32 @@
 #![no_std]
+// The Soroban contract client generator mirrors every entrypoint argument onto
+// the generated client methods; wide entrypoints (e.g. `create_commitment` with
+// its attestor panel) would otherwise trip clippy's arg-count lint.
+#![allow(clippy::too_many_arguments)]
 
 pub mod attestation;
 pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+mod pausable;
 mod reentrancy;
 pub mod reputation;
+pub mod staking;
 pub mod trust_gate;
 pub mod trust_score;
 pub mod upgrade;
+pub mod voting;
 
 #[cfg(test)]
 mod test_trust_score;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod test_staking;
+
 #[cfg(test)]
 mod test_upgrade;
 
@@ -25,16 +36,22 @@ mod attacker_gate;
 #[cfg(test)]
 mod demo;
 
+#[cfg(test)]
+mod test_voting;
+
 pub use commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
-pub use upgrade::{SCHEMA_VERSION_V1, SCHEMA_VERSION_V2};
 use errors::Error;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Vec};
+pub use staking::AttestorStake;
+pub use upgrade::{SCHEMA_VERSION_V1, SCHEMA_VERSION_V2};
+pub use voting::VoteTally;
 
 /// The Pactum Registry contract for recording and tracking recurring commitments.
 #[contract]
 pub struct RegistryContract;
 
 #[contractimpl]
+#[allow(clippy::too_many_arguments)]
 impl RegistryContract {
     /// Initializes the contract with a committee of designated arbitrators.
     /// Can only be called once.
@@ -143,12 +160,20 @@ impl RegistryContract {
     /// * `terms_hash` - A 32-byte hash representing the off-chain terms of the commitment.
     /// * `due_at` - Unix timestamp (seconds) when the commitment is due. Must be in the future.
     /// * `resolver_address` - The address of the custom resolver delegated to resolve disputes for this commitment.
+    /// * `attestors` - The panel of staked attestors that votes on disputes for
+    ///   this commitment. Pass an empty vector to keep the single-resolver path.
+    /// * `vote_threshold` - How many matching attestor votes are required to
+    ///   resolve a dispute. Must be between 1 and `attestors.len()` when a panel
+    ///   is configured, and zero when it is not.
     ///
     /// # Returns
     /// * `u64` - The unique identifier assigned to the created commitment.
     ///
     /// # Panics
     /// * Panics with `Error::DueAtInPast` if `due_at` is less than or equal to the current ledger timestamp.
+    /// * Panics with `Error::ThresholdInvalid` if a threshold is set without a
+    ///   panel, a panel is set without a threshold, or the threshold exceeds the
+    ///   panel size.
     pub fn create_commitment(
         env: Env,
         issuer: Address,
@@ -158,7 +183,12 @@ impl RegistryContract {
         resolver_address: Address,
         oracle: Option<Address>,
         schema_id: Option<u32>,
+        attestors: Vec<Address>,
+        vote_threshold: u32,
     ) -> u64 {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         commitments::create(
             &env,
             issuer,
@@ -169,6 +199,8 @@ impl RegistryContract {
             1,
             oracle,
             schema_id,
+            attestors,
+            vote_threshold,
         )
     }
 
@@ -190,6 +222,11 @@ impl RegistryContract {
     /// * `milestone_count` - How many milestones the commitment is split into.
     /// * `oracle` - Optional designated oracle for automated attestation.
     /// * `schema_id` - Optional identifier for the schema used to generate terms_hash.
+    /// * `attestors` - The panel of staked attestors that votes on disputes for
+    ///   this commitment. Pass an empty vector to keep the single-resolver path.
+    /// * `vote_threshold` - How many matching attestor votes are required to
+    ///   resolve a dispute. Must be between 1 and `attestors.len()` when a panel
+    ///   is configured, and zero when it is not.
     ///
     /// # Returns
     /// * `u64` - The unique identifier assigned to the created commitment.
@@ -198,6 +235,9 @@ impl RegistryContract {
     /// * Panics with `Error::DueAtInPast` if `due_at` is less than or equal to the current ledger timestamp.
     /// * Panics with `Error::InvalidMilestoneCount` if `milestone_count` is zero or above
     ///   `commitments::MAX_MILESTONES`.
+    /// * Panics with `Error::ThresholdInvalid` if a threshold is set without a
+    ///   panel, a panel is set without a threshold, or the threshold exceeds the
+    ///   panel size.
     pub fn create_milestone_commitment(
         env: Env,
         issuer: Address,
@@ -208,7 +248,12 @@ impl RegistryContract {
         milestone_count: u32,
         oracle: Option<Address>,
         schema_id: Option<u32>,
+        attestors: Vec<Address>,
+        vote_threshold: u32,
     ) -> u64 {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         commitments::create(
             &env,
             issuer,
@@ -219,6 +264,8 @@ impl RegistryContract {
             milestone_count,
             oracle,
             schema_id,
+            attestors,
+            vote_threshold,
         )
     }
 
@@ -278,6 +325,9 @@ impl RegistryContract {
     /// * Panics with `Error::InvalidOutcome` if `outcome` is `CommitmentStatus::Pending` or `Disputed`.
     /// * Panics with `Error::AlreadyResolved` if the commitment is not currently `Pending`.
     pub fn attest(env: Env, caller: Address, id: u64, outcome: CommitmentStatus) {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         attestation::attest(&env, caller, id, outcome);
     }
 
@@ -316,6 +366,9 @@ impl RegistryContract {
         milestone_index: u32,
         outcome: CommitmentStatus,
     ) {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         attestation::attest_milestone(&env, caller, id, milestone_index, outcome);
     }
 
@@ -364,6 +417,9 @@ impl RegistryContract {
     /// * `caller` - The address initiating the dispute. Must authorize the call.
     /// * `id` - The unique identifier of the commitment to dispute.
     pub fn dispute(env: Env, caller: Address, id: u64) {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         disputes::dispute(&env, caller, id);
     }
 
@@ -389,13 +445,45 @@ impl RegistryContract {
     /// * `caller` - The resolver or arbitrator casting the vote/resolution. Must authorize the call.
     /// * `id` - The unique identifier of the disputed commitment.
     /// * `final_outcome` - The resolution status (`Fulfilled`, `Late`, or `Breached`).
-    pub fn resolve_dispute(
-        env: Env,
-        caller: Address,
-        id: u64,
-        final_outcome: CommitmentStatus,
-    ) {
+    pub fn resolve_dispute(env: Env, caller: Address, id: u64, final_outcome: CommitmentStatus) {
+        pausable::require_not_paused(&env);
         disputes::resolve_dispute(&env, caller, id, final_outcome);
+    }
+
+    /// Casts a single attestor's vote on a disputed, panel-governed commitment.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `attestor` (via `require_auth`), a member of the
+    ///   commitment's voting panel who holds staked funds locked by the dispute.
+    /// * Why: Panel membership plus at-stake funds give attestors skin in the
+    ///   game; their stake is slashed if they vote for a losing outcome.
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if no commitment has the given ID.
+    /// * Panics with `Error::InvalidTransition` if the commitment is not `Disputed`
+    ///   or has no voting panel configured.
+    /// * Panics with `Error::VotingClosed` if the voting window has elapsed.
+    /// * Panics with `Error::NotAttestor` if the caller is not on the panel.
+    /// * Panics with `Error::InsufficientStake` if the caller holds no stake.
+    /// * Panics with `Error::DisputeActive` if the caller's stake is not locked.
+    /// * Panics with `Error::AttestorAlreadyVoted` if the caller already voted.
+    /// * Panics with `Error::InvalidOutcome` if `outcome` is not a final status.
+    pub fn cast_dispute_vote(env: Env, attestor: Address, id: u64, outcome: CommitmentStatus) {
+        voting::cast_dispute_vote(&env, attestor, id, outcome);
+    }
+
+    /// Finalizes a disputed commitment whose attestor voting window elapsed
+    /// without the threshold being reached. The commitment falls back to
+    /// `Breached` and the panel's stakes are unlocked. Permissionless: anyone
+    /// may finalize an expired dispute.
+    ///
+    /// # Panics
+    /// * Panics with `Error::CommitmentNotFound` if no commitment has the given ID.
+    /// * Panics with `Error::InvalidTransition` if the commitment is not `Disputed`
+    ///   or has no voting panel configured.
+    /// * Panics with `Error::VotesNotMet` if the voting window has not elapsed yet.
+    pub fn check_dispute_timeout(env: Env, id: u64) {
+        voting::check_dispute_timeout(&env, id);
     }
 
     /// Retrieves the aggregate reputation for a given address.
@@ -408,6 +496,82 @@ impl RegistryContract {
     /// * `Reputation` - The accumulated fulfilled, late, and breached counts for the address as an issuer.
     pub fn get_reputation(env: Env, address: Address) -> reputation::Reputation {
         reputation::get_reputation(&env, address)
+    }
+
+    /// Returns whether the protocol is currently paused (emergency halt).
+    ///
+    /// Read functions remain fully operational while paused; only
+    /// state-mutating entry points are halted.
+    ///
+    /// # Returns
+    /// * `bool` - `true` if the protocol is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        pausable::is_paused(&env)
+    }
+
+    /// Pauses the protocol, halting every state-mutating entry point with
+    /// `Error::ProtocolPaused` while leaving reads fully operational.
+    ///
+    /// This is the emergency kill-switch used in the event of a zero-day
+    /// exploit. Admin lifecycle operations (`pause`, `unpause`, `upgrade`)
+    /// are deliberately exempt so the admin can end the halt or deploy an
+    /// emergency patch while the protocol is paused.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), a current member of
+    ///   the designated arbitrator committee.
+    /// * Why: Only the mutually trusted committee is authorized to trigger the
+    ///   emergency halt.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if `admin` is not on the committee.
+    pub fn pause(env: Env, admin: Address) {
+        // Enter the reentrancy guard before any external interaction (including
+        // the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
+        admin.require_auth();
+
+        let committee = commitments::arbitrators(&env);
+        if !committee.contains(admin.clone()) {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+
+        pausable::set_paused(&env, true);
+        events::protocol_paused(&env);
+
+        // Release the reentrancy guard.
+        reentrancy::exit(&env);
+    }
+
+    /// Unpauses the protocol, restoring its state-mutating entry points.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), a current member of
+    ///   the designated arbitrator committee.
+    /// * Why: Only the mutually trusted committee is authorized to end the halt.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotArbitrator` if `admin` is not on the committee.
+    pub fn unpause(env: Env, admin: Address) {
+        // Enter the reentrancy guard before any external interaction (including
+        // the require_auth call below, which may invoke a custom account contract).
+        reentrancy::enter(&env);
+
+        admin.require_auth();
+
+        let committee = commitments::arbitrators(&env);
+        if !committee.contains(admin.clone()) {
+            panic_with_error!(&env, Error::NotArbitrator);
+        }
+
+        pausable::set_paused(&env, false);
+        events::protocol_unpaused(&env);
+
+        // Release the reentrancy guard.
+        reentrancy::exit(&env);
     }
 
     // ---------------------------------------------------------------------
@@ -518,6 +682,9 @@ impl RegistryContract {
     /// * Panics with `Error::BatchTooLarge` if the batch exceeds
     ///   `upgrade::MAX_MIGRATION_BATCH` addresses.
     pub fn migrate_reputation_batch(env: Env, addresses: Vec<Address>) -> u32 {
+        // Fail fast if the protocol has been paused (emergency halt).
+        pausable::require_not_paused(&env);
+
         reputation::migrate_reputation_batch(&env, addresses)
     }
 
@@ -536,5 +703,70 @@ impl RegistryContract {
     /// * `u32` - The trust score in the range 0..=100 (50 = neutral baseline).
     pub fn get_trust_score(env: Env, address: Address) -> u32 {
         trust_score::get_trust_score(&env, address)
+    }
+
+    // ---------------------------------------------------------------------
+    // Attestor staking
+    //
+    // Phase 1 of the M-of-N cryptoeconomic arbitration network (Issue 86).
+    // Attestors lock native Stellar tokens into the contract vault and can
+    // withdraw them after a 14-day unbonding period. Voting and slashing
+    // build on top of these entry points in later phases.
+    // ---------------------------------------------------------------------
+
+    /// Configures the token used for attestor staking.
+    ///
+    /// # Authorization
+    /// * Authorized caller: the designated `arbitrator` (via `require_auth`).
+    /// * Why: only the incumbent authority may bind the network to a staking asset.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotArbitrator` if `caller` is not the arbitrator.
+    /// * Panics with `Error::AlreadyInitialized` if a staking token is already set.
+    pub fn set_staking_token(env: Env, caller: Address, token: Address) {
+        staking::set_staking_token(&env, caller, token);
+    }
+
+    /// Locks `amount` of the staking token from the attestor into the registry vault.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `attestor` (via `require_auth`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::ZeroAmount` if `amount` is zero or negative.
+    /// * Panics with `Error::StakingTokenNotSet` if no staking token is configured.
+    pub fn stake_attestor(env: Env, attestor: Address, amount: i128) {
+        staking::stake_attestor(&env, attestor, amount);
+    }
+
+    /// Requests an unstake, starting the 14-day unbonding period.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `attestor` (via `require_auth`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::InsufficientStake` if the attestor has no stake.
+    /// * Panics with `Error::UnbondingPending` if an unstake is already pending.
+    /// * Panics with `Error::DisputeActive` if the attestor's stake is locked.
+    pub fn request_unstake(env: Env, attestor: Address) {
+        staking::request_unstake(&env, attestor);
+    }
+
+    /// Withdraws the full stake after the unbonding period has elapsed.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `attestor` (via `require_auth`).
+    ///
+    /// # Panics
+    /// * Panics with `Error::InsufficientStake` if no unstake was requested.
+    /// * Panics with `Error::UnbondingNotElapsed` if the unbonding period has not elapsed.
+    /// * Panics with `Error::DisputeActive` if the attestor's stake is locked.
+    pub fn finalize_unstake(env: Env, attestor: Address) {
+        staking::finalize_unstake(&env, attestor);
+    }
+
+    /// Returns the staking record for an attestor (zeroed if it has never staked).
+    pub fn get_stake_info(env: Env, attestor: Address) -> AttestorStake {
+        staking::get_stake_info(&env, attestor)
     }
 }
