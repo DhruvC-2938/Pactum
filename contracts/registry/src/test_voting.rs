@@ -77,6 +77,8 @@ fn disputed_panel_commitment(
         &terms,
         &(T0 + 60),
         resolver,
+        &None,
+        &None,
         attestors,
         &threshold,
     );
@@ -213,6 +215,8 @@ fn test_vote_rejects_invalid_outcome_and_non_disputed() {
         &terms,
         &(T0 + 60),
         &attestors.get(4).unwrap(),
+        &None,
+        &None,
         &attestors,
         &3,
     );
@@ -309,6 +313,8 @@ fn test_create_rejects_invalid_thresholds() {
         &terms,
         &(T0 + 60),
         &arbitrator,
+        &None,
+        &None,
         &attestors,
         &6,
     );
@@ -321,6 +327,8 @@ fn test_create_rejects_invalid_thresholds() {
         &terms,
         &(T0 + 60),
         &arbitrator,
+        &None,
+        &None,
         &attestors,
         &0,
     );
@@ -334,6 +342,8 @@ fn test_create_rejects_invalid_thresholds() {
         &terms,
         &(T0 + 60),
         &arbitrator,
+        &None,
+        &None,
         &empty,
         &2,
     );
@@ -346,12 +356,14 @@ fn test_create_rejects_invalid_thresholds() {
         &terms,
         &(T0 + 60),
         &arbitrator,
+        &None,
+        &None,
         &empty,
         &0,
     );
     let commitment = client.get_commitment(&id);
     assert!(commitment.attestors.is_empty());
-    assert_eq!(commitment.vote_threshold, 0);
+    assert_eq!(commitment.vote_threshold(), 0);
 }
 
 #[test]
@@ -368,6 +380,8 @@ fn test_vote_balance_unaffected_by_threshold_vote() {
         &terms,
         &(T0 + 60),
         &resolver,
+        &None,
+        &None,
         &attestors,
         &3,
     );

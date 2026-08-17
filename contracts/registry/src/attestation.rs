@@ -41,18 +41,18 @@ pub fn get_milestone(env: &Env, id: u64, milestone_index: u32) -> Option<Commitm
     let commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    if milestone_index >= commitment.milestone_count {
+    if milestone_index >= commitment.milestone_count() {
         panic_with_error!(env, Error::InvalidMilestoneIndex);
     }
 
     let key = DataKey::Milestone(id, milestone_index);
-    let outcome = env.storage().persistent().get(&key);
+    let outcome = env.storage().temporary().get(&key);
 
     // Bump on access like get_commitment and get_reputation do, so an early
     // milestone cannot expire out from under a live commitment and start
     // reading back as pending.
     if outcome.is_some() {
-        env.storage().persistent().extend_ttl(
+        env.storage().temporary().extend_ttl(
             &key,
             crate::commitments::TTL_THRESHOLD_LEDGERS,
             crate::commitments::TTL_EXTEND_LEDGERS,
@@ -115,27 +115,24 @@ fn attest_inner(
     }
 
     // 6. Resolve and validate the milestone being attested.
-    let index = milestone_index.unwrap_or(commitment.milestones_attested);
-    if index >= commitment.milestone_count {
+    let index = milestone_index.unwrap_or(commitment.milestones_attested());
+    if index >= commitment.milestone_count() {
         panic_with_error!(env, Error::InvalidMilestoneIndex);
     }
-    if index < commitment.milestones_attested {
+    if index < commitment.milestones_attested() {
         panic_with_error!(env, Error::MilestoneAlreadyAttested);
     }
-    if index > commitment.milestones_attested {
+    if index > commitment.milestones_attested() {
         panic_with_error!(env, Error::MilestoneOutOfOrder);
     }
 
     // 7. Record the milestone outcome and roll it into the commitment counters.
-    commitment.milestones_attested = commitment.milestones_attested.saturating_add(1);
-    if outcome == CommitmentStatus::Late {
-        commitment.late_milestones = commitment.late_milestones.saturating_add(1);
-    }
+    commitment.record_milestone_attested(env, outcome == CommitmentStatus::Late);
 
     env.storage()
-        .persistent()
+        .temporary()
         .set(&DataKey::Milestone(id, index), &outcome);
-    env.storage().persistent().extend_ttl(
+    env.storage().temporary().extend_ttl(
         &DataKey::Milestone(id, index),
         crate::commitments::TTL_THRESHOLD_LEDGERS,
         crate::commitments::TTL_EXTEND_LEDGERS,
@@ -145,8 +142,8 @@ fn attest_inner(
     //    once every milestone has been attested.
     let resolution = if outcome == CommitmentStatus::Breached {
         Some(CommitmentStatus::Breached)
-    } else if commitment.milestones_attested == commitment.milestone_count {
-        Some(if commitment.late_milestones > 0 {
+    } else if commitment.milestones_attested() == commitment.milestone_count() {
+        Some(if commitment.late_milestones() > 0 {
             CommitmentStatus::Late
         } else {
             CommitmentStatus::Fulfilled
@@ -172,7 +169,7 @@ fn attest_inner(
 
     // 10. Emit the per-milestone event. Single-milestone commitments only emit
     //     commitment_attested, exactly as they did before milestones existed.
-    if commitment.milestone_count > 1 {
+    if commitment.milestone_count() > 1 {
         events::milestone_attested(env, id, index, outcome);
     }
 

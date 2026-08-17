@@ -556,6 +556,8 @@ fn test_write_path_migrates_lazily() {
         &BytesN::from_array(&f.env, &[1u8; 32]),
         &2_000,
         &f.arbitrator,
+        &None,
+        &None,
         &Vec::new(&f.env),
         &0,
     );
@@ -573,6 +575,8 @@ fn test_write_path_migrates_lazily() {
         &BytesN::from_array(&f.env, &[2u8; 32]),
         &3_000,
         &f.arbitrator,
+        &None,
+        &None,
         &Vec::new(&f.env),
         &0,
     );
@@ -602,6 +606,8 @@ fn test_v2_write_path_decrements_direct_count_on_dispute() {
         &BytesN::from_array(&f.env, &[3u8; 32]),
         &2_000,
         &f.arbitrator,
+        &None,
+        &None,
         &Vec::new(&f.env),
         &0,
     );
@@ -636,6 +642,8 @@ fn test_commitments_are_untouched_by_the_schema_switch() {
         &terms,
         &2_000,
         &f.arbitrator,
+        &None,
+        &None,
         &Vec::new(&f.env),
         &0,
     );
@@ -715,6 +723,8 @@ mod wasm {
                 &BytesN::from_array(&f.env, &[i as u8; 32]),
                 &2_000,
                 &f.arbitrator,
+                &None,
+                &None,
                 &Vec::new(&f.env),
                 &0,
             );
@@ -774,6 +784,8 @@ mod wasm {
             &terms,
             &2_000,
             &f.arbitrator,
+            &None,
+            &None,
             &Vec::new(&f.env),
             &0,
         );
@@ -820,6 +832,8 @@ mod wasm {
             &2_000,
             &f.arbitrator,
             &3,
+            &None,
+            &None,
             &Vec::new(&f.env),
             &0,
         );
@@ -851,9 +865,9 @@ mod wasm {
         let commitment = after
             .read_commitment(&id)
             .expect("milestone commitment survived the executable swap");
-        assert_eq!(commitment.milestone_count, 3);
-        assert_eq!(commitment.milestones_attested, 2);
-        assert_eq!(commitment.late_milestones, 1);
+        assert_eq!(commitment.milestone_count(), 3);
+        assert_eq!(commitment.milestones_attested(), 2);
+        assert_eq!(commitment.late_milestones(), 1);
         assert_eq!(
             commitment.status,
             fixture_contract::CommitmentStatus::Pending
