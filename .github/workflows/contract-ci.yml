@@ -63,10 +63,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The upgrade tests embed a fixture via contractimport! from
+      # target/wasm32-unknown-unknown, so that target is what the suite needs,
+      # not the wasm32v1-none one the deployable artifact is built for.
       - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32v1-none
+          targets: wasm32-unknown-unknown
 
       - name: Cache Cargo registry and build target
         uses: actions/cache@v4
@@ -79,9 +82,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-test-
 
+      # `make test-upgrade` builds the Wasm fixtures and then runs the suite with
+      # registry/wasm-tests and timelock/wasm-tests enabled. A bare `cargo test`
+      # silently skips the real executable-swap tests, so this defers to the
+      # repository's own target rather than restating the command here.
       - name: Run Soroban contract test suite
         working-directory: contracts
-        run: cargo test --workspace
+        run: make test-upgrade
 
   build:
     name: Optimized Wasm Build
