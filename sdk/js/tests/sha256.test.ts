@@ -22,6 +22,7 @@ describe('SHA-256 Known-Answer Tests', () => {
     const hash = bytesToHex(sha256(input));
     expect(hash.length).toBe(66);
     expect(hash.startsWith('0x')).toBe(true);
+    expect(hash).toBe('0x9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318');
   });
 
   it('correctly hashes 56-byte boundary input (forces extra block padding)', () => {
@@ -29,6 +30,7 @@ describe('SHA-256 Known-Answer Tests', () => {
     const hash = bytesToHex(sha256(input));
     expect(hash.length).toBe(66);
     expect(hash.startsWith('0x')).toBe(true);
+    expect(hash).toBe('0xb35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a');
   });
 
   it('correctly hashes multi-block (1000 bytes) input', () => {
@@ -36,5 +38,6 @@ describe('SHA-256 Known-Answer Tests', () => {
     const hash = bytesToHex(sha256(input));
     expect(hash.length).toBe(66);
     expect(hash.startsWith('0x')).toBe(true);
+    expect(hash).toBe('0x9a5670771141349931d69d6eb982faa01def544dc17a161ef83b3277fb7c0c3c');
   });
 });

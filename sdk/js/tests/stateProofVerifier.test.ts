@@ -21,6 +21,39 @@ describe('Zero-Trust StateProofVerifier (TypeScript SDK)', () => {
     sourceLedgerSeq: 10450,
   };
 
+  // Precomputed cross-runtime fixed proof fixture
+  const precomputedProofFixture: PactumStateProof = {
+    version: '1.0.0',
+    networkPassphrase: 'Test SDF Network ; September 2015',
+    ledgerSeq: 10500,
+    ledgerHeaderHash: '0x95e603468fa1f5628529977b4dd12b56da453da8756426730eadfd88e3ac73d6',
+    stateRootHash: '0x1813fc0d93c324560ff7837e0a4aeba0e7ffab8e600f953c7b9a235dc6deeb57',
+    contractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM',
+    stellarAddress: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+    scoreData: {
+      score: 85,
+      fulfilledCount: 10,
+      lateCount: 1,
+      breachedCount: 0,
+      epoch: 1,
+      sourceLedgerSeq: 10450,
+    },
+    leafHash: '0x1af4b84225b30a8dd832dbc4ffc74945852979a5be0bcb0c775364930df313cd',
+    merkleProof: [
+      {
+        sibling: '0x0074712d50c28ef2b55079d4a3522b39c43fd3169e1b17345901e1a2e607f03d',
+        isRight: true,
+      },
+    ],
+    headerProof: {
+      previousLedgerHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
+      txSetResultHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
+      bucketListHash: '0x1813fc0d93c324560ff7837e0a4aeba0e7ffab8e600f953c7b9a235dc6deeb57',
+      ledgerVersion: 21,
+    },
+  };
+  const independentTrustedHeader = '0x95e603468fa1f5628529977b4dd12b56da453da8756426730eadfd88e3ac73d6';
+
   const sampleProof: PactumStateProof = {
     version: '1.0.0',
     networkPassphrase: 'Test SDF Network ; September 2015',
@@ -40,7 +73,7 @@ describe('Zero-Trust StateProofVerifier (TypeScript SDK)', () => {
     },
   };
 
-  // Helper to setup a valid proof with independent cloned scoreData
+  // Helper to setup a dynamic valid proof with independent cloned scoreData
   function createValidProof(overrides: Partial<PactumStateProof> = {}): PactumStateProof {
     const scoreData: ScoreData = {
       ...defaultScoreData,
@@ -93,7 +126,17 @@ describe('Zero-Trust StateProofVerifier (TypeScript SDK)', () => {
     };
   }
 
-  it('successfully verifies a valid cryptographic state proof against a trusted header', () => {
+  it('successfully verifies a precomputed cross-runtime proof fixture against independent trusted header', () => {
+    const result = verifyPactumStateProof(precomputedProofFixture, independentTrustedHeader);
+
+    expect(result.valid).toBe(true);
+    expect(result.score).toBe(85);
+    expect(result.ledgerSeq).toBe(10500);
+    expect(result.stellarAddress).toBe('GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF');
+    expect(result.contractId).toBe('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM');
+  });
+
+  it('successfully verifies a dynamic valid cryptographic state proof against a trusted header', () => {
     const proof = createValidProof();
     const result = verifyPactumStateProof(proof, proof.ledgerHeaderHash);
 

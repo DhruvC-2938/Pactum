@@ -112,7 +112,7 @@ library PactumStateProofVerifier {
 
     /// @notice Cryptographically verifies a zero-trust StateProof and reverts with a descriptive error if invalid.
     /// @param proof The state proof structure.
-    /// @param trustedLedgerHeaderHash Trusted block hash to anchor verification against.
+    /// @param trustedLedgerHeaderHash Non-zero trusted block hash to anchor verification against.
     /// @return score The verified trust score (0..100).
     function verifyProofOrRevert(
         StateProof memory proof,
@@ -145,7 +145,7 @@ library PactumStateProofVerifier {
             revert HeaderHashMismatch(computedHeader, proof.ledgerHeaderHash);
         }
 
-        if (trustedLedgerHeaderHash != bytes32(0) && proof.ledgerHeaderHash != trustedLedgerHeaderHash) {
+        if (trustedLedgerHeaderHash == bytes32(0) || proof.ledgerHeaderHash != trustedLedgerHeaderHash) {
             revert UntrustedHeaderHash(proof.ledgerHeaderHash, trustedLedgerHeaderHash);
         }
 
@@ -154,7 +154,7 @@ library PactumStateProofVerifier {
 
     /// @notice Cryptographically verifies a zero-trust StateProof returning boolean status.
     /// @param proof The state proof structure.
-    /// @param trustedLedgerHeaderHash Optional trusted block hash (if non-zero, asserts equality).
+    /// @param trustedLedgerHeaderHash Non-zero trusted block hash to anchor verification against.
     /// @return isValid True if all cryptographic checks pass.
     /// @return score The verified trust score (0..100).
     function verifyProof(
@@ -192,7 +192,7 @@ library PactumStateProofVerifier {
             return (false, 0);
         }
 
-        if (trustedLedgerHeaderHash != bytes32(0) && proof.ledgerHeaderHash != trustedLedgerHeaderHash) {
+        if (trustedLedgerHeaderHash == bytes32(0) || proof.ledgerHeaderHash != trustedLedgerHeaderHash) {
             return (false, 0);
         }
 
