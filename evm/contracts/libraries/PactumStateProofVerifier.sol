@@ -47,13 +47,14 @@ library PactumStateProofVerifier {
     error BucketListMismatch(bytes32 stateRoot, bytes32 bucketList);
     error HeaderHashMismatch(bytes32 expected, bytes32 actual);
     error UntrustedHeaderHash(bytes32 claimed, bytes32 trusted);
+    error LedgerSeqOverflow(uint64 ledgerSeq);
 
     /// @notice Computes the 32-byte SHA-256 leaf hash for a trust score contract data entry (92 bytes packed).
     function computeLeafHash(
         bytes32 contractId,
         bytes32 stellarAddress,
         ScoreData memory scoreData
-    ) public pure returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return sha256(
             abi.encodePacked(
                 contractId,
@@ -72,7 +73,7 @@ library PactumStateProofVerifier {
     function computeMerkleRoot(
         bytes32 leaf,
         MerkleNode[] memory proof
-    ) public pure returns (bytes32) {
+    ) internal pure returns (bytes32) {
         bytes32 current = leaf;
         uint256 length = proof.length;
 
@@ -89,10 +90,15 @@ library PactumStateProofVerifier {
     }
 
     /// @notice Computes the 32-byte SHA-256 header hash from ledger sequence and header proof fields (104 bytes packed).
+    /// @dev Stellar ledger sequences fit in uint32. An overflow check is enforced if ledgerSeq exceeds type(uint32).max.
     function computeHeaderHash(
         uint64 ledgerSeq,
         HeaderProof memory headerProof
-    ) public pure returns (bytes32) {
+    ) internal pure returns (bytes32) {
+        if (ledgerSeq > type(uint32).max) {
+            revert LedgerSeqOverflow(ledgerSeq);
+        }
+
         return sha256(
             abi.encodePacked(
                 uint32(ledgerSeq),
@@ -104,7 +110,49 @@ library PactumStateProofVerifier {
         );
     }
 
-    /// @notice Cryptographically verifies a zero-trust StateProof.
+    /// @notice Cryptographically verifies a zero-trust StateProof and reverts with a descriptive error if invalid.
+    /// @param proof The state proof structure.
+    /// @param trustedLedgerHeaderHash Trusted block hash to anchor verification against.
+    /// @return score The verified trust score (0..100).
+    function verifyProofOrRevert(
+        StateProof memory proof,
+        bytes32 trustedLedgerHeaderHash
+    ) internal pure returns (uint32 score) {
+        if (keccak256(bytes(proof.version)) != keccak256(bytes("1.0.0"))) {
+            revert UnsupportedVersion();
+        }
+
+        bytes32 expectedLeaf = computeLeafHash(
+            proof.contractId,
+            proof.stellarAddress,
+            proof.scoreData
+        );
+        if (expectedLeaf != proof.leafHash) {
+            revert LeafHashMismatch(expectedLeaf, proof.leafHash);
+        }
+
+        bytes32 computedRoot = computeMerkleRoot(expectedLeaf, proof.merkleProof);
+        if (computedRoot != proof.stateRootHash) {
+            revert MerkleRootMismatch(computedRoot, proof.stateRootHash);
+        }
+
+        if (proof.stateRootHash != proof.headerProof.bucketListHash) {
+            revert BucketListMismatch(proof.stateRootHash, proof.headerProof.bucketListHash);
+        }
+
+        bytes32 computedHeader = computeHeaderHash(proof.ledgerSeq, proof.headerProof);
+        if (computedHeader != proof.ledgerHeaderHash) {
+            revert HeaderHashMismatch(computedHeader, proof.ledgerHeaderHash);
+        }
+
+        if (trustedLedgerHeaderHash != bytes32(0) && proof.ledgerHeaderHash != trustedLedgerHeaderHash) {
+            revert UntrustedHeaderHash(proof.ledgerHeaderHash, trustedLedgerHeaderHash);
+        }
+
+        return proof.scoreData.score;
+    }
+
+    /// @notice Cryptographically verifies a zero-trust StateProof returning boolean status.
     /// @param proof The state proof structure.
     /// @param trustedLedgerHeaderHash Optional trusted block hash (if non-zero, asserts equality).
     /// @return isValid True if all cryptographic checks pass.
@@ -112,13 +160,11 @@ library PactumStateProofVerifier {
     function verifyProof(
         StateProof memory proof,
         bytes32 trustedLedgerHeaderHash
-    ) public pure returns (bool isValid, uint32 score) {
-        // 1. Version check
+    ) internal pure returns (bool isValid, uint32 score) {
         if (keccak256(bytes(proof.version)) != keccak256(bytes("1.0.0"))) {
             return (false, 0);
         }
 
-        // 2. Leaf hash verification
         bytes32 expectedLeaf = computeLeafHash(
             proof.contractId,
             proof.stellarAddress,
@@ -128,24 +174,24 @@ library PactumStateProofVerifier {
             return (false, 0);
         }
 
-        // 3. Merkle audit path verification against StateRoot
         bytes32 computedRoot = computeMerkleRoot(expectedLeaf, proof.merkleProof);
         if (computedRoot != proof.stateRootHash) {
             return (false, 0);
         }
 
-        // 4. StateRoot must match bucketListHash in header proof
         if (proof.stateRootHash != proof.headerProof.bucketListHash) {
             return (false, 0);
         }
 
-        // 5. Ledger Header Hash verification
+        if (proof.ledgerSeq > type(uint32).max) {
+            return (false, 0);
+        }
+
         bytes32 computedHeader = computeHeaderHash(proof.ledgerSeq, proof.headerProof);
         if (computedHeader != proof.ledgerHeaderHash) {
             return (false, 0);
         }
 
-        // 6. Trusted block hash verification
         if (trustedLedgerHeaderHash != bytes32(0) && proof.ledgerHeaderHash != trustedLedgerHeaderHash) {
             return (false, 0);
         }

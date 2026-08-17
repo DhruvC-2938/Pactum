@@ -19,13 +19,19 @@ export function createProofsRouter(relayerService: RelayerService): Router {
       return;
     }
 
-    const targetLedgerSeq = req.query.ledgerSeq
-      ? parseInt(String(req.query.ledgerSeq), 10)
-      : undefined;
-
-    if (targetLedgerSeq !== undefined && (isNaN(targetLedgerSeq) || targetLedgerSeq <= 0)) {
-      res.status(400).json({ error: 'ledgerSeq query parameter must be a positive integer' });
-      return;
+    let targetLedgerSeq: number | undefined;
+    if (req.query.ledgerSeq !== undefined) {
+      const ledgerSeqStr = String(req.query.ledgerSeq).trim();
+      if (!/^[1-9]\d*$/.test(ledgerSeqStr)) {
+        res.status(400).json({ error: 'ledgerSeq query parameter must be a positive integer' });
+        return;
+      }
+      const parsed = Number(ledgerSeqStr);
+      if (!Number.isSafeInteger(parsed) || parsed > 4294967295) {
+        res.status(400).json({ error: 'ledgerSeq query parameter must be a valid uint32 integer' });
+        return;
+      }
+      targetLedgerSeq = parsed;
     }
 
     try {

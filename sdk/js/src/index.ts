@@ -38,6 +38,9 @@ export {
   computeMerkleRoot,
   computeHeaderHash,
   addressToBytes32,
+  bytesToHex,
+  hexToBytes,
+  normalizeHex32,
 } from './verifier/stateProofVerifier.js';
 
 export type {

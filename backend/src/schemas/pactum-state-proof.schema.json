@@ -26,7 +26,8 @@
     },
     "ledgerSeq": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 4294967295
     },
     "ledgerHeaderHash": {
       "type": "string",
@@ -60,19 +61,23 @@
         },
         "fulfilledCount": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 4294967295
         },
         "lateCount": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 4294967295
         },
         "breachedCount": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 4294967295
         },
         "epoch": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 4294967295
         },
         "sourceLedgerSeq": {
           "type": "integer",
@@ -87,6 +92,7 @@
     },
     "merkleProof": {
       "type": "array",
+      "maxItems": 64,
       "items": {
         "type": "object",
         "required": ["sibling", "isRight"],
@@ -125,7 +131,8 @@
         },
         "ledgerVersion": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 4294967295
         }
       },
       "additionalProperties": false

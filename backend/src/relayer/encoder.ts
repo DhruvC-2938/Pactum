@@ -8,8 +8,12 @@ import { HeaderProof, ScoreData } from '../schemas/stateProof';
 export function addressToBytes32(address: string): Buffer {
   const clean = address.trim();
   if (clean.startsWith('0x')) {
-    const raw = clean.slice(2).padStart(64, '0');
-    return Buffer.from(raw, 'hex');
+    const raw = clean.slice(2);
+    if (!/^[0-9a-fA-F]{1,64}$/.test(raw)) {
+      throw new Error(`Invalid hexadecimal address payload: ${clean}`);
+    }
+    const padded = raw.padStart(64, '0');
+    return Buffer.from(padded, 'hex');
   }
 
   if (clean.startsWith('G')) {
@@ -38,7 +42,7 @@ export function addressToBytes32(address: string): Buffer {
 }
 
 /**
- * Encodes leaf payload into an 88-byte buffer matching Solidity abi.encodePacked:
+ * Encodes leaf payload into a 92-byte buffer matching Solidity abi.encodePacked:
  * - bytes32 contractId (32 bytes)
  * - bytes32 stellarAddress (32 bytes)
  * - uint32 score (4 bytes, BE)

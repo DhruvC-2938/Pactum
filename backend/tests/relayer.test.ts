@@ -4,6 +4,7 @@ import { MerkleTree } from '../src/relayer/merkleTree';
 import { StateProofGenerator } from '../src/relayer/stateProofGenerator';
 import { RelayerService } from '../src/relayer/relayerService';
 import { verifyPactumStateProof } from '../src/relayer/verifier';
+import { computeHeaderHash } from '../src/relayer/encoder';
 import { pactumStateProofSchema, ScoreData } from '../src/schemas/stateProof';
 
 describe('Zero-Trust Oracle Relayer and State Proofs', () => {
@@ -89,11 +90,26 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
       assert.equal(parsed.stellarAddress, stellarAddress);
       assert.equal(parsed.scoreData.score, 92);
 
-      // Verify cryptographically
-      const result = verifyPactumStateProof(proof);
+      // Independently compute expected header hash
+      const expectedHeaderBuf = computeHeaderHash(proof.ledgerSeq, proof.headerProof);
+      const knownTrustedHeader = `0x${expectedHeaderBuf.toString('hex')}`;
+
+      // Verify cryptographically against known trusted header
+      const result = verifyPactumStateProof(proof, knownTrustedHeader);
       assert.equal(result.valid, true);
       assert.equal(result.score, 92);
       assert.equal(result.ledgerSeq, 12050);
+
+      // Rejects when trusted header is omitted
+      const unanchoredResult = verifyPactumStateProof(proof);
+      assert.equal(unanchoredResult.valid, false);
+      assert.match(unanchoredResult.error || '', /anchor is required/i);
+
+      // Rejects when unrelated trusted header is passed
+      const wrongTrustedHeader = '0x' + '88'.repeat(32);
+      const wrongResult = verifyPactumStateProof(proof, wrongTrustedHeader);
+      assert.equal(wrongResult.valid, false);
+      assert.match(wrongResult.error || '', /does not match trusted hash/i);
     });
 
     it('relayer service caches and serves generated state proofs', async () => {
@@ -103,7 +119,8 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
       assert.ok(proof);
       assert.equal(proof.stellarAddress, stellarAddress);
 
-      const verifyResult = verifyPactumStateProof(proof, proof.ledgerHeaderHash);
+      const knownTrustedHeader = `0x${computeHeaderHash(proof.ledgerSeq, proof.headerProof).toString('hex')}`;
+      const verifyResult = verifyPactumStateProof(proof, knownTrustedHeader);
       assert.equal(verifyResult.valid, true);
       assert.equal(verifyResult.score, 92);
     });
@@ -111,6 +128,7 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
     it('detects and rejects tampered scores or corrupted proof nodes', async () => {
       generator.setScoreData(stellarAddress, scoreData);
       const proof = await generator.generateProof(stellarAddress);
+      const knownTrustedHeader = `0x${computeHeaderHash(proof.ledgerSeq, proof.headerProof).toString('hex')}`;
 
       // 1. Tampered score
       const tamperedProof = {
@@ -120,7 +138,7 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
           score: 100, // Tampered
         },
       };
-      assert.equal(verifyPactumStateProof(tamperedProof).valid, false);
+      assert.equal(verifyPactumStateProof(tamperedProof, knownTrustedHeader).valid, false);
 
       // 2. Tampered sibling
       const corruptedProof = {
@@ -131,13 +149,23 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
         })),
       };
       if (proof.merkleProof.length > 0) {
-        assert.equal(verifyPactumStateProof(corruptedProof).valid, false);
+        assert.equal(verifyPactumStateProof(corruptedProof, knownTrustedHeader).valid, false);
       }
     });
 
     it('start and stop lifecycle functions execute cleanly', () => {
       relayerService.start();
       relayerService.stop();
+    });
+
+    it('autoStart starts the relayer automatically on construction', () => {
+      const autoService = new RelayerService({
+        contractId,
+        networkPassphrase,
+        pollIntervalMs: 1000,
+        autoStart: true,
+      });
+      autoService.stop();
     });
   });
 });

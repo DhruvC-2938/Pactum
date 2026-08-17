@@ -6,7 +6,7 @@ Protocols integrating with Pactum from off-chain or non-Soroban environments (e.
 
 The **Zero-Trust Oracle Relay** achieves this by generating cryptographic Merkle state proofs (`PactumStateProof`) for contract data entries directly against known Stellar network block / ledger header hashes.
 
-```
+```text
 ┌────────────────────────┐      ┌────────────────────────┐      ┌─────────────────────────┐
 │ Stellar Soroban RPC    │ ───> │  Node.js Relayer       │ ───> │ EVM / Client Verifier   │
 │ (Contract Data Entries)│      │  (Merkle State Proof)  │      │ (Cryptographic Check)   │
@@ -44,7 +44,7 @@ Location: `backend/src/schemas/pactum-state-proof.schema.json`
   "properties": {
     "version": { "type": "string", "enum": ["1.0.0"] },
     "networkPassphrase": { "type": "string" },
-    "ledgerSeq": { "type": "integer", "minimum": 1 },
+    "ledgerSeq": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
     "ledgerHeaderHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
     "stateRootHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
     "contractId": { "type": "string" },
@@ -54,23 +54,26 @@ Location: `backend/src/schemas/pactum-state-proof.schema.json`
       "required": ["score", "fulfilledCount", "lateCount", "breachedCount", "epoch", "sourceLedgerSeq"],
       "properties": {
         "score": { "type": "integer", "minimum": 0, "maximum": 100 },
-        "fulfilledCount": { "type": "integer", "minimum": 0 },
-        "lateCount": { "type": "integer", "minimum": 0 },
-        "breachedCount": { "type": "integer", "minimum": 0 },
-        "epoch": { "type": "integer", "minimum": 0 },
+        "fulfilledCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "lateCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "breachedCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "epoch": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
         "sourceLedgerSeq": { "type": "integer", "minimum": 1 }
-      }
+      },
+      "additionalProperties": false
     },
     "leafHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
     "merkleProof": {
       "type": "array",
+      "maxItems": 64,
       "items": {
         "type": "object",
         "required": ["sibling", "isRight"],
         "properties": {
           "sibling": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
           "isRight": { "type": "boolean" }
-        }
+        },
+        "additionalProperties": false
       }
     },
     "headerProof": {
@@ -80,10 +83,12 @@ Location: `backend/src/schemas/pactum-state-proof.schema.json`
         "previousLedgerHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
         "txSetResultHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
         "bucketListHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
-        "ledgerVersion": { "type": "integer", "minimum": 0 }
-      }
+        "ledgerVersion": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+      },
+      "additionalProperties": false
     }
-  }
+  },
+  "additionalProperties": false
 }
 ```
 
@@ -94,24 +99,24 @@ Location: `backend/src/schemas/pactum-state-proof.schema.json`
 Verification proceeds in 5 deterministic steps:
 
 1. **Leaf Hash Verification**:
-   ```
+   ```text
    leafHash = SHA-256(contractId || stellarAddress || score || fulfilledCount || lateCount || breachedCount || epoch || sourceLedgerSeq)
    ```
 2. **Merkle Proof Verification**:
-   ```
+   ```text
    Traverse audit path from leafHash to computedRoot. Assert computedRoot == stateRootHash.
    ```
 3. **BucketList Hash Consistency**:
-   ```
+   ```text
    Assert stateRootHash == headerProof.bucketListHash.
    ```
 4. **Block Header Hash Verification**:
-   ```
+   ```text
    headerHash = SHA-256(ledgerSeq || previousLedgerHash || txSetResultHash || bucketListHash || ledgerVersion)
    Assert headerHash == ledgerHeaderHash.
    ```
 5. **Trusted Block Header Hash Comparison**:
-   ```
+   ```text
    Assert ledgerHeaderHash == trustedLedgerHeaderHash.
    ```
 

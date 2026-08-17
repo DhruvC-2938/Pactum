@@ -2,6 +2,17 @@ import { PactumStateProof, VerificationResult } from '../schemas/stateProof';
 import { computeLeafHash, computeHeaderHash } from './encoder';
 import { MerkleTree } from './merkleTree';
 
+export function normalizeHex32(hex: string): string {
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+  return `0x${clean.toLowerCase().padStart(64, '0')}`;
+}
+
+/**
+ * Cryptographically verifies a zero-trust PactumStateProof against a trusted Stellar ledger header hash.
+ *
+ * @param proof The state proof payload
+ * @param trustedLedgerHeaderHash The known Stellar ledger header hash to anchor and verify against
+ */
 export function verifyPactumStateProof(
   proof: PactumStateProof,
   trustedLedgerHeaderHash?: string
@@ -11,15 +22,23 @@ export function verifyPactumStateProof(
       return { valid: false, error: `Unsupported proof version: ${proof?.version}` };
     }
 
+    if (!trustedLedgerHeaderHash) {
+      return {
+        valid: false,
+        error: 'Trusted ledger header hash anchor is required for zero-trust verification',
+      };
+    }
+
     // 1. Verify Leaf Hash
     const expectedLeaf = computeLeafHash(
       proof.contractId,
       proof.stellarAddress,
       proof.scoreData
     );
-    const expectedLeafHex = `0x${expectedLeaf.toString('hex')}`;
+    const expectedLeafHex = normalizeHex32(expectedLeaf.toString('hex'));
+    const proofLeafHex = normalizeHex32(proof.leafHash);
 
-    if (expectedLeafHex.toLowerCase() !== proof.leafHash.toLowerCase()) {
+    if (expectedLeafHex !== proofLeafHex) {
       return {
         valid: false,
         error: `Leaf hash mismatch. Claimed ${proof.leafHash}, computed ${expectedLeafHex}`,
@@ -29,6 +48,7 @@ export function verifyPactumStateProof(
     // 2. Verify Merkle Proof against State Root Hash
     const expectedRoot = Buffer.from(proof.stateRootHash.replace(/^0x/, ''), 'hex');
     const isMerkleValid = MerkleTree.verify(expectedLeaf, proof.merkleProof, expectedRoot);
+    const proofStateRootHex = normalizeHex32(proof.stateRootHash);
 
     if (!isMerkleValid) {
       return {
@@ -38,9 +58,8 @@ export function verifyPactumStateProof(
     }
 
     // 3. Verify BucketList / StateRoot match in Header Proof
-    if (
-      proof.headerProof.bucketListHash.toLowerCase() !== proof.stateRootHash.toLowerCase()
-    ) {
+    const headerBucketListHex = normalizeHex32(proof.headerProof.bucketListHash);
+    if (headerBucketListHex !== proofStateRootHex) {
       return {
         valid: false,
         error: 'Header proof bucketListHash does not match stateRootHash',
@@ -49,27 +68,23 @@ export function verifyPactumStateProof(
 
     // 4. Verify Ledger Header Hash
     const computedHeader = computeHeaderHash(proof.ledgerSeq, proof.headerProof);
-    const computedHeaderHex = `0x${computedHeader.toString('hex')}`;
+    const computedHeaderHex = normalizeHex32(computedHeader.toString('hex'));
+    const proofHeaderHex = normalizeHex32(proof.ledgerHeaderHash);
 
-    if (computedHeaderHex.toLowerCase() !== proof.ledgerHeaderHash.toLowerCase()) {
+    if (computedHeaderHex !== proofHeaderHex) {
       return {
         valid: false,
         error: `Ledger header hash mismatch. Claimed ${proof.ledgerHeaderHash}, computed ${computedHeaderHex}`,
       };
     }
 
-    // 5. If trusted header hash provided, check against it
-    if (trustedLedgerHeaderHash) {
-      const cleanTrusted = trustedLedgerHeaderHash.startsWith('0x')
-        ? trustedLedgerHeaderHash.toLowerCase()
-        : `0x${trustedLedgerHeaderHash}`.toLowerCase();
-
-      if (proof.ledgerHeaderHash.toLowerCase() !== cleanTrusted) {
-        return {
-          valid: false,
-          error: `Header hash ${proof.ledgerHeaderHash} does not match trusted hash ${trustedLedgerHeaderHash}`,
-        };
-      }
+    // 5. Verify against trusted header hash anchor
+    const normalizedTrusted = normalizeHex32(trustedLedgerHeaderHash);
+    if (proofHeaderHex !== normalizedTrusted) {
+      return {
+        valid: false,
+        error: `Header hash ${proof.ledgerHeaderHash} does not match trusted hash ${trustedLedgerHeaderHash}`,
+      };
     }
 
     return {

@@ -20,6 +20,9 @@ export class RelayerService {
       networkPassphrase: options.networkPassphrase,
     });
     this.pollIntervalMs = options.pollIntervalMs || 30000;
+    if (options.autoStart) {
+      this.start();
+    }
   }
 
   public getGenerator(): StateProofGenerator {

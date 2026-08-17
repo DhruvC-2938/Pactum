@@ -66,9 +66,9 @@ describe("PactumZeroTrustOracle", function () {
       ...(overrides.scoreData || {}),
     };
 
-    const contractId = overrides.contractId || REGISTRY_CONTRACT_ID;
-    const stellarAddress = overrides.stellarAddress || STELLAR_ADDRESS;
-    const ledgerSeq = overrides.ledgerSeq || 5050;
+    const contractId = overrides.contractId !== undefined ? overrides.contractId : REGISTRY_CONTRACT_ID;
+    const stellarAddress = overrides.stellarAddress !== undefined ? overrides.stellarAddress : STELLAR_ADDRESS;
+    const ledgerSeq = overrides.ledgerSeq !== undefined ? overrides.ledgerSeq : 5050;
 
     const leafHash = computeLeafHash(contractId, stellarAddress, scoreData);
 
@@ -91,6 +91,16 @@ describe("PactumZeroTrustOracle", function () {
 
     const ledgerHeaderHash = computeHeaderHash(ledgerSeq, headerProof);
 
+    const {
+      scoreData: _sd,
+      contractId: _cid,
+      stellarAddress: _sa,
+      ledgerSeq: _ls,
+      merkleProof: _mp,
+      headerProof: _hp,
+      ...restOverrides
+    } = overrides;
+
     return {
       version: "1.0.0",
       networkPassphrase: "Test SDF Network ; September 2015",
@@ -103,25 +113,17 @@ describe("PactumZeroTrustOracle", function () {
       leafHash,
       merkleProof,
       headerProof,
-      ...overrides,
+      ...restOverrides,
     };
   }
 
   async function deployFixture() {
     const [owner, relayer, user] = await ethers.getSigners();
 
-    const VerifierLib = await ethers.getContractFactory("PactumStateProofVerifier");
-    const verifierLib = await VerifierLib.deploy();
-
-    const Oracle = await ethers.getContractFactory("PactumZeroTrustOracle", {
-      libraries: {
-        PactumStateProofVerifier: await verifierLib.getAddress(),
-      },
-    });
-
+    const Oracle = await ethers.getContractFactory("PactumZeroTrustOracle");
     const oracle = await Oracle.deploy(owner.address, REGISTRY_CONTRACT_ID);
 
-    return { oracle, owner, relayer, user, verifierLib };
+    return { oracle, owner, relayer, user };
   }
 
   describe("Zero-Trust State Proof Verification", function () {
@@ -149,6 +151,10 @@ describe("PactumZeroTrustOracle", function () {
       expect(record.sourceLedgerSeq).to.equal(5000);
       expect(record.verifiedHeaderHash).to.equal(proof.ledgerHeaderHash);
       expect(await oracle.isScoreStale(proof.stellarAddress, 3600)).to.be.false;
+
+      // Advance time beyond maxAge and check staleness
+      await time.increase(3601);
+      expect(await oracle.isScoreStale(proof.stellarAddress, 3600)).to.be.true;
     });
 
     it("allows batch registration of trusted ledger headers", async function () {
@@ -190,6 +196,18 @@ describe("PactumZeroTrustOracle", function () {
       );
     });
 
+    it("rejects proof with unsupported version", async function () {
+      const { oracle, owner, relayer } = await loadFixture(deployFixture);
+
+      const proof = createValidStateProof({ version: "2.0.0" });
+      await oracle.connect(owner).setTrustedLedgerHeader(proof.ledgerSeq, proof.ledgerHeaderHash);
+
+      await expect(oracle.connect(relayer).submitStateProof(proof)).to.be.revertedWithCustomError(
+        oracle,
+        "UnsupportedVersion"
+      );
+    });
+
     it("rejects proof with tampered trust score", async function () {
       const { oracle, owner, relayer } = await loadFixture(deployFixture);
 
@@ -201,7 +219,7 @@ describe("PactumZeroTrustOracle", function () {
 
       await expect(oracle.connect(relayer).submitStateProof(proof)).to.be.revertedWithCustomError(
         oracle,
-        "InvalidProof"
+        "LeafHashMismatch"
       );
     });
 
@@ -216,7 +234,7 @@ describe("PactumZeroTrustOracle", function () {
 
       await expect(oracle.connect(relayer).submitStateProof(proof)).to.be.revertedWithCustomError(
         oracle,
-        "InvalidProof"
+        "MerkleRootMismatch"
       );
     });
 
@@ -231,14 +249,14 @@ describe("PactumZeroTrustOracle", function () {
 
       await expect(oracle.connect(relayer).submitStateProof(proof)).to.be.revertedWithCustomError(
         oracle,
-        "InvalidProof"
+        "HeaderHashMismatch"
       );
     });
 
-    it("rejects an older out-of-order ledger sequence for the same address", async function () {
+    it("rejects resubmission of same or older sourceLedgerSeq", async function () {
       const { oracle, owner, relayer } = await loadFixture(deployFixture);
 
-      // First submit newer score at seq 6000
+      // First submit score at seq 6000
       const proof1 = createValidStateProof({
         ledgerSeq: 6050,
         scoreData: { score: 90, fulfilledCount: 20, lateCount: 0, breachedCount: 0, epoch: 2, sourceLedgerSeq: 6000 },
@@ -246,7 +264,13 @@ describe("PactumZeroTrustOracle", function () {
       await oracle.connect(owner).setTrustedLedgerHeader(proof1.ledgerSeq, proof1.ledgerHeaderHash);
       await oracle.connect(relayer).submitStateProof(proof1);
 
-      // Attempt to submit older score at seq 4000
+      // 1. Resubmit the exact same proof (same sourceLedgerSeq 6000)
+      await expect(oracle.connect(relayer).submitStateProof(proof1)).to.be.revertedWithCustomError(
+        oracle,
+        "StaleLedgerSeq"
+      );
+
+      // 2. Attempt to submit older score at seq 4000
       const proof2 = createValidStateProof({
         ledgerSeq: 4050,
         scoreData: { score: 70, fulfilledCount: 10, lateCount: 0, breachedCount: 0, epoch: 1, sourceLedgerSeq: 4000 },

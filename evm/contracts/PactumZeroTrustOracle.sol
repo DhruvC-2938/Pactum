@@ -22,17 +22,14 @@ contract PactumZeroTrustOracle is IPactumZeroTrustOracle, Ownable {
     /// @notice Verified trust score records keyed by Stellar address (bytes32).
     mapping(bytes32 => TrustScoreRecord) private _verifiedScores;
 
-    error InvalidProof();
     error UntrustedHeader(uint64 ledgerSeq, bytes32 headerHash);
     error MismatchedRegistry(bytes32 expected, bytes32 actual);
     error StaleLedgerSeq(uint64 submittedSeq, uint64 currentSeq);
-    error ZeroAddress();
 
     constructor(
         address initialOwner,
         bytes32 initialRegistryContractId
     ) Ownable(initialOwner) {
-        if (initialOwner == address(0)) revert ZeroAddress();
         registryContractId = initialRegistryContractId;
         emit RegistryContractIdUpdated(initialRegistryContractId);
     }
@@ -85,18 +82,15 @@ contract PactumZeroTrustOracle is IPactumZeroTrustOracle, Ownable {
             revert UntrustedHeader(proof.ledgerSeq, proof.ledgerHeaderHash);
         }
 
-        // Cryptographically verify the state proof (leaf hash -> Merkle root -> header hash)
-        (bool isValid, uint32 score) = PactumStateProofVerifier.verifyProof(
+        // Cryptographically verify the state proof (reverts with specific error if invalid)
+        uint32 score = PactumStateProofVerifier.verifyProofOrRevert(
             proof,
             trustedHeader
         );
-        if (!isValid) {
-            revert InvalidProof();
-        }
 
-        // Replay and staleness protection: sequence must be >= existing record
+        // Replay and staleness protection: sequence must be strictly greater than existing record
         TrustScoreRecord storage existing = _verifiedScores[proof.stellarAddress];
-        if (proof.scoreData.sourceLedgerSeq < existing.sourceLedgerSeq && existing.updatedAt != 0) {
+        if (proof.scoreData.sourceLedgerSeq <= existing.sourceLedgerSeq && existing.updatedAt != 0) {
             revert StaleLedgerSeq(proof.scoreData.sourceLedgerSeq, existing.sourceLedgerSeq);
         }
 
