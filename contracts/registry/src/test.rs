@@ -276,11 +276,15 @@ fn test_events_emitted() {
         symbol_short!("created"),
         issuer.clone(),
         counterparty.clone(),
+        None::<Address>,
     )
         .into_val(&env);
     assert_eq!(created_event.0, client.address);
     assert_eq!(created_event.1, expected_created_topics);
-    assert_eq!(u64::from_val(&env, &created_event.2), 1u64);
+    assert_eq!(
+        <(u64, Option<u32>)::from_val(&env, &created_event.2),
+        (1u64, None)
+    );
 
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
@@ -545,6 +549,8 @@ fn setup_disputed_commitment(
         &BytesN::from_array(env, &[1u8; 32]),
         &2000,
         resolver,
+        &None,
+        &None,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(issuer, &id, &CommitmentStatus::Fulfilled);
@@ -1121,6 +1127,8 @@ fn test_get_trust_score_reflects_outcomes() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
     );
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
     assert_eq!(client.get_trust_score(&issuer), 60);
@@ -1131,6 +1139,8 @@ fn test_get_trust_score_reflects_outcomes() {
         &BytesN::from_array(&env, &[2u8; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
     );
     client.attest(&issuer, &id2, &CommitmentStatus::Late);
     assert_eq!(client.get_trust_score(&issuer), 50);
@@ -1141,6 +1151,8 @@ fn test_get_trust_score_reflects_outcomes() {
         &BytesN::from_array(&env, &[3u8; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
     );
     client.attest(&issuer, &id3, &CommitmentStatus::Breached);
     assert_eq!(client.get_trust_score(&issuer), 0);
@@ -1156,7 +1168,7 @@ fn test_custom_resolver_delegation() {
 
     // Designate a custom resolver address
     let custom_resolver = Address::generate(&env);
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &custom_resolver);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &custom_resolver, &None, &None);
 
     let comm = client.get_commitment(&id);
     assert_eq!(comm.resolver_address, custom_resolver);
@@ -1193,6 +1205,8 @@ fn test_legacy_commitment_storage_migration() {
         status: CommitmentStatus::Fulfilled,
         created_at: 1000,
         attested_at: Some(1500),
+        oracle: None,
+        schema_id: None,
     };
 
     env.as_contract(&client.address, || {
@@ -1231,6 +1245,8 @@ fn test_legacy_commitment_migration_fails_if_uninitialized() {
         status: CommitmentStatus::Fulfilled,
         created_at: 1000,
         attested_at: Some(1500),
+        oracle: None,
+        schema_id: None,
     };
 
     env.as_contract(&client.address, || {
@@ -1259,6 +1275,8 @@ fn test_legacy_commitment_migration_fails_if_payload_id_mismatch() {
         status: CommitmentStatus::Pending,
         created_at: 1000,
         attested_at: None,
+        oracle: None,
+        schema_id: None,
     };
 
     env.as_contract(&client.address, || {
@@ -1285,6 +1303,8 @@ fn setup_milestone_commitment(
         &2000,
         &resolver,
         &milestone_count,
+        &None,
+        &None,
     );
 
     (env, client, issuer, counterparty, id)
@@ -1296,21 +1316,22 @@ fn test_create_commitment_defaults_to_a_single_milestone() {
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver, &None, &None);
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &None, &None);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.milestone_count, 1);
 }
 
 #[test]
 fn test_oracle_attest_success() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
     let oracle = Address::generate(&env);
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &Some(oracle.clone()), &Some(123));
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &Some(oracle.clone()), &Some(123));
 
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&oracle, &id, &CommitmentStatus::Fulfilled);
@@ -1322,7 +1343,7 @@ fn test_oracle_attest_success() {
 
 #[test]
 fn test_oracle_attest_unauthorized() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
     let oracle = Address::generate(&env);
     let stranger = Address::generate(&env);
 
@@ -1330,7 +1351,7 @@ fn test_oracle_attest_unauthorized() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &Some(oracle), &Some(123));
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &Some(oracle), &Some(123));
 
     let res = client.try_attest(&stranger, &id, &CommitmentStatus::Fulfilled);
     assert_eq!(res, Err(Ok(Error::Unauthorized.into())));
@@ -1338,14 +1359,14 @@ fn test_oracle_attest_unauthorized() {
 
 #[test]
 fn test_oracle_vs_manual_conflict_oracle_first() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
     let oracle = Address::generate(&env);
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &Some(oracle.clone()), &Some(123));
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &Some(oracle.clone()), &Some(123));
 
     // Oracle attests first
     client.attest(&oracle, &id, &CommitmentStatus::Fulfilled);
@@ -1357,14 +1378,14 @@ fn test_oracle_vs_manual_conflict_oracle_first() {
 
 #[test]
 fn test_oracle_vs_manual_conflict_manual_first() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
     let oracle = Address::generate(&env);
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &Some(oracle.clone()), &Some(123));
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &Some(oracle.clone()), &Some(123));
 
     // Issuer attests first
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
@@ -1376,14 +1397,14 @@ fn test_oracle_vs_manual_conflict_manual_first() {
 
 #[test]
 fn test_legacy_attestation_without_oracle() {
-    let (env, client, issuer, counterparty) = setup_test();
+    let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
     // Create commitment without oracle
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &None, &None);
+    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &None, &None);
 
     let oracle = Address::generate(&env);
     let res = client.try_attest(&oracle, &id, &CommitmentStatus::Fulfilled);
