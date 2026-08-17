@@ -1293,7 +1293,7 @@ fn test_pause_requires_auth() {
     let arbitrator = Address::generate(&env);
 
     env.mock_all_auths();
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
 
     env.mock_auths(&[]);
     client.pause(&arbitrator);
@@ -1308,7 +1308,7 @@ fn test_unpause_requires_auth() {
     let arbitrator = Address::generate(&env);
 
     env.mock_all_auths();
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
     client.pause(&arbitrator);
 
     env.mock_auths(&[]);
@@ -1346,13 +1346,12 @@ fn test_admin_lifecycle_operations_exempt_from_pause() {
     client.pause(&arbitrator);
     assert!(client.is_paused());
 
-    // upgrade is an admin lifecycle operation exempt from the pause: a
-    // non-arbitrator is still rejected by the admin gate (NotArbitrator),
-    // not by the pause gate (ProtocolPaused).
-    let stranger = Address::generate(&env);
+    // upgrade is an admin lifecycle operation exempt from the pause: with no
+    // upgrade admin installed it is still rejected by the admin gate
+    // (UpgradeAdminNotSet), not by the pause gate (ProtocolPaused).
     let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let res = client.try_upgrade(&stranger, &mock_wasm_hash);
-    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+    let res = client.try_upgrade(&mock_wasm_hash, &SCHEMA_VERSION_V1);
+    assert_eq!(res, Err(Ok(Error::UpgradeAdminNotSet.into())));
 
     // pause/unpause remain callable by the admin while paused.
     client.pause(&arbitrator);
