@@ -1,5 +1,25 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { isConnected as checkIsConnected, requestAccess, getAddress } from '@stellar/freighter-api';
+
+import {
+  type WalletAdapter,
+  type AdapterStatus,
+  type AdapterMetadata,
+  FreighterAdapter,
+  AlbedoAdapter,
+} from '../lib/wallet-adapters/adapter-interface';
+
+export type { WalletAdapter, AdapterStatus, AdapterMetadata };
+
+const allAdapters: WalletAdapter[] = [FreighterAdapter, AlbedoAdapter];
+
+export interface WalletConnectAdapter {
+  adapter: WalletAdapter;
+  status: AdapterStatus;
+  connect: () => Promise<string | null>;
+  disconnect: () => Promise<void>;
+  isAvailable: () => boolean;
+  metadata: AdapterMetadata;
+}
 
 export interface WalletContextType {
   address: string | null;
@@ -7,20 +27,24 @@ export interface WalletContextType {
   isInstalled: boolean;
   isConnecting: boolean;
   error: string | null;
-  connectWallet: () => Promise<void>;
+  connectWallet: (adapterId: string) => Promise<void>;
   disconnectWallet: () => void;
   clearError: () => void;
+  availableAdapters: WalletConnectAdapter[];
+  selectedAdapter: WalletConnectAdapter | null;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'pactum_freighter_connected';
+const LOCAL_STORAGE_KEY = 'pactum_connected_wallet';
 
 export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [address, setAddress] = useState<string | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(true);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableAdapters, setAvailableAdapters] = useState<WalletConnectAdapter[]>([]);
+  const [selectedAdapter, setSelectedAdapter] = useState<WalletConnectAdapter | null>(null);
 
   // Auto-connect check on mount
   useEffect(() => {
@@ -30,7 +54,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       try {
         const wasConnected = localStorage.getItem(LOCAL_STORAGE_KEY) === 'true';
         if (wasConnected) {
-          const addrResult = await getAddress();
+          const addrResult = await getAddressFromSelectedAdapter();
           if (isMounted && addrResult?.address && !addrResult.error) {
             setAddress(addrResult.address);
           }
@@ -47,73 +71,86 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
   }, []);
 
-  const connectWallet = async () => {
+  const getAddressFromSelectedAdapter = async (): Promise<{ address: string | null; error?: string }> => {
+    if (!selectedAdapter) return { address: null };
+    try {
+      const address = await selectedAdapter.connect();
+      return { address, error: undefined };
+    } catch (err: any) {
+      return { address: null, error: err?.message || 'Failed to get address' };
+    }
+  };
+
+  const refreshAvailableAdapters = async () => {
+    const adapters: WalletConnectAdapter[] = [];
+
+    for (const adapter of allAdapters) {
+      let isAvail = false;
+      try {
+        isAvail = await adapter.isAvailable();
+      } catch {
+        isAvail = false;
+      }
+      adapters.push({
+        adapter,
+        status: isAvail ? 'available' : 'unavailable',
+        connect: () => adapter.connect(),
+        disconnect: () => adapter.disconnect(),
+        isAvailable: () => adapter.isAvailable(),
+        metadata: adapter.metadata,
+      });
+    }
+
+    setAvailableAdapters(adapters);
+  };
+
+  useEffect(() => {
+    refreshAvailableAdapters();
+  }, []);
+
+  const connectWallet = async (adapterId: string) => {
+    const adapter = allAdapters.find((a) => a.id === adapterId);
+    if (!adapter) return;
+
     setIsConnecting(true);
     setError(null);
 
     try {
-      // 1. Verify extension presence
-      let installed = false;
-      try {
-        const connRes = await checkIsConnected();
-        installed = Boolean(connRes && connRes.isConnected);
-      } catch (e) {
-        installed = Boolean(typeof window !== 'undefined' && (window as any).freighter);
-      }
-
-      if (!installed && typeof window !== 'undefined' && (window as any).freighter) {
-        installed = true;
-      }
-
-      if (!installed) {
-        setIsInstalled(false);
-        setError('Freighter browser extension was not detected. Please install Freighter from freighter.app.');
+      const isAvail = await adapter.isAvailable();
+      if (!isAvail) {
+        setError(`${adapter.name} is not available`);
         setIsConnecting(false);
         return;
       }
 
+      setSelectedAdapter({
+        adapter,
+        status: 'connecting',
+        connect: adapter.connect,
+        disconnect: adapter.disconnect,
+        isAvailable: adapter.isAvailable,
+        metadata: adapter.metadata,
+      });
+
+      const address = await adapter.connect();
+      setAddress(address);
       setIsInstalled(true);
-
-      // 2. Trigger Freighter requestAccess pop-up & retrieve Stellar address
-      let userAddr = '';
-      const accessRes = await requestAccess();
-
-      if (accessRes && accessRes.address) {
-        userAddr = accessRes.address;
-      } else if (accessRes && accessRes.error) {
-        // Fallback to getAddress if already allowed
-        const addrRes = await getAddress();
-        if (addrRes && addrRes.address && !addrRes.error) {
-          userAddr = addrRes.address;
-        } else {
-          setError(typeof accessRes.error === 'string' ? accessRes.error : 'Connection request denied in Freighter.');
-          setIsConnecting(false);
-          return;
-        }
-      } else {
-        const addrRes = await getAddress();
-        if (addrRes && addrRes.address && !addrRes.error) {
-          userAddr = addrRes.address;
-        }
-      }
-
-      if (userAddr) {
-        setAddress(userAddr);
-        localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
-      } else {
-        setError('Unable to retrieve account address from Freighter.');
-      }
+      localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
     } catch (err: any) {
       console.error('[WalletContext] Connection error:', err);
-      setError(err?.message || 'Failed to connect with Freighter wallet.');
+      setError(err?.message || 'Failed to connect wallet');
     } finally {
       setIsConnecting(false);
+      // Refresh adapters after connection attempt
+      refreshAvailableAdapters();
     }
   };
 
   const disconnectWallet = () => {
     setAddress(null);
+    setIsInstalled(false);
     localStorage.removeItem(LOCAL_STORAGE_KEY);
+    setSelectedAdapter(null);
   };
 
   const clearError = () => {
@@ -130,7 +167,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         error,
         connectWallet,
         disconnectWallet,
-        clearError
+        clearError,
+        availableAdapters,
+        selectedAdapter,
       }}
     >
       {children}

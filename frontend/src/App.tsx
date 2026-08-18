@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react'
 
 import './App.css'
@@ -6,12 +5,11 @@ import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
 import CreateCommitmentWizard from './components/CreateCommitmentWizard'
 import ReputationDashboard from './components/ReputationDashboard'
-import FreighterInstallModal from './components/FreighterInstallModal'
-import WalletConnectModal from './components/WalletConnectModal'
+import { useWallet } from './context/WalletContext'
+import { Wallet, CheckCircle2, LogOut } from 'lucide-react'
 import { useCommitments } from './hooks/useCommitments'
 import type { Commitment, CommitmentStatus } from './lib/api'
-import { useWallet } from './context/WalletContext'
-import { Wallet, CheckCircle2 } from 'lucide-react'
+import { WalletButton } from './components/WalletButton'
 
 function renderCommitmentItem(commitment: Commitment) {
   return (
@@ -37,13 +35,13 @@ function renderCommitmentItem(commitment: Commitment) {
 }
 
 function WalletButton() {
-  const { address, isConnected, isConnecting } = useWallet();
-  const [isOpen, setIsOpen] = useState(false);
+  const { address, isConnected, isConnecting } = useWallet()
+  const [isOpen, setIsOpen] = useState(false)
 
   const shortenKey = (key: string) => {
-    if (!key || key.length < 10) return key;
-    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`;
-  };
+    if (!key || key.length < 10) return key
+    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`
+  }
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -87,51 +85,51 @@ function WalletButton() {
       {/* Dropping Banner Popover Dropdown */}
       <WalletConnectModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
     </div>
-  );
+  )
 }
 
 function InlineWalletError() {
-  const { error, clearError } = useWallet();
-  return <FreighterInstallModal error={error} onDismiss={clearError} />;
+  const { error, clearError } = useWallet()
+  return <FreighterInstallModal error={error} onDismiss={clearError} />
 }
 
 export default function App() {
 
-  const [activePage, setActivePage] = useState('landing');
-  const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
+  const [activePage, setActivePage] = useState('landing')
+  const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>()
 
-  const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
+  const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {})
 
-  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
+  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C')
 
   useEffect(() => {
     const handleUrlChange = () => {
-      const path = window.location.pathname;
+      const path = window.location.pathname
       if (path.startsWith('/reputation/')) {
-        const addr = path.replace('/reputation/', '').trim();
+        const addr = path.replace('/reputation/', '').trim()
         if (addr) {
-          setReputationAddress(addr);
-          setActivePage('reputation');
+          setReputationAddress(addr)
+          setActivePage('reputation')
         }
       }
-    };
+    }
 
-    handleUrlChange();
-    window.addEventListener('popstate', handleUrlChange);
-    return () => window.removeEventListener('popstate', handleUrlChange);
-  }, []);
+    handleUrlChange()
+    window.addEventListener('popstate', handleUrlChange)
+    return () => window.removeEventListener('popstate', handleUrlChange)
+  }, [])
 
   const navigateToReputation = (addr: string) => {
-    setReputationAddress(addr);
-    setActivePage('reputation');
-    window.history.pushState({}, '', `/reputation/${addr}`);
-  };
+    setReputationAddress(addr)
+    setActivePage('reputation')
+    window.history.pushState({}, '', `/reputation/${addr}`)
+  }
   if (activePage === 'landing') {
-    return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
+    return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />
   }
 
   if (activePage === 'docs') {
-    return <DocsPage onBack={() => setActivePage('landing')} onLaunchApp={() => setActivePage('dashboard')} />;
+    return <DocsPage onBack={() => setActivePage('landing')} onLaunchApp={() => setActivePage('dashboard')} />
   }
 
   return (
@@ -169,7 +167,7 @@ export default function App() {
 
       <button className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`} id="nav-commitments" onClick={() => setActivePage('commitments')}>
         <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <path d="M2 4h12M2 8h12M2 12h8"/>
           </svg>
         </span>
@@ -190,16 +188,15 @@ export default function App() {
 
       <button className={`nav-item ${activePage === 'attest' ? 'active' : ''}`} id="nav-attest" onClick={() => setActivePage('attest')}>
         <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <path d="M2.5 8.5l3.5 3.5 7.5-7.5"/>
-          </svg>
-        </span>
-        Attest
-      </button>
+          </span>
+          Attest
+        </button>
 
       <button className={`nav-item ${activePage === 'dispute' ? 'active' : ''}`} id="nav-dispute" onClick={() => setActivePage('dispute')}>
         <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <path d="M8 2L1 14h14L8 2z"/>
             <path d="M8 6v4M8 11.5v.5"/>
           </svg>
@@ -209,7 +206,7 @@ export default function App() {
 
       <button className={`nav-item ${activePage === 'resolve' ? 'active' : ''}`} id="nav-resolve" onClick={() => setActivePage('resolve')}>
         <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <circle cx="8" cy="8" r="6"/>
             <path d="M5 8l2 2 4-4"/>
           </svg>
@@ -221,17 +218,16 @@ export default function App() {
 
       <button className={`nav-item ${activePage === 'reputation' ? 'active' : ''}`} id="nav-reputation" onClick={() => setActivePage('reputation')}>
         <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <circle cx="8" cy="5" r="3"/>
             <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
           </svg>
-        </span>
-        Reputation Lookup
-      </button>
+          Reputation Lookup
+        </button>
 
       <button className={`nav-item ${activePage === 'lookup' ? 'active' : ''}`} id="nav-lookup" onClick={() => setActivePage('lookup')}>
         <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
             <circle cx="6.5" cy="6.5" r="4.5"/>
             <path d="M14 14l-3-3"/>
           </svg>
@@ -243,7 +239,7 @@ export default function App() {
 
       <button className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`} id="nav-initialize" onClick={() => setActivePage('initialize')}>
         <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             <circle cx="8" cy="8" r="2.5"/>
             <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.54 11.54l1.41 1.41M3.05 12.95l1.42-1.42M11.54 4.46l1.41-1.41"/>
           </svg>
@@ -313,6 +309,7 @@ export default function App() {
            activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
         </span>
       </div>
+
       <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div className="search-bar">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -516,477 +513,7 @@ export default function App() {
             </div>
           </div>
         </div>
-      </div>
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Commitments List
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'commitments' ? 'active' : ''}`} id="page-commitments">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Commitments</div>
-          <div className="section-sub">All registered commitments on the registry</div>
-        </div>
-        <div style={{display: "flex", gap: "10px", alignItems: "center"}}>
-          <div className="tabs" id="filter-tabs">
-            {[
-              { label: 'All', value: undefined as CommitmentStatus | undefined },
-              { label: 'Pending', value: 'Pending' as CommitmentStatus },
-              { label: 'Fulfilled', value: 'Fulfilled' as CommitmentStatus },
-              { label: 'Breached', value: 'Breached' as CommitmentStatus },
-            ].map((tab) => (
-              <button
-                key={tab.label}
-                className={`tab-btn ${commitmentStatus === tab.value ? 'active' : ''}`}
-                onClick={() => setCommitmentStatus(tab.value)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <button className="btn btn-primary btn-sm" onClick={() => {}}>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M8 2v12M2 8h12"/>
-            </svg>
-            Create
-          </button>
-        </div>
-      </div>
-      <div className="commitment-list" id="commitments-list-page">
-        {commitmentsQuery.isLoading && (
-          <div className="inline-alert info">Loading commitments...</div>
-        )}
-        {commitmentsQuery.isError && (
-          <div className="inline-alert warning">Failed to load commitments from the backend.</div>
-        )}
-        {commitmentsQuery.data?.map(renderCommitmentItem)}
-      </div>
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Create Commitment
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'create' ? 'active' : ''}`} id="page-create">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Create Commitment</div>
-          <div className="section-sub">Register a new on-chain promise between two parties</div>
-        </div>
-      </div>
-
-      <CreateCommitmentWizard onSubmit={(payload) => console.log('commitment payload', payload)} />
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Attest
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'attest' ? 'active' : ''}`} id="page-attest">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Attest Commitment</div>
-          <div className="section-sub">Record the outcome of a commitment after its due date</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Attestation</div>
-          </div>
-          <div className="card-body">
-            <div className="inline-alert warning">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 2L1 14h14L8 2z"/><path d="M8 6v4M8 11.5v.5"/>
-              </svg>
-              Only the issuer or counterparty may attest. You have 7 days after attestation to raise a dispute.
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="attest-caller">Your Address (Caller)</label>
-              <input type="text" className="form-input" id="attest-caller"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-              <div className="form-hint">Must be the issuer or counterparty of this commitment.</div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="attest-id">Commitment ID</label>
-              <input type="number" className="form-input" id="attest-id"
-                     placeholder="1" min="1" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="attest-outcome">Outcome</label>
-              <select className="form-select" id="attest-outcome">
-                <option value="">Select outcome...</option>
-                <option value="Fulfilled">Fulfilled — Delivered on time</option>
-                <option value="Late">Late — Delivered after due date</option>
-                <option value="Breached">Breached — Not delivered</option>
-              </select>
-              <div className="form-hint">This is permanent and cannot be changed unless disputed.</div>
-            </div>
-
-            <button className="btn btn-primary btn-full" id="btn-attest" onClick={() => {}}>
-              <div className="spinner"></div>
-              <span className="btn-text">Submit Attestation</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Outcome Guide */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Outcome Guide</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="detail-panel">
-              <div className="detail-row" style={{flexDirection: "column", gap: "6px"}}>
-                <span className="badge fulfilled" style={{alignSelf: "flex-start"}}><span className="badge-dot"></span>Fulfilled</span>
-                <span className="detail-val" style={{fontSize: "13px", color: "var(--text-secondary)"}}>The commitment was completed successfully and on time. Boosts the issuer's reputation score.</span>
-              </div>
-              <div className="detail-row" style={{flexDirection: "column", gap: "6px"}}>
-                <span className="badge late" style={{alignSelf: "flex-start"}}><span className="badge-dot"></span>Late</span>
-                <span className="detail-val" style={{fontSize: "13px", color: "var(--text-secondary)"}}>The commitment was eventually completed, but after the agreed due date.</span>
-              </div>
-              <div className="detail-row" style={{flexDirection: "column", gap: "6px"}}>
-                <span className="badge breached" style={{alignSelf: "flex-start"}}><span className="badge-dot"></span>Breached</span>
-                <span className="detail-val" style={{fontSize: "13px", color: "var(--text-secondary)"}}>The commitment was not fulfilled. Negatively impacts the issuer's reputation score.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Dispute
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'dispute' ? 'active' : ''}`} id="page-dispute">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Raise Dispute</div>
-          <div className="section-sub">Contest an attested outcome within the 7-day dispute window</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Dispute Details</div>
-          </div>
-          <div className="card-body">
-            <div className="inline-alert warning">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 2L1 14h14L8 2z"/><path d="M8 6v4M8 11.5v.5"/>
-              </svg>
-              Disputes must be raised within 7 days of the attestation. Once flagged as Disputed, an arbitrator must resolve it.
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="dispute-caller">Your Address (Caller)</label>
-              <input type="text" className="form-input" id="dispute-caller"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="dispute-id">Commitment ID</label>
-              <input type="number" className="form-input" id="dispute-id"
-                     placeholder="1" min="1" />
-              <div className="form-hint">The ID of the commitment whose attestation you wish to contest.</div>
-            </div>
-
-            <button className="btn btn-destructive btn-full" id="btn-dispute" onClick={() => {}}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 2L1 14h14L8 2z"/><path d="M8 6v4"/>
-              </svg>
-              <div className="spinner"></div>
-              <span className="btn-text">Raise Dispute</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Dispute Process</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="timeline">
-              <div className="timeline-item">
-                <div className="timeline-dot-wrap">
-                  <div className="timeline-dot" style={{background: "var(--orange)", boxShadow: "0 0 0 2px rgba(255,159,10,0.2)"}}></div>
-                  <div className="timeline-line"></div>
-                </div>
-                <div className="timeline-body">
-                  <div className="timeline-label">Dispute Raised</div>
-                  <div className="timeline-date">Commitment flagged as Disputed on-chain</div>
-                </div>
-              </div>
-              <div className="timeline-item">
-                <div className="timeline-dot-wrap">
-                  <div className="timeline-dot" style={{background: "var(--purple)", boxShadow: "0 0 0 2px rgba(175,82,222,0.2)"}}></div>
-                  <div className="timeline-line"></div>
-                </div>
-                <div className="timeline-body">
-                  <div className="timeline-label">Arbitrator Review</div>
-                  <div className="timeline-date">Designated arbitrator reviews the case</div>
-                </div>
-              </div>
-              <div className="timeline-item">
-                <div className="timeline-dot-wrap">
-                  <div className="timeline-dot" style={{background: "var(--green)", boxShadow: "0 0 0 2px rgba(52,199,89,0.2)"}}></div>
-                </div>
-                <div className="timeline-body">
-                  <div className="timeline-label">Resolution</div>
-                  <div className="timeline-date">Final outcome recorded permanently</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Resolve Dispute
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'resolve' ? 'active' : ''}`} id="page-resolve">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Resolve Dispute</div>
-          <div className="section-sub">Arbitrator-only — settle a contested commitment</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Arbitrator Decision</div>
-          </div>
-          <div className="card-body">
-            <div className="inline-alert info">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="8" cy="8" r="6"/><path d="M8 6v4M8 11.5v.5"/>
-              </svg>
-              Only the designated arbitrator address (set at contract initialization) can call this function.
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="resolve-arbitrator">Arbitrator Address</label>
-              <input type="text" className="form-input" id="resolve-arbitrator"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="resolve-id">Commitment ID</label>
-              <input type="number" className="form-input" id="resolve-id"
-                     placeholder="1" min="1" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="resolve-outcome">Final Outcome</label>
-              <select className="form-select" id="resolve-outcome">
-                <option value="">Select final outcome...</option>
-                <option value="Fulfilled">Fulfilled</option>
-                <option value="Late">Late</option>
-                <option value="Breached">Breached</option>
-              </select>
-            </div>
-
-            <button className="btn btn-primary btn-full" id="btn-resolve" onClick={() => {}}>
-              <div className="spinner"></div>
-              <span className="btn-text">Submit Resolution</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Arbitrator Info</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="detail-panel">
-              <div className="detail-row">
-                <span className="detail-key">Role</span>
-                <span className="detail-val">Designated Arbitrator</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Set At</span>
-                <span className="detail-val">Contract initialization</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Authority</span>
-                <span className="detail-val">Can only resolve Disputed commitments</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Finality</span>
-                <span className="detail-val">Resolution is permanent and cannot be overridden</span>
-              </div>
-            </div>
-            <div style={{marginTop: "14px"}}>
-              <button className="btn btn-secondary btn-full" onClick={() => {}}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <circle cx="6.5" cy="6.5" r="4.5"/>
-                  <path d="M14 14l-3-3"/>
-                </svg>
-                Fetch Current Arbitrator
-              </button>
-              <div id="arbitrator-result" style={{marginTop: "10px"}}></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Reputation Lookup
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'reputation' ? 'active' : ''}`} id="page-reputation">
-      <ReputationDashboard
-        initialAddress={reputationAddress}
-        onNavigateAddress={(addr) => navigateToReputation(addr)}
-        onLaunchCreate={() => setActivePage('create')}
-      />
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Get Commitment
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'lookup' ? 'active' : ''}`} id="page-lookup">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Get Commitment</div>
-          <div className="section-sub">Fetch the full details of any commitment by its ID</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div>
-          <div className="card" style={{marginBottom: "16px"}}>
-            <div className="card-header">
-              <div className="card-title">Commitment ID Lookup</div>
-            </div>
-            <div className="card-body">
-              <div className="form-group">
-                <label className="form-label" htmlFor="lookup-id">Commitment ID</label>
-                <input type="number" className="form-input" id="lookup-id" placeholder="e.g. 1" min="1" />
-              </div>
-              <div style={{display: "flex", gap: "10px"}}>
-                <button className="btn btn-secondary" onClick={() => {}}>Check Overdue</button>
-                <button className="btn btn-primary" style={{flex: "1"}} id="btn-lookup" onClick={() => {}}>
-                  <div className="spinner"></div>
-                  <span className="btn-text">Fetch Commitment</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Result */}
-          <div className="card" id="lookup-result-card" style={{display: "none"}}>
-            <div className="card-header">
-              <div className="card-title">Commitment Details</div>
-              <span className="badge" id="lookup-status-badge"></span>
-            </div>
-            <div className="card-body" style={{paddingTop: "14px"}}>
-              <div className="detail-panel" id="lookup-details"></div>
-              <div style={{display: "flex", gap: "10px", marginTop: "14px"}}>
-                <button className="btn btn-secondary btn-sm" onClick={() => {}}>Attest This</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => {}}>Dispute This</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Sample IDs */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Sample Commitments</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="commitment-list" id="sample-commitments"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-
-    {/* ──────────────────────────────────────────────
-         PAGE: Initialize
-         ────────────────────────────────────────────── */}
-    <section className={`page ${activePage === 'initialize' ? 'active' : ''}`} id="page-initialize">
-      <div className="section-header">
-        <div>
-          <div className="section-title">Initialize Contract</div>
-          <div className="section-sub">One-time setup — designate the arbitrator address</div>
-        </div>
-      </div>
-
-      <div className="two-col">
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Initialization</div>
-          </div>
-          <div className="card-body">
-            <div className="inline-alert warning">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 2L1 14h14L8 2z"/><path d="M8 6v4M8 11.5v.5"/>
-              </svg>
-              This can only be called once. Once an arbitrator is set it cannot be changed without redeploying the contract.
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="init-arbitrator">Arbitrator Address</label>
-              <input type="text" className="form-input" id="init-arbitrator"
-                     placeholder="G..." autoComplete="off" spellCheck="false" />
-              <div className="form-hint">This address will be the sole entity able to resolve disputed commitments. It must authorize this transaction.</div>
-            </div>
-
-            <button className="btn btn-primary btn-full" id="btn-init" onClick={() => {}}>
-              <div className="spinner"></div>
-              <span className="btn-text">Initialize Contract</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">Contract Status</div>
-          </div>
-          <div className="card-body" style={{paddingTop: "14px"}}>
-            <div className="detail-panel">
-              <div className="detail-row">
-                <span className="detail-key">Contract ID</span>
-                <span className="detail-val mono" style={{fontSize: "11px"}}>CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Network</span>
-                <span className="detail-val">Stellar Testnet</span>
-              </div>
-              <div className="detail-row">
-                <span className="detail-key">Status</span>
-                <span className="detail-val"><span className="badge fulfilled"><span className="badge-dot"></span>Already Initialized</span></span>
-              </div>
-            </div>
-            <button className="btn btn-secondary btn-full" style={{marginTop: "12px"}} onClick={() => {}}>
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <circle cx="6.5" cy="6.5" r="4.5"/>
-                <path d="M14 14l-3-3"/>
-              </svg>
-              Check Current Arbitrator
-            </button>
-            <div id="init-arbitrator-result" style={{marginTop: "10px"}}></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-  </main></div>
-    </>
-  )
-}
+      </main></div>
+        </>
+      )
+    }
