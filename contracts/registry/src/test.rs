@@ -1552,7 +1552,7 @@ fn test_get_trust_score_reflects_outcomes() {
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 
     let id1 = client.create_commitment(
         &issuer,
@@ -1566,7 +1566,7 @@ fn test_get_trust_score_reflects_outcomes() {
         &0,
     );
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
-    assert_eq!(client.get_trust_score(&issuer), 60);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 60);
 
     let id2 = client.create_commitment(
         &issuer,
@@ -1580,7 +1580,7 @@ fn test_get_trust_score_reflects_outcomes() {
         &0,
     );
     client.attest(&issuer, &id2, &CommitmentStatus::Late);
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 
     let id3 = client.create_commitment(
         &issuer,
@@ -1594,7 +1594,7 @@ fn test_get_trust_score_reflects_outcomes() {
         &0,
     );
     client.attest(&issuer, &id3, &CommitmentStatus::Breached);
-    assert_eq!(client.get_trust_score(&issuer), 0);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 }
 // -----------------------------------------------------------------------------
 // Pausable Protocol - Emergency Halt Tests
@@ -1687,7 +1687,7 @@ fn test_read_functions_succeed_while_paused() {
     assert_eq!(rep.breached_count, 0);
 
     // get_trust_score continues to work.
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 
     // get_arbitrator continues to work.
     assert_eq!(client.get_arbitrator(), arbitrator);
