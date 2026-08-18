@@ -13,7 +13,8 @@
     "load:reputation": "node scripts/load-reputation.js",
     "indexer": "node dist/workers/indexer.js",
     "analytics:worker": "node dist/workers/analyticsWorker.js",
-    "migrate:timescale": "node dist/db/migrate.js"
+    "migrate:timescale": "node dist/db/migrate.js",
+    "backfill:commitments": "node dist/indexer/backfill-commitments.js"
   },
   "keywords": [],
   "author": "",
