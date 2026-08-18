@@ -127,7 +127,9 @@ describe('compileRuleSet — validation of untrusted input', () => {
   it('rejects catastrophic-backtracking regexes (ReDoS static guard)', () => {
     // Nested quantifiers (regex "star height" >= 2) are the exponential class;
     // these stay well under the length caps yet would hang the onChange resolver.
-    for (const pattern of ['(a+)+$', '(a*)*', '(a+)*', '((ab)+)+', '(\\d+)+$']) {
+    // `[^]` / `[\s\S]` are JS "any char" classes — the scanner must count the
+    // quantifier on them, not swallow the `]` as a class member.
+    for (const pattern of ['(a+)+$', '(a*)*', '(a+)*', '((ab)+)+', '(\\d+)+$', '([^]+)+x', '([\\s\\S]+)+$']) {
       assert.throws(
         () => evalRule({ kind: 'match', value: field('x'), pattern }, {}),
         AstValidationError,
@@ -140,8 +142,10 @@ describe('compileRuleSet — validation of untrusted input', () => {
   })
 
   it('accepts safe single-level repetitions (no false positives on ordinary patterns)', () => {
-    // Star height <= 1 is fine, including grouping, alternation, and bounded repeats.
-    for (const pattern of ['\\b(todo|tbd|xxx)\\b', '^G[A-Z0-9]{55}$', '(ab)+', '(?:foo|bar)+', 'a{1,1000}', '\\d{3}-\\d{4}']) {
+    // Star height <= 1 is fine, including grouping, alternation, and bounded
+    // repeats. `[]]+` is JS empty-class `[]` then a quantified literal `]`, and
+    // `[^]` is the any-char class — both must parse to star height <= 1.
+    for (const pattern of ['\\b(todo|tbd|xxx)\\b', '^G[A-Z0-9]{55}$', '(ab)+', '(?:foo|bar)+', 'a{1,1000}', '\\d{3}-\\d{4}', '[]]+', '[^]']) {
       assert.doesNotThrow(
         () => evalRule({ kind: 'match', value: field('x'), pattern }, {}),
         `expected ${pattern} to be accepted`,

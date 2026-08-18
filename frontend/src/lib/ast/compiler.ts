@@ -294,7 +294,9 @@ function assertSafeRegexPattern(pattern: string, path: string): void {
   const skipCharClass = (): void => {
     i += 1; // consume `[`
     if (i < n && pattern[i] === '^') i += 1;
-    if (i < n && pattern[i] === ']') i += 1; // a leading `]` is a literal
+    // In JavaScript a `]` immediately after `[` or `[^` closes the class (`[]`
+    // is empty, `[^]` is any char); a literal `]` must be escaped (`[\]]`). So
+    // the first unescaped `]` always terminates the class.
     while (i < n && pattern[i] !== ']') {
       i += pattern[i] === '\\' ? 2 : 1;
     }
