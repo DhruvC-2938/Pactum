@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { commitmentSchema } from '../schemas/commitment';
 import { ZodError } from 'zod';
-import { strictLimiter } from '../middleware/rateLimiter';
+import { strictLimiter, createCommitmentLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
@@ -34,14 +34,25 @@ const validateCommitment = (req: Request, res: Response, next: NextFunction): vo
 };
 
 // POST /commitments - Create a new commitment
-// strictLimiter enforces a 10 req/IP/min cap on this write endpoint.
-router.post('/', strictLimiter, validateCommitment, (req: Request, res: Response) => {
-  // Route handler processes the sanitized req.body safely
-  res.status(201).json({ 
-    message: 'Commitment created successfully', 
-    data: req.body 
-  });
-});
+// Two layers of rate limiting protect the on-chain create_commitment call:
+//   1. strictLimiter          - 10 writes/min per IP; absorbs raw bursts and
+//                               unauthenticated probing before any work is done.
+//   2. createCommitmentLimiter - 10/hour per issuing Stellar address (partyA),
+//                               applied AFTER validation so only well-formed
+//                               requests count against an address's quota.
+router.post(
+  '/',
+  strictLimiter,
+  validateCommitment,
+  createCommitmentLimiter,
+  (req: Request, res: Response) => {
+    // Route handler processes the sanitized req.body safely
+    res.status(201).json({
+      message: 'Commitment created successfully',
+      data: req.body,
+    });
+  },
+);
 
 // PUT /commitments/:id - Update an existing commitment
 // strictLimiter enforces a 10 req/IP/min cap on this write endpoint.
