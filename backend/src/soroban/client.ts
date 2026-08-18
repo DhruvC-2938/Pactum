@@ -6,7 +6,7 @@ import {
   Keypair,
   nativeToScVal,
   rpc,
-  scValToNative
+  scValToNative,
 } from '@stellar/stellar-sdk';
 
 export enum CommitmentStatus {
@@ -43,10 +43,7 @@ export class SorobanClient {
    * @param outcome - The outcome status (Fulfilled, Late, or Breached)
    * @returns Transaction hash
    */
-  async attestCommitment(
-    commitmentId: number,
-    outcome: CommitmentStatus
-  ): Promise<string> {
+  async attestCommitment(commitmentId: number, outcome: CommitmentStatus): Promise<string> {
     try {
       // Build the transaction
       const account = await this.rpc.getAccount(this.keypair.publicKey());
@@ -59,8 +56,8 @@ export class SorobanClient {
           this.contract.call(
             'attest',
             nativeToScVal(commitmentId, { type: 'u64' }),
-            nativeToScVal(outcome, { type: 'u32' })
-          )
+            nativeToScVal(outcome, { type: 'u32' }),
+          ),
         )
         .setTimeout(30)
         .build();
@@ -94,7 +91,9 @@ export class SorobanClient {
         throw new Error(`Transaction failed with status: ${result.status}`);
       }
     } catch (error) {
-      throw new Error(`Failed to attest commitment: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to attest commitment: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -110,10 +109,7 @@ export class SorobanClient {
         networkPassphrase: this.networkPassphrase,
       })
         .addOperation(
-          this.contract.call(
-            'get_commitment',
-            nativeToScVal(commitmentId, { type: 'u64' })
-          )
+          this.contract.call('get_commitment', nativeToScVal(commitmentId, { type: 'u64' })),
         )
         .setTimeout(30)
         .build();
@@ -130,7 +126,9 @@ export class SorobanClient {
 
       throw new Error('No result returned from simulation');
     } catch (error) {
-      throw new Error(`Failed to get commitment: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to get commitment: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -146,10 +144,7 @@ export class SorobanClient {
         networkPassphrase: this.networkPassphrase,
       })
         .addOperation(
-          this.contract.call(
-            'is_overdue',
-            nativeToScVal(commitmentId, { type: 'u64' })
-          )
+          this.contract.call('is_overdue', nativeToScVal(commitmentId, { type: 'u64' })),
         )
         .setTimeout(30)
         .build();
@@ -166,7 +161,9 @@ export class SorobanClient {
 
       throw new Error('No result returned from simulation');
     } catch (error) {
-      throw new Error(`Failed to check if commitment is overdue: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to check if commitment is overdue: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

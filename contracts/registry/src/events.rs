@@ -12,7 +12,12 @@ pub fn commitment_created(
     schema_id: Option<u32>,
 ) {
     env.events().publish(
-        (symbol_short!("created"), issuer.clone(), counterparty.clone(), oracle.clone()),
+        (
+            symbol_short!("created"),
+            issuer.clone(),
+            counterparty.clone(),
+            oracle.clone(),
+        ),
         (id, schema_id),
     );
 }

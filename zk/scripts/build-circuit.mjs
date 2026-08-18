@@ -18,7 +18,18 @@ import * as snarkjs from 'snarkjs';
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = join(packageRoot, 'build');
 const circuitsDir = join(packageRoot, 'circuits');
-const circomlibCircuits = join(packageRoot, 'node_modules', 'circomlib', 'circuits');
+let circomlibCircuits = join(packageRoot, 'node_modules', 'circomlib', 'circuits');
+if (!existsSync(circomlibCircuits)) {
+  circomlibCircuits = join(packageRoot, '..', 'node_modules', 'circomlib', 'circuits');
+}
+
+// snarkjs is invoked as a child process (see snarkjsCli), so we need its cli.js on
+// disk. As an npm workspace its dependencies hoist to the monorepo root, so fall
+// back to the root node_modules the same way circomlib does above.
+let snarkjsCliPath = join(packageRoot, 'node_modules', 'snarkjs', 'cli.js');
+if (!existsSync(snarkjsCliPath)) {
+  snarkjsCliPath = join(packageRoot, '..', 'node_modules', 'snarkjs', 'cli.js');
+}
 
 const CURVE = 'bn128';
 const PTAU_ENTROPY = 'pactum zk-reputation dev ceremony — NOT SECURE, see docs';
@@ -31,7 +42,7 @@ function run(command, args) {
 }
 
 function snarkjsCli(args) {
-  run(process.execPath, [join(packageRoot, 'node_modules', 'snarkjs', 'cli.js'), ...args]);
+  run(process.execPath, [snarkjsCliPath, ...args]);
 }
 
 /**

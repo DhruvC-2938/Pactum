@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-*
+build
+.next
+coverage
+*.min.js
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+.git
+.claude
+contracts/target
+zk/target

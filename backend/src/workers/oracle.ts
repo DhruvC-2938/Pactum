@@ -27,7 +27,7 @@ export class OracleWorker {
     sorobanClient: SorobanClient,
     pollIntervalMs: number = 60000, // Default 1 minute
     maxRetries: number = 3,
-    retryDelayMs: number = 5000 // Default 5 seconds
+    retryDelayMs: number = 5000, // Default 5 seconds
   ) {
     this.sorobanClient = sorobanClient;
     this.pollIntervalMs = pollIntervalMs;
@@ -60,22 +60,26 @@ export class OracleWorker {
         if (timeUntilDue <= 0) {
           // Commitment is due, check SLA and attest
           console.log(`Commitment ${commitment.id} is due. Checking SLA...`);
-          
+
           const result = await this.checkSlaWithRetry(commitment);
-          
+
           let outcome: CommitmentStatus;
           if (result.success) {
             outcome = CommitmentStatus.Fulfilled;
             console.log(`Commitment ${commitment.id} SLA met. Attesting as Fulfilled.`);
           } else {
             outcome = CommitmentStatus.Breached;
-            console.log(`Commitment ${commitment.id} SLA failed. Attesting as Breached. Error: ${result.error}`);
+            console.log(
+              `Commitment ${commitment.id} SLA failed. Attesting as Breached. Error: ${result.error}`,
+            );
           }
 
           await this.attestWithRetry(commitment.id, outcome);
         } else {
           // Not due yet, log and reschedule
-          console.log(`Commitment ${commitment.id} not due yet. ${timeUntilDue} seconds remaining.`);
+          console.log(
+            `Commitment ${commitment.id} not due yet. ${timeUntilDue} seconds remaining.`,
+          );
           setTimeout(checkDue, Math.min(this.pollIntervalMs, timeUntilDue * 1000));
         }
       } catch (error) {
@@ -101,7 +105,9 @@ export class OracleWorker {
         return result;
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
-        console.warn(`SLA check attempt ${attempt}/${this.maxRetries} failed for commitment ${commitment.id}: ${lastError}`);
+        console.warn(
+          `SLA check attempt ${attempt}/${this.maxRetries} failed for commitment ${commitment.id}: ${lastError}`,
+        );
 
         if (attempt < this.maxRetries) {
           await this.delay(this.retryDelayMs * attempt); // Exponential backoff
@@ -111,7 +117,7 @@ export class OracleWorker {
 
     return {
       success: false,
-      error: `SLA check failed after ${this.maxRetries} attempts. Last error: ${lastError}`
+      error: `SLA check failed after ${this.maxRetries} attempts. Last error: ${lastError}`,
     };
   }
 
@@ -121,20 +127,20 @@ export class OracleWorker {
   private async checkSla(commitment: CommitmentMetadata): Promise<ApiPollResult> {
     // Mock implementation for demonstration
     // In production, this would query actual monitoring APIs like Pingdom, UptimeRobot, etc.
-    
+
     if (!commitment.apiEndpoint) {
       // If no API endpoint, use mock data based on commitment ID
       // This simulates a real API response
       const mockUptime = this.getMockUptime(commitment.id);
       const threshold = commitment.threshold || 99;
-      
+
       if (mockUptime >= threshold) {
         return { success: true, value: mockUptime };
       } else {
-        return { 
-          success: false, 
+        return {
+          success: false,
           value: mockUptime,
-          error: `Uptime ${mockUptime}% below threshold ${threshold}%`
+          error: `Uptime ${mockUptime}% below threshold ${threshold}%`,
         };
       }
     }
@@ -144,10 +150,10 @@ export class OracleWorker {
       const response = await axios.get(commitment.apiEndpoint, {
         timeout: 10000,
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
           // Add API key header if needed
           // 'Authorization': `Bearer ${process.env.MONITORING_API_KEY}`
-        }
+        },
       });
 
       // Parse response based on API type
@@ -182,7 +188,7 @@ export class OracleWorker {
       return {
         success: false,
         value: uptime,
-        error: `Uptime ${uptime}% below threshold ${threshold}%`
+        error: `Uptime ${uptime}% below threshold ${threshold}%`,
       };
     }
   }
@@ -206,7 +212,7 @@ export class OracleWorker {
       return {
         success: false,
         value: uptime,
-        error: `Uptime ${uptime}% below threshold ${threshold}%`
+        error: `Uptime ${uptime}% below threshold ${threshold}%`,
       };
     }
   }
@@ -220,7 +226,7 @@ export class OracleWorker {
       return {
         success: data.success,
         value: data.value,
-        error: data.error
+        error: data.error,
       };
     }
 
@@ -229,14 +235,14 @@ export class OracleWorker {
     if (value !== undefined) {
       const threshold = commitment.threshold || 99;
       const numericValue = parseFloat(value);
-      
+
       if (numericValue >= threshold) {
         return { success: true, value: numericValue };
       } else {
         return {
           success: false,
           value: numericValue,
-          error: `Value ${numericValue}% below threshold ${threshold}%`
+          error: `Value ${numericValue}% below threshold ${threshold}%`,
         };
       }
     }
@@ -247,20 +253,21 @@ export class OracleWorker {
   /**
    * Attest to commitment with retry logic
    */
-  private async attestWithRetry(
-    commitmentId: number,
-    outcome: CommitmentStatus
-  ): Promise<string> {
+  private async attestWithRetry(commitmentId: number, outcome: CommitmentStatus): Promise<string> {
     let lastError: string | undefined;
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
         const txHash = await this.sorobanClient.attestCommitment(commitmentId, outcome);
-        console.log(`Successfully attested commitment ${commitmentId} with outcome ${outcome}. TX: ${txHash}`);
+        console.log(
+          `Successfully attested commitment ${commitmentId} with outcome ${outcome}. TX: ${txHash}`,
+        );
         return txHash;
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
-        console.warn(`Attestation attempt ${attempt}/${this.maxRetries} failed for commitment ${commitmentId}: ${lastError}`);
+        console.warn(
+          `Attestation attempt ${attempt}/${this.maxRetries} failed for commitment ${commitmentId}: ${lastError}`,
+        );
 
         if (attempt < this.maxRetries) {
           await this.delay(this.retryDelayMs * attempt); // Exponential backoff
@@ -268,7 +275,9 @@ export class OracleWorker {
       }
     }
 
-    throw new Error(`Attestation failed after ${this.maxRetries} attempts. Last error: ${lastError}`);
+    throw new Error(
+      `Attestation failed after ${this.maxRetries} attempts. Last error: ${lastError}`,
+    );
   }
 
   /**
@@ -285,7 +294,7 @@ export class OracleWorker {
    * Delay helper for retry logic
    */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -306,13 +315,13 @@ export async function createOracleWorker(
     pollIntervalMs?: number;
     maxRetries?: number;
     retryDelayMs?: number;
-  }
+  },
 ): Promise<OracleWorker> {
   const worker = new OracleWorker(
     sorobanClient,
     options?.pollIntervalMs,
     options?.maxRetries,
-    options?.retryDelayMs
+    options?.retryDelayMs,
   );
 
   await worker.start(commitments);

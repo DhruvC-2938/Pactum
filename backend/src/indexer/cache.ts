@@ -244,10 +244,7 @@ export class PostgresCursorCache {
       return result.rows[0]?.cursor ?? null;
     } catch (error: unknown) {
       // Table does not exist yet — treat as no cursor.
-      if (
-        error instanceof Error &&
-        error.message.includes('does not exist')
-      ) {
+      if (error instanceof Error && error.message.includes('does not exist')) {
         return null;
       }
       throw error;
@@ -275,9 +272,6 @@ export class PostgresCursorCache {
    * Use when you want the indexer to replay from the beginning on next start.
    */
   async clear(): Promise<void> {
-    await this.pool.query(
-      `DELETE FROM ${this.table} WHERE stream_name = $1`,
-      [this.streamName],
-    );
+    await this.pool.query(`DELETE FROM ${this.table} WHERE stream_name = $1`, [this.streamName]);
   }
 }

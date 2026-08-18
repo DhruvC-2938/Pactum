@@ -125,7 +125,9 @@ export const runDailySnapshot = async (day: string = previousDay()): Promise<voi
 };
 
 export const startSnapshotCron = (): ScheduledTask => {
-  console.log(`[Snapshot Cron] Scheduling daily snapshots at "${SNAPSHOT_CRON}" (${SNAPSHOT_TIMEZONE})`);
+  console.log(
+    `[Snapshot Cron] Scheduling daily snapshots at "${SNAPSHOT_CRON}" (${SNAPSHOT_TIMEZONE})`,
+  );
   return schedule(SNAPSHOT_CRON, () => runDailySnapshot(), {
     timezone: SNAPSHOT_TIMEZONE,
     noOverlap: true,

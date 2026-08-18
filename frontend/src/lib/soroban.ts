@@ -6,7 +6,7 @@ import {
   BASE_FEE,
   xdr,
   Address,
-  scValToNative
+  scValToNative,
 } from '@stellar/stellar-sdk';
 import { signTransaction } from '@stellar/freighter-api';
 
@@ -37,7 +37,9 @@ export interface CreateCommitmentResult {
 export function hexToBytes(hexStr: string): Uint8Array {
   const cleanHex = hexStr.replace(/^0x/i, '');
   if (cleanHex.length !== 64) {
-    throw new Error(`Invalid terms hash hex length: expected 64 hex characters (32 bytes), got ${cleanHex.length}`);
+    throw new Error(
+      `Invalid terms hash hex length: expected 64 hex characters (32 bytes), got ${cleanHex.length}`,
+    );
   }
   const bytes = new Uint8Array(32);
   for (let i = 0; i < 32; i++) {
@@ -51,7 +53,9 @@ export function hexToBytes(hexStr: string): Uint8Array {
  */
 export async function fundTestnetAccount(address: string): Promise<boolean> {
   try {
-    const response = await fetch(`https://friendbot.stellar.org/?addr=${encodeURIComponent(address)}`);
+    const response = await fetch(
+      `https://friendbot.stellar.org/?addr=${encodeURIComponent(address)}`,
+    );
     return response.ok;
   } catch (e) {
     console.warn(`[Friendbot] Could not auto-fund ${address}:`, e);
@@ -70,7 +74,7 @@ export async function submitCreateCommitment({
   rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
   networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
-  onStatusUpdate
+  onStatusUpdate,
 }: CreateCommitmentParams): Promise<CreateCommitmentResult> {
   // 1. Parameter Validation
   if (!issuerAddress || !issuerAddress.startsWith('G')) {
@@ -85,7 +89,9 @@ export async function submitCreateCommitment({
 
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (dueAtSeconds <= nowSeconds) {
-    throw new Error(`Due date must be in the future. Selected timestamp (${dueAtSeconds}) is not > current timestamp (${nowSeconds}).`);
+    throw new Error(
+      `Due date must be in the future. Selected timestamp (${dueAtSeconds}) is not > current timestamp (${nowSeconds}).`,
+    );
   }
 
   onStatusUpdate?.('Initializing Soroban RPC connection...');
@@ -121,7 +127,9 @@ export async function submitCreateCommitment({
     }
 
     if (!account) {
-      throw new Error(`Connected account (${issuerAddress.substring(0, 8)}...) is not funded on Stellar Testnet yet. Please fund it with Testnet XLM in your Freighter extension or via Stellar Friendbot.`);
+      throw new Error(
+        `Connected account (${issuerAddress.substring(0, 8)}...) is not funded on Stellar Testnet yet. Please fund it with Testnet XLM in your Freighter extension or via Stellar Friendbot.`,
+      );
     }
   }
 
@@ -129,7 +137,7 @@ export async function submitCreateCommitment({
 
   const tx = new TransactionBuilder(account, {
     fee: BASE_FEE,
-    networkPassphrase
+    networkPassphrase,
   })
     .addOperation(
       contract.call(
@@ -137,8 +145,8 @@ export async function submitCreateCommitment({
         issuerScVal,
         counterpartyScVal,
         termsHashScVal,
-        dueAtScVal
-      )
+        dueAtScVal,
+      ),
     )
     .setTimeout(60)
     .build();
@@ -153,7 +161,7 @@ export async function submitCreateCommitment({
   onStatusUpdate?.('Awaiting signature in Freighter wallet...');
   const signResult = await signTransaction(unsignedXdr, {
     networkPassphrase,
-    address: issuerAddress
+    address: issuerAddress,
   });
 
   let signedXdr = '';
@@ -222,6 +230,6 @@ export async function submitCreateCommitment({
   return {
     hash: txHash,
     commitmentId,
-    status: 'SUCCESS'
+    status: 'SUCCESS',
   };
 }

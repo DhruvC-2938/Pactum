@@ -38,7 +38,7 @@ fn test_create_and_get_commitment_success() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -76,7 +76,7 @@ fn test_create_commitment_requires_auth() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -98,7 +98,7 @@ fn test_create_commitment_fails_if_due_at_in_past() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -128,7 +128,7 @@ fn test_sequential_unique_ids() {
         &terms_hash1,
         &2000,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -139,7 +139,7 @@ fn test_sequential_unique_ids() {
         &terms_hash2,
         &3000,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -172,7 +172,7 @@ fn test_attest_outcome_fulfilled() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -200,7 +200,7 @@ fn test_attest_outcome_late_by_counterparty() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -228,7 +228,7 @@ fn test_attest_outcome_breached() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -256,7 +256,7 @@ fn test_attest_fails_if_not_pending() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -295,7 +295,7 @@ fn test_attest_requires_auth() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -319,7 +319,7 @@ fn test_attest_fails_if_unauthorized_caller() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -344,7 +344,7 @@ fn test_attest_fails_for_pending_outcome() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -368,7 +368,7 @@ fn test_is_overdue_before_and_after_due_date() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -539,7 +539,7 @@ fn test_dispute_and_resolution_end_to_end() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -580,7 +580,7 @@ fn test_dispute_fails_outside_dispute_window() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -610,7 +610,7 @@ fn test_dispute_succeeds_at_window_boundary() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -641,7 +641,7 @@ fn test_dispute_fails_if_caller_not_issuer_or_counterparty() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -666,7 +666,7 @@ fn test_resolve_dispute_fails_if_caller_not_arbitrator() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -701,7 +701,7 @@ fn test_resolve_dispute_fails_if_commitment_not_disputed() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -731,7 +731,7 @@ fn test_resolve_dispute_rejects_invalid_final_outcome() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -767,7 +767,7 @@ fn setup_disputed_commitment(
         &BytesN::from_array(env, &[1u8; 32]),
         &2000,
         resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(env),
         &0,
@@ -939,7 +939,7 @@ fn test_dispute_fails_if_pending() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -963,7 +963,7 @@ fn test_dispute_fails_if_already_disputed() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -990,7 +990,7 @@ fn test_attest_fails_for_disputed_outcome() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -1017,7 +1017,7 @@ fn test_dispute_events_emitted() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -1096,7 +1096,7 @@ fn test_resolve_dispute_requires_auth() {
         &terms_hash,
         &2000,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -1148,7 +1148,7 @@ fn test_reputation_increments_direct_attestation() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -1206,7 +1206,17 @@ fn test_reputation_not_incremented_when_disputed() {
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &None, &None, &Vec::new(&env), &0);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &due_at,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
     // Initial attestation increments it
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     let rep_before = client.get_reputation(&issuer);
@@ -1345,7 +1355,7 @@ fn test_create_commitment_fails_if_due_at_is_current_timestamp() {
         &terms_hash,
         &due_at,
         &resolver,
-                &None,
+        &None,
         &None,
         &Vec::new(&env),
         &0,
@@ -1360,7 +1370,17 @@ fn test_dispute_fails_if_already_resolved() {
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &None, &None, &Vec::new(&env), &0);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &due_at,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
     // Attest, dispute, resolve
     client.attest(&issuer, &id, &CommitmentStatus::Late);
     client.dispute(&counterparty, &id);
@@ -1379,7 +1399,17 @@ fn test_realistic_sequence() {
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &None, &None, &Vec::new(&env), &0);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &due_at,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
     env.ledger().with_mut(|l| l.timestamp = 2500); // Late
     client.attest(&issuer, &id, &CommitmentStatus::Late);
 
@@ -1576,14 +1606,34 @@ fn test_pause_blocks_write_functions() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let due_at = 2000;
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &resolver, &None, &None, &soroban_sdk::Vec::new(&env), &0);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &due_at,
+        &resolver,
+        &None,
+        &None,
+        &soroban_sdk::Vec::new(&env),
+        &0,
+    );
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
     client.pause(&arbitrator);
     assert!(client.is_paused());
 
     // create_commitment reverts with ProtocolPaused
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &3000, &resolver, &None, &None, &soroban_sdk::Vec::new(&env), &0);
+    let res = client.try_create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &3000,
+        &resolver,
+        &None,
+        &None,
+        &soroban_sdk::Vec::new(&env),
+        &0,
+    );
     assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
 
     // attest reverts with ProtocolPaused
@@ -1683,13 +1733,33 @@ fn test_unpause_restores_write_functions() {
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     client.pause(&arbitrator);
-    let res = client.try_create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver, &None, &None, &soroban_sdk::Vec::new(&env), &0);
+    let res = client.try_create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &2000,
+        &resolver,
+        &None,
+        &None,
+        &soroban_sdk::Vec::new(&env),
+        &0,
+    );
     assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
 
     client.unpause(&arbitrator);
     assert!(!client.is_paused());
 
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &2000, &resolver, &None, &None, &soroban_sdk::Vec::new(&env), &0);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &2000,
+        &resolver,
+        &None,
+        &None,
+        &soroban_sdk::Vec::new(&env),
+        &0,
+    );
     assert_eq!(id, 1);
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     let commitment = client.get_commitment(&id);
@@ -1738,14 +1808,18 @@ fn test_pause_and_unpause_events_emitted() {
     client.pause(&arbitrator);
 
     let events_after_pause = env.events().all();
-    let paused_event = events_after_pause.get(events_after_pause.len() - 1).unwrap();
+    let paused_event = events_after_pause
+        .get(events_after_pause.len() - 1)
+        .unwrap();
     let expected_paused_topics: Vec<Val> = (symbol_short!("paused"),).into_val(&env);
     assert_eq!(paused_event.1, expected_paused_topics);
 
     client.unpause(&arbitrator);
 
     let events_after_unpause = env.events().all();
-    let unpaused_event = events_after_unpause.get(events_after_unpause.len() - 1).unwrap();
+    let unpaused_event = events_after_unpause
+        .get(events_after_unpause.len() - 1)
+        .unwrap();
     let expected_unpaused_topics: Vec<Val> = (symbol_short!("unpaused"),).into_val(&env);
     assert_eq!(unpaused_event.1, expected_unpaused_topics);
 }
@@ -1782,7 +1856,17 @@ fn test_custom_resolver_delegation() {
 
     // Designate a custom resolver address
     let custom_resolver = Address::generate(&env);
-    let id = client.create_commitment(&issuer, &counterparty, &terms_hash, &due_at, &custom_resolver, &None, &None, &Vec::new(&env), &0);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &due_at,
+        &custom_resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
 
     let comm = client.get_commitment(&id);
     assert_eq!(comm.resolver_address, custom_resolver);
@@ -1820,7 +1904,6 @@ struct PreOracleCommitment {
 fn test_legacy_commitment_storage_migration() {
     let (env, client, issuer, counterparty, _default_resolver) = setup_test_with_arbitrator();
 
-
     // Directly seed a LegacyCommitment in persistent storage (simulating pre-upgrade storage)
     let arbitrator = client.get_arbitrator();
     let legacy_id = 99u64;
@@ -1835,7 +1918,6 @@ fn test_legacy_commitment_storage_migration() {
         attested_at: Some(1500),
     };
 
-
     env.as_contract(&client.address, || {
         env.storage()
             .persistent()
@@ -1849,7 +1931,6 @@ fn test_legacy_commitment_storage_migration() {
     assert_eq!(migrated.status, CommitmentStatus::Fulfilled);
     assert_eq!(migrated.oracle, None);
     assert_eq!(migrated.schema_id, None);
-
 
     // Raising a dispute on the migrated commitment works and resolves with the fallback arbitrator
     env.ledger().with_mut(|l| l.timestamp = 1600);
@@ -1922,10 +2003,7 @@ fn test_mid_tier_milestone_commitment_migration_preserves_counters() {
 
     // The commitment stays usable: the next milestone can still be attested.
     client.attest_milestone(&issuer, &mid_id, &1, &CommitmentStatus::Fulfilled);
-    assert_eq!(
-        client.get_commitment(&mid_id).milestones_attested(),
-        2
-    );
+    assert_eq!(client.get_commitment(&mid_id).milestones_attested(), 2);
 }
 
 #[test]
@@ -1944,7 +2022,6 @@ fn test_legacy_commitment_migration_fails_if_uninitialized() {
         created_at: 1000,
         attested_at: Some(1500),
     };
-
 
     env.as_contract(&client.address, || {
         env.storage()
@@ -1973,7 +2050,6 @@ fn test_legacy_commitment_migration_fails_if_payload_id_mismatch() {
         created_at: 1000,
         attested_at: None,
     };
-
 
     env.as_contract(&client.address, || {
         env.storage().persistent().set(
