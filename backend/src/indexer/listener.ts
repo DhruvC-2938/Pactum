@@ -134,10 +134,6 @@ export class FinalityIndexer {
       }
 
       await this.options.store.appendLedger(ledger);
-      checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
-      nextSequence += 1;
-      committed += 1;
-
       // appendLedger is the finality boundary, so the checkpoint is already
       // persisted by the time the hook runs. Its failures are logged and
       // swallowed: a committed ledger is canonical whether or not a downstream
@@ -149,6 +145,9 @@ export class FinalityIndexer {
           console.error(`[indexer] Ledger ${ledger.sequence} commit hook failed:`, error);
         }
       }
+      checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
+      nextSequence += 1;
+      committed += 1;
     }
 
     // Update Prometheus metrics

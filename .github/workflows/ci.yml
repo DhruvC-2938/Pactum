@@ -95,7 +95,9 @@ jobs:
 
       - name: Compile circuit and run the Groth16 setup
         working-directory: zk
-        run: npm run build:circuit
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          npm run build:circuit
 
       - name: Run zk test suite
         working-directory: zk
