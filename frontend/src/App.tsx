@@ -448,22 +448,7 @@ export default function App() {
 
               <button
                 onClick={() => setActivePage('landing')}
-                className="topbar-home-btn"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  background: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  padding: '6px 12px',
-                  fontSize: '12.5px',
-                  fontWeight: '700',
-                  color: '#475569',
-                  cursor: 'pointer',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                  transition: 'all 0.15s ease',
-                }}
+                className="btn btn-secondary btn-sm"
                 title="Back to Landing Page"
               >
                 ← Home
