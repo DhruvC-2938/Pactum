@@ -18,11 +18,11 @@ const validateCommitment = (req: Request, res: Response, next: NextFunction): vo
     next();
   } catch (error) {
     if (error instanceof ZodError) {
-      const formattedErrors = error.errors.map(err => ({
+      const formattedErrors = error.errors.map((err) => ({
         field: err.path.join('.'),
         message: err.message,
       }));
-      
+
       res.status(400).json({
         error: 'Bad Request',
         details: formattedErrors,
@@ -37,9 +37,9 @@ const validateCommitment = (req: Request, res: Response, next: NextFunction): vo
 // strictLimiter enforces a 10 req/IP/min cap on this write endpoint.
 router.post('/', strictLimiter, validateCommitment, (req: Request, res: Response) => {
   // Route handler processes the sanitized req.body safely
-  res.status(201).json({ 
-    message: 'Commitment created successfully', 
-    data: req.body 
+  res.status(201).json({
+    message: 'Commitment created successfully',
+    data: req.body,
   });
 });
 
@@ -47,9 +47,9 @@ router.post('/', strictLimiter, validateCommitment, (req: Request, res: Response
 // strictLimiter enforces a 10 req/IP/min cap on this write endpoint.
 router.put('/:id', strictLimiter, validateCommitment, (req: Request, res: Response) => {
   // Route handler processes the sanitized req.body safely
-  res.status(200).json({ 
-    message: 'Commitment updated successfully', 
-    data: req.body 
+  res.status(200).json({
+    message: 'Commitment updated successfully',
+    data: req.body,
   });
 });
 

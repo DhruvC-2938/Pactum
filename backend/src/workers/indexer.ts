@@ -21,9 +21,9 @@ async function run(): Promise<void> {
   const checkpoint = await new PostgresIndexerStore(pool).getCheckpoint();
   const latest = await source.getLatestLedger();
   const startSequence = Number(
-    process.env.INDEXER_START_SEQUENCE
-      ?? checkpoint?.sequence
-      ?? Math.max(1, latest.sequence - finalityDepth),
+    process.env.INDEXER_START_SEQUENCE ??
+      checkpoint?.sequence ??
+      Math.max(1, latest.sequence - finalityDepth),
   );
   const cache = new ReputationCache(redis, new PostgresReputationRepository(pool));
   const projector = new ReputationCacheProjector(cache);

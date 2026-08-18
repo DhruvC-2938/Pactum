@@ -76,10 +76,7 @@ export class PactumClient {
    * @param callback Callback function receiving the strongly typed event payload
    * @returns Unsubscribe cleanup function
    */
-  public on<K extends PactumEventType>(
-    eventType: K,
-    callback: EventCallback<K>,
-  ): () => void {
+  public on<K extends PactumEventType>(eventType: K, callback: EventCallback<K>): () => void {
     if (!this.listeners.has(eventType)) {
       this.listeners.set(eventType, new Set());
     }
@@ -93,10 +90,7 @@ export class PactumClient {
   /**
    * Unsubscribes a callback from a specific event type.
    */
-  public off<K extends PactumEventType>(
-    eventType: K,
-    callback: EventCallback<K>,
-  ): void {
+  public off<K extends PactumEventType>(eventType: K, callback: EventCallback<K>): void {
     const callbackSet = this.listeners.get(eventType);
     if (callbackSet) {
       callbackSet.delete(callback);
@@ -113,7 +107,7 @@ export class PactumClient {
   ): void {
     const callbackSet = this.listeners.get(eventType);
     if (callbackSet) {
-      callbackSet.forEach(cb => {
+      callbackSet.forEach((cb) => {
         try {
           cb(payload, rawEvent);
         } catch (error) {
@@ -170,24 +164,17 @@ export class PactumClient {
 
     const keypair = Keypair.fromSecret(params.issuerSecret);
     if (keypair.publicKey() !== params.issuer) {
-      throw new Error(
-        'PactumClient.createCommitment: issuerSecret does not match issuer address.',
-      );
+      throw new Error('PactumClient.createCommitment: issuerSecret does not match issuer address.');
     }
 
-    const txHash = await invokeContract(
-      this.opts,
-      params.issuerSecret,
-      'create_commitment',
-      [
-        encodeAddress(params.issuer),
-        encodeAddress(params.counterparty),
-        encodeBytes32(params.termsHash),
-        encodeU64(params.dueAt),
-        encodeAddressVec(attestors),
-        encodeU32(threshold),
-      ],
-    );
+    const txHash = await invokeContract(this.opts, params.issuerSecret, 'create_commitment', [
+      encodeAddress(params.issuer),
+      encodeAddress(params.counterparty),
+      encodeBytes32(params.termsHash),
+      encodeU64(params.dueAt),
+      encodeAddressVec(attestors),
+      encodeU32(threshold),
+    ]);
 
     const pollResult = await this.opts.rpcServer.getTransaction(txHash);
     if (
@@ -234,16 +221,11 @@ export class PactumClient {
    * @returns The transaction hash.
    */
   async resolveDispute(params: ResolveDisputeParams): Promise<string> {
-    return invokeContract(
-      this.opts,
-      params.arbitratorSecret,
-      'resolve_dispute',
-      [
-        encodeAddress(params.arbitrator),
-        encodeU64(params.id),
-        encodeCommitmentStatus(params.finalOutcome),
-      ],
-    );
+    return invokeContract(this.opts, params.arbitratorSecret, 'resolve_dispute', [
+      encodeAddress(params.arbitrator),
+      encodeU64(params.id),
+      encodeCommitmentStatus(params.finalOutcome),
+    ]);
   }
 
   // ─── Read methods ───────────────────────────────────────────────────────────
@@ -253,9 +235,7 @@ export class PactumClient {
    */
   async getCommitment(id: bigint): Promise<Commitment> {
     const stubPublicKey = this.opts.contract.address().toString();
-    const val = await queryContract(this.opts, stubPublicKey, 'get_commitment', [
-      encodeU64(id),
-    ]);
+    const val = await queryContract(this.opts, stubPublicKey, 'get_commitment', [encodeU64(id)]);
     return decodeCommitment(val);
   }
 
@@ -264,9 +244,7 @@ export class PactumClient {
    */
   async isOverdue(id: bigint): Promise<boolean> {
     const stubPublicKey = this.opts.contract.address().toString();
-    const val = await queryContract(this.opts, stubPublicKey, 'is_overdue', [
-      encodeU64(id),
-    ]);
+    const val = await queryContract(this.opts, stubPublicKey, 'is_overdue', [encodeU64(id)]);
     return Boolean(scValToNative(val));
   }
 
@@ -275,12 +253,9 @@ export class PactumClient {
    */
   async getReputation(address: string): Promise<Reputation> {
     const stubPublicKey = this.opts.contract.address().toString();
-    const val = await queryContract(
-      this.opts,
-      stubPublicKey,
-      'get_reputation',
-      [encodeAddress(address)],
-    );
+    const val = await queryContract(this.opts, stubPublicKey, 'get_reputation', [
+      encodeAddress(address),
+    ]);
     return decodeReputation(val);
   }
 
@@ -295,12 +270,7 @@ export class PactumClient {
    */
   async getArbitrator(): Promise<string> {
     const stubPublicKey = this.opts.contract.address().toString();
-    const val = await queryContract(
-      this.opts,
-      stubPublicKey,
-      'get_arbitrator',
-      [],
-    );
+    const val = await queryContract(this.opts, stubPublicKey, 'get_arbitrator', []);
     return String(scValToNative(val));
   }
 
@@ -315,12 +285,7 @@ export class PactumClient {
    */
   async getArbitrators(): Promise<string[]> {
     const stubPublicKey = this.opts.contract.address().toString();
-    const val = await queryContract(
-      this.opts,
-      stubPublicKey,
-      'get_arbitrators',
-      [],
-    );
+    const val = await queryContract(this.opts, stubPublicKey, 'get_arbitrators', []);
     return scValToNative(val) as string[];
   }
 

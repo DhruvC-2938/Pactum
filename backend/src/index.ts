@@ -7,6 +7,7 @@ import analyticsRoutes from './routes/analytics';
 import pool from './db/timescale';
 import { PostgresReputationRepository } from './reputation/repository';
 import { createRedisClientFromEnv, ReputationCache } from './cache/reputationCache';
+import { createOpenApiRouter } from './openapi/openapi';
 import client from 'prom-client';
 import { startSnapshotCron } from './indexer/cron';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
@@ -44,10 +45,7 @@ client.collectDefaultMetrics({ register });
 // ---------------------------------------------------------------------------
 app.use((_req: Request, res: Response, next: NextFunction): void => {
   // Strict-Transport-Security: enforce HTTPS for 1 year, include subdomains
-  res.setHeader(
-    'Strict-Transport-Security',
-    'max-age=31536000; includeSubDomains',
-  );
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   // Prevent MIME-type sniffing
   res.setHeader('X-Content-Type-Options', 'nosniff');
   // Disallow framing of this page (clickjacking protection)
@@ -56,10 +54,14 @@ app.use((_req: Request, res: Response, next: NextFunction): void => {
   // to 0 prevents a known IE vulnerability)
   res.setHeader('X-XSS-Protection', '0');
   // Restrict what can be loaded by the page
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'none'; frame-ancestors 'none'",
-  );
+  if (req.path.startsWith('/api-docs')) {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self' https: 'unsafe-inline'; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; img-src 'self' https: data:; frame-ancestors 'none'",
+    );
+  } else {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  }
   // Hide the server implementation detail
   res.removeHeader('X-Powered-By');
   // Control referrer information leakage
@@ -92,9 +94,7 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = (Date.now() - start) / 1000;
-    httpRequestDuration
-      .labels(req.method, req.path, res.statusCode.toString())
-      .observe(duration);
+    httpRequestDuration.labels(req.method, req.path, res.statusCode.toString()).observe(duration);
   });
   next();
 });
@@ -103,7 +103,7 @@ app.use((req, res, next) => {
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'ok',
-    
+
     timestamp: new Date().toISOString(),
   });
 });
@@ -112,16 +112,15 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/commitments', commitmentsRouter);
 const redis = createRedisClientFromEnv();
 redis.on('error', (error) => console.error('Redis connection error', error));
-const reputationCache = new ReputationCache(
-  redis,
-  new PostgresReputationRepository(pool),
-  { ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300) },
-);
+const reputationCache = new ReputationCache(redis, new PostgresReputationRepository(pool), {
+  ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300),
+});
 const reputationRouterInstance = createReputationRouter(reputationCache);
 app.use('/reputation', reputationRouterInstance);
 // Also mounted here because that is where the placeholder handler used to live.
 app.use('/api/reputation', reputationRouterInstance);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api-docs', createOpenApiRouter());
 
 // Metrics endpoint for Prometheus scraping
 app.get('/metrics', async (req: Request, res: Response) => {

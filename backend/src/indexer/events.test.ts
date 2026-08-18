@@ -28,14 +28,16 @@ function ledgerWithEvents(events: LedgerEvent[]): LedgerSnapshot {
 }
 
 test('parses a created event into the issuing parties and commitment id', async () => {
-  const parsed = await parseContractEvent(event(
-    [
-      await encode('created', 'symbol'),
-      await encode(ISSUER, 'address'),
-      await encode(COUNTERPARTY, 'address'),
-    ],
-    await encode(BigInt(42), 'u64'),
-  ));
+  const parsed = await parseContractEvent(
+    event(
+      [
+        await encode('created', 'symbol'),
+        await encode(ISSUER, 'address'),
+        await encode(COUNTERPARTY, 'address'),
+      ],
+      await encode(BigInt(42), 'u64'),
+    ),
+  );
 
   assert.deepEqual(parsed, {
     type: 'created',
@@ -46,54 +48,45 @@ test('parses a created event into the issuing parties and commitment id', async 
 });
 
 test('parses an attested event into a final outcome', async () => {
-  const parsed = await parseContractEvent(event(
-    [
-      await encode('attested', 'symbol'),
-      await encode(BigInt(7), 'u64'),
-    ],
-    await encode(2, 'u32'),
-  ));
+  const parsed = await parseContractEvent(
+    event(
+      [await encode('attested', 'symbol'), await encode(BigInt(7), 'u64')],
+      await encode(2, 'u32'),
+    ),
+  );
 
   assert.deepEqual(parsed, { type: 'attested', commitmentId: '7', outcome: 'late' });
 });
 
 test('parses a disputed event without a payload value', async () => {
-  const parsed = await parseContractEvent(event(
-    [
-      await encode('disputed', 'symbol'),
-      await encode(BigInt(9), 'u64'),
-    ],
-  ));
+  const parsed = await parseContractEvent(
+    event([await encode('disputed', 'symbol'), await encode(BigInt(9), 'u64')]),
+  );
 
   assert.deepEqual(parsed, { type: 'disputed', commitmentId: '9' });
 });
 
 test('parses a resolved event into its final outcome', async () => {
-  const parsed = await parseContractEvent(event(
-    [
-      await encode('resolved', 'symbol'),
-      await encode(BigInt(3), 'u64'),
-    ],
-    await encode(3, 'u32'),
-  ));
+  const parsed = await parseContractEvent(
+    event(
+      [await encode('resolved', 'symbol'), await encode(BigInt(3), 'u64')],
+      await encode(3, 'u32'),
+    ),
+  );
 
   assert.deepEqual(parsed, { type: 'resolved', commitmentId: '3', outcome: 'breached' });
 });
 
 test('maps every commitment status discriminant to an outcome', async () => {
-  const topics = [
-    await encode('attested', 'symbol'),
-    await encode(BigInt(1), 'u64'),
-  ];
-  const byStatus = await Promise.all([1, 2, 3].map(async (status) =>
-    parseContractEvent(event(topics, await encode(status, 'u32'))),
-  ));
+  const topics = [await encode('attested', 'symbol'), await encode(BigInt(1), 'u64')];
+  const byStatus = await Promise.all(
+    [1, 2, 3].map(async (status) => parseContractEvent(event(topics, await encode(status, 'u32')))),
+  );
 
-  assert.deepEqual(byStatus.map((parsed) => (parsed as { outcome: string }).outcome), [
-    'fulfilled',
-    'late',
-    'breached',
-  ]);
+  assert.deepEqual(
+    byStatus.map((parsed) => (parsed as { outcome: string }).outcome),
+    ['fulfilled', 'late', 'breached'],
+  );
 });
 
 test('ignores events from symbols other than the four contract events', async () => {
@@ -111,24 +104,23 @@ test('ignores events whose topics are not decodable ScVals', async () => {
 });
 
 test('collects every parsed event across a ledger', async () => {
-  const parsed = await parseLedgerEvents(ledgerWithEvents([
-    event(
-      [
-        await encode('created', 'symbol'),
-        await encode(ISSUER, 'address'),
-        await encode(COUNTERPARTY, 'address'),
-      ],
-      await encode(BigInt(1), 'u64'),
-    ),
-    event(
-      [
-        await encode('attested', 'symbol'),
+  const parsed = await parseLedgerEvents(
+    ledgerWithEvents([
+      event(
+        [
+          await encode('created', 'symbol'),
+          await encode(ISSUER, 'address'),
+          await encode(COUNTERPARTY, 'address'),
+        ],
         await encode(BigInt(1), 'u64'),
-      ],
-      await encode(1, 'u32'),
-    ),
-    event([await encode('upgraded', 'symbol')]),
-  ]));
+      ),
+      event(
+        [await encode('attested', 'symbol'), await encode(BigInt(1), 'u64')],
+        await encode(1, 'u32'),
+      ),
+      event([await encode('upgraded', 'symbol')]),
+    ]),
+  );
 
   assert.deepEqual(parsed, [
     { type: 'created', commitmentId: '1', issuer: ISSUER, counterparty: COUNTERPARTY },

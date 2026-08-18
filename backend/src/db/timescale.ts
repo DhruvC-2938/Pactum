@@ -34,20 +34,21 @@ export const runMigrations = async () => {
   const client = await getTimescaleClient();
   try {
     await client.query('BEGIN');
-    
+
     const migrationsDir = path.join(__dirname, 'migrations');
-    const migrationFiles = fs.readdirSync(migrationsDir)
-      .filter(f => f.endsWith('.sql'))
+    const migrationFiles = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
       .sort();
 
     for (const file of migrationFiles) {
       const filePath = path.join(migrationsDir, file);
       const sql = fs.readFileSync(filePath, 'utf8');
-      
+
       console.log(`Running migration: ${file}`);
       await client.query(sql);
     }
-    
+
     await client.query('COMMIT');
     console.log('All migrations completed successfully');
   } catch (error) {
@@ -65,7 +66,7 @@ export const refreshMaterializedViews = async () => {
     'mv_weekly_fulfillment_rates',
     'mv_monthly_fulfillment_rates',
     'mv_moving_averages',
-    'mv_trust_score_trends'
+    'mv_trust_score_trends',
   ];
 
   for (const view of views) {
