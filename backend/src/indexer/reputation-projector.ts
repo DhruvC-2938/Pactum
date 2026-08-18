@@ -9,7 +9,8 @@ function collectAddresses(value: unknown, result: Set<string>): void {
   } else if (Array.isArray(value)) {
     for (const item of value) collectAddresses(item, result);
   } else if (value && typeof value === 'object') {
-    for (const item of Object.values(value as Record<string, unknown>)) collectAddresses(item, result);
+    for (const item of Object.values(value as Record<string, unknown>))
+      collectAddresses(item, result);
   }
 }
 
@@ -23,6 +24,8 @@ export class ReputationCacheProjector {
   constructor(private readonly cache: ReputationCache) {}
 
   async ledgerCommitted(ledger: LedgerSnapshot): Promise<void> {
-    await Promise.all(affectedReputationAddresses(ledger).map((address) => this.cache.refresh(address)));
+    await Promise.all(
+      affectedReputationAddresses(ledger).map((address) => this.cache.refresh(address)),
+    );
   }
 }

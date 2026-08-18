@@ -10,8 +10,8 @@ const MAX_HISTORY_DAYS = 365;
 
 // Zod schema for validating the export certificate request
 const exportCertificateSchema = z.object({
-  did: z.string().min(1, "DID is required"),
-  trustScore: z.number().min(0).max(100, "Trust score must be between 0 and 100")
+  did: z.string().min(1, 'DID is required'),
+  trustScore: z.number().min(0).max(100, 'Trust score must be between 0 and 100'),
 });
 
 const validateExportRequest = (req: Request, res: Response, next: NextFunction): void => {
@@ -21,7 +21,7 @@ const validateExportRequest = (req: Request, res: Response, next: NextFunction):
     next();
   } catch (error) {
     if (error instanceof ZodError) {
-      const formattedErrors = error.errors.map(err => ({
+      const formattedErrors = error.errors.map((err) => ({
         field: err.path.join('.'),
         message: err.message,
       }));
@@ -40,24 +40,28 @@ export function createReputationRouter(cache: ReputationCache): Router {
   const router = Router();
 
   // POST /export/certificate - Exports a Reputation Certificate (VC)
-  router.post('/export/certificate', validateExportRequest, async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { did, trustScore } = req.body;
+  router.post(
+    '/export/certificate',
+    validateExportRequest,
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { did, trustScore } = req.body;
 
-      // Generate the Verifiable Credential using our KMS-backed service
-      const token = await CertificateService.generateReputationCertificate(did, trustScore);
+        // Generate the Verifiable Credential using our KMS-backed service
+        const token = await CertificateService.generateReputationCertificate(did, trustScore);
 
-      res.status(200).json({
-        message: 'Certificate generated successfully',
-        certificate: token
-      });
-    } catch (error) {
-      console.error('Error generating certificate:', error);
-      res.status(500).json({
-        error: 'Internal Server Error'
-      });
-    }
-  });
+        res.status(200).json({
+          message: 'Certificate generated successfully',
+          certificate: token,
+        });
+      } catch (error) {
+        console.error('Error generating certificate:', error);
+        res.status(500).json({
+          error: 'Internal Server Error',
+        });
+      }
+    },
+  );
 
   router.get('/:address', async (req: Request, res: Response) => {
     const rawAddress = req.params.address;

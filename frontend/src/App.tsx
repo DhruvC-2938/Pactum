@@ -1,17 +1,16 @@
+import { useState, useEffect } from 'react';
 
-import { useState, useEffect } from 'react'
-
-import './App.css'
-import LandingPage from './components/LandingPage'
-import DocsPage from './components/DocsPage'
-import CreateCommitmentWizard from './components/CreateCommitmentWizard'
-import ReputationDashboard from './components/ReputationDashboard'
-import FreighterInstallModal from './components/FreighterInstallModal'
-import WalletConnectButton from './components/WalletConnectButton'
-import { useCommitments } from './hooks/useCommitments'
-import type { Commitment, CommitmentStatus } from './lib/api'
-import { useWallet } from './context/WalletContext'
-import { Menu, X, User } from 'lucide-react'
+import './App.css';
+import LandingPage from './components/LandingPage';
+import DocsPage from './components/DocsPage';
+import CreateCommitmentWizard from './components/CreateCommitmentWizard';
+import ReputationDashboard from './components/ReputationDashboard';
+import FreighterInstallModal from './components/FreighterInstallModal';
+import WalletConnectButton from './components/WalletConnectButton';
+import { useCommitments } from './hooks/useCommitments';
+import type { Commitment, CommitmentStatus } from './lib/api';
+import { useWallet } from './context/WalletContext';
+import { Menu, X, User } from 'lucide-react';
 
 function renderCommitmentItem(commitment: Commitment) {
   return (
@@ -24,7 +23,9 @@ function renderCommitmentItem(commitment: Commitment) {
         <div className="commitment-parties">
           {commitment.issuer} &rarr; {commitment.counterparty}
         </div>
-        <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
+        <div className="commitment-due">
+          {new Date(commitment.due_at * 1000).toLocaleDateString()}
+        </div>
       </div>
       <div className="commitment-status">
         <span className={`badge ${commitment.status.toLowerCase()}`}>
@@ -33,7 +34,7 @@ function renderCommitmentItem(commitment: Commitment) {
         </span>
       </div>
     </div>
-  )
+  );
 }
 
 function InlineWalletError() {
@@ -44,10 +45,11 @@ function InlineWalletError() {
 }
 
 export default function App() {
-
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
-  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C');
+  const [reputationAddress, setReputationAddress] = useState(
+    'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
+  );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
@@ -87,25 +89,31 @@ export default function App() {
   }, []);
 
   if (activePage === 'landing') {
-    return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />;
+    return (
+      <LandingPage
+        onLaunchApp={() => setActivePage('dashboard')}
+        onOpenDocs={() => setActivePage('docs')}
+      />
+    );
   }
 
   if (activePage === 'docs') {
-    return <DocsPage onBack={() => setActivePage('landing')} onLaunchApp={() => setActivePage('dashboard')} />;
+    return (
+      <DocsPage
+        onBack={() => setActivePage('landing')}
+        onLaunchApp={() => setActivePage('dashboard')}
+      />
+    );
   }
 
   return (
     <>
       {/* Mobile Drawer Backdrop Overlay */}
       {isMobileMenuOpen && (
-        <div
-          className="mobile-backdrop"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
+        <div className="mobile-backdrop" onClick={() => setIsMobileMenuOpen(false)} />
       )}
 
       <div className="app-shell">
-
         {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
         <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
           <div
@@ -140,7 +148,14 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <rect x="1" y="1" width="6" height="6" rx="1.5" />
                   <rect x="9" y="1" width="6" height="6" rx="1.5" />
                   <rect x="1" y="9" width="6" height="6" rx="1.5" />
@@ -159,12 +174,21 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M2 4h12M2 8h12M2 12h8" />
                 </svg>
               </span>
               Commitments
-              <span className="nav-badge" id="badge-commitments">4</span>
+              <span className="nav-badge" id="badge-commitments">
+                4
+              </span>
             </button>
 
             <span className="nav-section-label">Actions</span>
@@ -178,7 +202,13 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                >
                   <path d="M8 2v12M2 8h12" />
                 </svg>
               </span>
@@ -194,7 +224,14 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M2.5 8.5l3.5 3.5 7.5-7.5" />
                 </svg>
               </span>
@@ -210,7 +247,14 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M8 2L1 14h14L8 2z" />
                   <path d="M8 6v4M8 11.5v.5" />
                 </svg>
@@ -227,7 +271,14 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <circle cx="8" cy="8" r="6" />
                   <path d="M5 8l2 2 4-4" />
                 </svg>
@@ -237,11 +288,7 @@ export default function App() {
 
             <span className="nav-section-label">Lookup & Profile</span>
 
-            <button
-              className="nav-item"
-              id="nav-my-profile"
-              onClick={handleMyProfile}
-            >
+            <button className="nav-item" id="nav-my-profile" onClick={handleMyProfile}>
               <span className="nav-icon">
                 <User size={16} />
               </span>
@@ -257,7 +304,14 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <circle cx="8" cy="5" r="3" />
                   <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6" />
                 </svg>
@@ -274,7 +328,13 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                >
                   <circle cx="6.5" cy="6.5" r="4.5" />
                   <path d="M14 14l-3-3" />
                 </svg>
@@ -293,7 +353,14 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M3 2.5h10a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9.5a1 1 0 0 1 1-1z" />
                   <path d="M5 5.5h6M5 8.5h6M5 11.5h4" />
                 </svg>
@@ -310,7 +377,14 @@ export default function App() {
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <circle cx="8" cy="8" r="2.5" />
                   <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.54 11.54l1.41 1.41M3.05 12.95l1.42-1.42M11.54 4.46l1.41-1.41" />
                 </svg>
@@ -322,14 +396,26 @@ export default function App() {
           <div className="sidebar-footer">
             <button
               className="nav-item"
-              style={{ width: '100%', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}
+              style={{
+                width: '100%',
+                marginBottom: '8px',
+                color: 'var(--text-secondary)',
+                fontSize: '13px',
+              }}
               onClick={() => {
                 setActivePage('landing');
                 setIsMobileMenuOpen(false);
               }}
             >
               <span className="nav-icon">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M1 6.5L8 1l7 5.5V14a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6.5z" />
                 </svg>
               </span>
@@ -343,12 +429,13 @@ export default function App() {
           </div>
         </aside>
 
-
         {/* ── Main Content ── */}
         <main className="main-content">
-
           {/* Topbar */}
-          <header className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <header
+            className="topbar"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               {/* Mobile Hamburger Toggle Button */}
               <button
@@ -375,7 +462,7 @@ export default function App() {
                   color: '#475569',
                   cursor: 'pointer',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                  transition: 'all 0.15s ease'
+                  transition: 'all 0.15s ease',
                 }}
                 title="Back to Landing Page"
               >
@@ -383,19 +470,37 @@ export default function App() {
               </button>
 
               <span className="topbar-title" id="topbar-title" style={{ margin: 0 }}>
-                {activePage === 'reputation' ? 'Reputation Lookup' :
-                  activePage === 'commitments' ? 'Commitments' :
-                    activePage === 'create' ? 'Create Commitment' :
-                      activePage === 'attest' ? 'Attest' :
-                        activePage === 'dispute' ? 'Raise Dispute' :
-                          activePage === 'resolve' ? 'Resolve Dispute' :
-                            activePage === 'lookup' ? 'Get Commitment' :
-                              activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
+                {activePage === 'reputation'
+                  ? 'Reputation Lookup'
+                  : activePage === 'commitments'
+                    ? 'Commitments'
+                    : activePage === 'create'
+                      ? 'Create Commitment'
+                      : activePage === 'attest'
+                        ? 'Attest'
+                        : activePage === 'dispute'
+                          ? 'Raise Dispute'
+                          : activePage === 'resolve'
+                            ? 'Resolve Dispute'
+                            : activePage === 'lookup'
+                              ? 'Get Commitment'
+                              : activePage === 'initialize'
+                                ? 'Initialize'
+                                : 'Dashboard'}
               </span>
             </div>
-            <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div
+              className="topbar-actions"
+              style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+            >
               <div className="search-bar">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
                   <circle cx="6.5" cy="6.5" r="4.5" />
                   <path d="M14 14l-3-3" />
                 </svg>
@@ -406,7 +511,13 @@ export default function App() {
               <WalletConnectButton variant="light" />
 
               <button className="btn btn-primary btn-sm" onClick={() => setActivePage('create')}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
                   <path d="M8 2v12M2 8h12" />
                 </svg>
                 <span className="btn-text">New</span>
@@ -423,14 +534,24 @@ export default function App() {
           {/* ──────────────────────────────────────────────
          PAGE: Dashboard
          ────────────────────────────────────────────── */}
-          <section className={`page ${activePage === 'dashboard' ? 'active' : ''}`} id="page-dashboard">
+          <section
+            className={`page ${activePage === 'dashboard' ? 'active' : ''}`}
+            id="page-dashboard"
+          >
             <div className="section-header">
               <div>
                 <div className="section-title">Overview</div>
                 <div className="section-sub">Your commitment registry at a glance</div>
               </div>
-              <button className="btn btn-secondary btn-sm" onClick={() => { }}>
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <button className="btn btn-secondary btn-sm" onClick={() => {}}>
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M13.7 6A6 6 0 1 0 12 12" />
                   <path d="M14 2v4h-4" />
                 </svg>
@@ -441,22 +562,30 @@ export default function App() {
             <div className="stats-grid">
               <div className="stat-card">
                 <div className="stat-label">Total Commitments</div>
-                <div className="stat-value" id="stat-total">4</div>
+                <div className="stat-value" id="stat-total">
+                  4
+                </div>
                 <div className="stat-change">On Stellar Testnet</div>
               </div>
               <div className="stat-card">
                 <div className="stat-label">Fulfilled</div>
-                <div className="stat-value green" id="stat-fulfilled">2</div>
+                <div className="stat-value green" id="stat-fulfilled">
+                  2
+                </div>
                 <div className="stat-change">Kept on time</div>
               </div>
               <div className="stat-card">
                 <div className="stat-label">Pending</div>
-                <div className="stat-value" id="stat-pending" style={{ color: "var(--gray)" }}>1</div>
+                <div className="stat-value" id="stat-pending" style={{ color: 'var(--gray)' }}>
+                  1
+                </div>
                 <div className="stat-change">Awaiting attestation</div>
               </div>
               <div className="stat-card">
                 <div className="stat-label">Breached</div>
-                <div className="stat-value red" id="stat-breached">1</div>
+                <div className="stat-value red" id="stat-breached">
+                  1
+                </div>
                 <div className="stat-change">Not fulfilled</div>
               </div>
             </div>
@@ -466,43 +595,69 @@ export default function App() {
               <div className="card">
                 <div className="card-header">
                   <div className="card-title">Recent Commitments</div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { }}>View All</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => {}}>
+                    View All
+                  </button>
                 </div>
                 <div className="card-body" style={{ padding: 0 }}>
-                  <div className="commitment-list h-[340px] overflow-auto" style={{ padding: '16px' }}>
+                  <div
+                    className="commitment-list h-[340px] overflow-auto"
+                    style={{ padding: '16px' }}
+                  >
                     <div className="commitment-item">
-                      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>G</div>
+                      <div
+                        className="commitment-avatar"
+                        style={{ background: '#e8e4f3', color: '#5b4d8a' }}
+                      >
+                        G
+                      </div>
                       <div className="commitment-info">
                         <div className="commitment-id">Commitment #4</div>
                         <div className="commitment-parties">GCJUKU...A6V4 &rarr; GB4UFB...HHZX</div>
                         <div className="commitment-due">Due in 8d</div>
                       </div>
                       <div className="commitment-status">
-                        <span className="badge pending"><span className="badge-dot"></span>Pending</span>
+                        <span className="badge pending">
+                          <span className="badge-dot"></span>Pending
+                        </span>
                       </div>
                     </div>
 
                     <div className="commitment-item">
-                      <div className="commitment-avatar" style={{ background: '#dde8f5', color: '#3060a0' }}>G</div>
+                      <div
+                        className="commitment-avatar"
+                        style={{ background: '#dde8f5', color: '#3060a0' }}
+                      >
+                        G
+                      </div>
                       <div className="commitment-info">
                         <div className="commitment-id">Commitment #3</div>
                         <div className="commitment-parties">GB4UFB...HHZX &rarr; GAJKUM...7S4C</div>
                         <div className="commitment-due">Due 2d ago</div>
                       </div>
                       <div className="commitment-status">
-                        <span className="badge fulfilled"><span className="badge-dot"></span>Fulfilled</span>
+                        <span className="badge fulfilled">
+                          <span className="badge-dot"></span>Fulfilled
+                        </span>
                       </div>
                     </div>
 
                     <div className="commitment-item">
-                      <div className="commitment-avatar" style={{ background: '#fae8dc', color: '#a0522d' }}>G</div>
+                      <div
+                        className="commitment-avatar"
+                        style={{ background: '#fae8dc', color: '#a0522d' }}
+                      >
+                        G
+                      </div>
                       <div className="commitment-info">
                         <div className="commitment-id">Commitment #2</div>
                         <div className="commitment-parties">GAJKUM...7S4C &rarr; GCJUKU...A6V4</div>
                         <div className="commitment-due">Due Jul 26</div>
                       </div>
                       <div className="commitment-status">
-                        <span className="badge breached"><span className="badge-dot"></span>Breached</span>
+                        <span className="badge breached">
+                          <span className="badge-dot"></span>Breached
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -510,7 +665,7 @@ export default function App() {
               </div>
 
               {/* Side Panel */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {/* Contract Info */}
                 <div className="card">
                   <div className="card-header">
@@ -520,7 +675,7 @@ export default function App() {
                       Deployed
                     </span>
                   </div>
-                  <div className="card-body" style={{ paddingTop: "14px" }}>
+                  <div className="card-body" style={{ paddingTop: '14px' }}>
                     <div className="detail-panel">
                       <div className="detail-row">
                         <span className="detail-key">Network</span>
@@ -528,16 +683,33 @@ export default function App() {
                       </div>
                       <div className="detail-row">
                         <span className="detail-key">Contract ID</span>
-                        <span className="detail-val mono" style={{ fontSize: "11px", wordBreak: "break-all" }}>CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E</span>
+                        <span
+                          className="detail-val mono"
+                          style={{ fontSize: '11px', wordBreak: 'break-all' }}
+                        >
+                          CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E
+                        </span>
                       </div>
                       <div className="detail-row">
                         <span className="detail-key">Dispute Window</span>
                         <span className="detail-val">7 days</span>
                       </div>
                     </div>
-                    <a href="https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E"
-                      target="_blank" rel="noopener" className="btn btn-secondary btn-sm btn-full" style={{ marginTop: "12px" }}>
-                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <a
+                      href="https://stellar.expert/explorer/testnet/contract/CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E"
+                      target="_blank"
+                      rel="noopener"
+                      className="btn btn-secondary btn-sm btn-full"
+                      style={{ marginTop: '12px' }}
+                    >
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-4" />
                         <path d="M14 2H9m5 0v5M8 8l6-6" />
                       </svg>
@@ -551,11 +723,17 @@ export default function App() {
                   <div className="card-header">
                     <div className="card-title">Recent Activity</div>
                   </div>
-                  <div className="card-body" style={{ paddingTop: "14px" }}>
+                  <div className="card-body" style={{ paddingTop: '14px' }}>
                     <div className="timeline">
                       <div className="timeline-item">
                         <div className="timeline-dot-wrap">
-                          <div className="timeline-dot" style={{ background: "var(--green)", boxShadow: "0 0 0 2px rgba(52,199,89,0.2)" }}></div>
+                          <div
+                            className="timeline-dot"
+                            style={{
+                              background: 'var(--green)',
+                              boxShadow: '0 0 0 2px rgba(52,199,89,0.2)',
+                            }}
+                          ></div>
                           <div className="timeline-line"></div>
                         </div>
                         <div className="timeline-body">
@@ -565,7 +743,13 @@ export default function App() {
                       </div>
                       <div className="timeline-item">
                         <div className="timeline-dot-wrap">
-                          <div className="timeline-dot" style={{ background: "var(--accent)", boxShadow: "0 0 0 2px rgba(0,113,227,0.2)" }}></div>
+                          <div
+                            className="timeline-dot"
+                            style={{
+                              background: 'var(--accent)',
+                              boxShadow: '0 0 0 2px rgba(0,113,227,0.2)',
+                            }}
+                          ></div>
                           <div className="timeline-line"></div>
                         </div>
                         <div className="timeline-body">
@@ -575,7 +759,13 @@ export default function App() {
                       </div>
                       <div className="timeline-item">
                         <div className="timeline-dot-wrap">
-                          <div className="timeline-dot" style={{ background: "var(--red)", boxShadow: "0 0 0 2px rgba(255,59,48,0.2)" }}></div>
+                          <div
+                            className="timeline-dot"
+                            style={{
+                              background: 'var(--red)',
+                              boxShadow: '0 0 0 2px rgba(255,59,48,0.2)',
+                            }}
+                          ></div>
                           <div className="timeline-line"></div>
                         </div>
                         <div className="timeline-body">
@@ -599,17 +789,19 @@ export default function App() {
             </div>
           </section>
 
-
           {/* ──────────────────────────────────────────────
          PAGE: Commitments List
          ────────────────────────────────────────────── */}
-          <section className={`page ${activePage === 'commitments' ? 'active' : ''}`} id="page-commitments">
+          <section
+            className={`page ${activePage === 'commitments' ? 'active' : ''}`}
+            id="page-commitments"
+          >
             <div className="section-header">
               <div>
                 <div className="section-title">Commitments</div>
                 <div className="section-sub">All registered commitments on the registry</div>
               </div>
-              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <div className="tabs" id="filter-tabs">
                   {[
                     { label: 'All', value: undefined as CommitmentStatus | undefined },
@@ -626,8 +818,14 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <button className="btn btn-primary btn-sm" onClick={() => { }}>
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <button className="btn btn-primary btn-sm" onClick={() => {}}>
+                  <svg
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  >
                     <path d="M8 2v12M2 8h12" />
                   </svg>
                   Create
@@ -639,12 +837,13 @@ export default function App() {
                 <div className="inline-alert info">Loading commitments...</div>
               )}
               {commitmentsQuery.isError && (
-                <div className="inline-alert warning">Failed to load commitments from the backend.</div>
+                <div className="inline-alert warning">
+                  Failed to load commitments from the backend.
+                </div>
               )}
               {commitmentsQuery.data?.map(renderCommitmentItem)}
             </div>
           </section>
-
 
           {/* ──────────────────────────────────────────────
          PAGE: Create Commitment
@@ -653,13 +852,16 @@ export default function App() {
             <div className="section-header">
               <div>
                 <div className="section-title">Create Commitment</div>
-                <div className="section-sub">Register a new on-chain promise between two parties</div>
+                <div className="section-sub">
+                  Register a new on-chain promise between two parties
+                </div>
               </div>
             </div>
 
-            <CreateCommitmentWizard onSubmit={(payload) => console.log('commitment payload', payload)} />
+            <CreateCommitmentWizard
+              onSubmit={(payload) => console.log('commitment payload', payload)}
+            />
           </section>
-
 
           {/* ──────────────────────────────────────────────
          PAGE: Attest
@@ -668,7 +870,9 @@ export default function App() {
             <div className="section-header">
               <div>
                 <div className="section-title">Attest Commitment</div>
-                <div className="section-sub">Record the outcome of a commitment after its due date</div>
+                <div className="section-sub">
+                  Record the outcome of a commitment after its due date
+                </div>
               </div>
             </div>
 
@@ -679,37 +883,67 @@ export default function App() {
                 </div>
                 <div className="card-body">
                   <div className="inline-alert warning">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 2L1 14h14L8 2z" /><path d="M8 6v4M8 11.5v.5" />
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M8 2L1 14h14L8 2z" />
+                      <path d="M8 6v4M8 11.5v.5" />
                     </svg>
-                    Only the issuer or counterparty may attest. You have 7 days after attestation to raise a dispute.
+                    Only the issuer or counterparty may attest. You have 7 days after attestation to
+                    raise a dispute.
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="attest-caller">Your Address (Caller)</label>
-                    <input type="text" className="form-input" id="attest-caller"
-                      placeholder="G..." autoComplete="off" spellCheck="false" />
-                    <div className="form-hint">Must be the issuer or counterparty of this commitment.</div>
+                    <label className="form-label" htmlFor="attest-caller">
+                      Your Address (Caller)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      id="attest-caller"
+                      placeholder="G..."
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
+                    <div className="form-hint">
+                      Must be the issuer or counterparty of this commitment.
+                    </div>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="attest-id">Commitment ID</label>
-                    <input type="number" className="form-input" id="attest-id"
-                      placeholder="1" min="1" />
+                    <label className="form-label" htmlFor="attest-id">
+                      Commitment ID
+                    </label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      id="attest-id"
+                      placeholder="1"
+                      min="1"
+                    />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="attest-outcome">Outcome</label>
+                    <label className="form-label" htmlFor="attest-outcome">
+                      Outcome
+                    </label>
                     <select className="form-select" id="attest-outcome">
                       <option value="">Select outcome...</option>
                       <option value="Fulfilled">Fulfilled — Delivered on time</option>
                       <option value="Late">Late — Delivered after due date</option>
                       <option value="Breached">Breached — Not delivered</option>
                     </select>
-                    <div className="form-hint">This is permanent and cannot be changed unless disputed.</div>
+                    <div className="form-hint">
+                      This is permanent and cannot be changed unless disputed.
+                    </div>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-attest" onClick={() => { }}>
+                  <button className="btn btn-primary btn-full" id="btn-attest" onClick={() => {}}>
                     <div className="spinner"></div>
                     <span className="btn-text">Submit Attestation</span>
                   </button>
@@ -721,26 +955,48 @@ export default function App() {
                 <div className="card-header">
                   <div className="card-title">Outcome Guide</div>
                 </div>
-                <div className="card-body" style={{ paddingTop: "14px" }}>
+                <div className="card-body" style={{ paddingTop: '14px' }}>
                   <div className="detail-panel">
-                    <div className="detail-row" style={{ flexDirection: "column", gap: "6px" }}>
-                      <span className="badge fulfilled" style={{ alignSelf: "flex-start" }}><span className="badge-dot"></span>Fulfilled</span>
-                      <span className="detail-val" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>The commitment was completed successfully and on time. Boosts the issuer's reputation score.</span>
+                    <div className="detail-row" style={{ flexDirection: 'column', gap: '6px' }}>
+                      <span className="badge fulfilled" style={{ alignSelf: 'flex-start' }}>
+                        <span className="badge-dot"></span>Fulfilled
+                      </span>
+                      <span
+                        className="detail-val"
+                        style={{ fontSize: '13px', color: 'var(--text-secondary)' }}
+                      >
+                        The commitment was completed successfully and on time. Boosts the issuer's
+                        reputation score.
+                      </span>
                     </div>
-                    <div className="detail-row" style={{ flexDirection: "column", gap: "6px" }}>
-                      <span className="badge late" style={{ alignSelf: "flex-start" }}><span className="badge-dot"></span>Late</span>
-                      <span className="detail-val" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>The commitment was eventually completed, but after the agreed due date.</span>
+                    <div className="detail-row" style={{ flexDirection: 'column', gap: '6px' }}>
+                      <span className="badge late" style={{ alignSelf: 'flex-start' }}>
+                        <span className="badge-dot"></span>Late
+                      </span>
+                      <span
+                        className="detail-val"
+                        style={{ fontSize: '13px', color: 'var(--text-secondary)' }}
+                      >
+                        The commitment was eventually completed, but after the agreed due date.
+                      </span>
                     </div>
-                    <div className="detail-row" style={{ flexDirection: "column", gap: "6px" }}>
-                      <span className="badge breached" style={{ alignSelf: "flex-start" }}><span className="badge-dot"></span>Breached</span>
-                      <span className="detail-val" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>The commitment was not fulfilled. Negatively impacts the issuer's reputation score.</span>
+                    <div className="detail-row" style={{ flexDirection: 'column', gap: '6px' }}>
+                      <span className="badge breached" style={{ alignSelf: 'flex-start' }}>
+                        <span className="badge-dot"></span>Breached
+                      </span>
+                      <span
+                        className="detail-val"
+                        style={{ fontSize: '13px', color: 'var(--text-secondary)' }}
+                      >
+                        The commitment was not fulfilled. Negatively impacts the issuer's reputation
+                        score.
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </section>
-
 
           {/* ──────────────────────────────────────────────
          PAGE: Dispute
@@ -749,7 +1005,9 @@ export default function App() {
             <div className="section-header">
               <div>
                 <div className="section-title">Raise Dispute</div>
-                <div className="section-sub">Contest an attested outcome within the 7-day dispute window</div>
+                <div className="section-sub">
+                  Contest an attested outcome within the 7-day dispute window
+                </div>
               </div>
             </div>
 
@@ -760,28 +1018,66 @@ export default function App() {
                 </div>
                 <div className="card-body">
                   <div className="inline-alert warning">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 2L1 14h14L8 2z" /><path d="M8 6v4M8 11.5v.5" />
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M8 2L1 14h14L8 2z" />
+                      <path d="M8 6v4M8 11.5v.5" />
                     </svg>
-                    Disputes must be raised within 7 days of the attestation. Once flagged as Disputed, an arbitrator must resolve it.
+                    Disputes must be raised within 7 days of the attestation. Once flagged as
+                    Disputed, an arbitrator must resolve it.
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="dispute-caller">Your Address (Caller)</label>
-                    <input type="text" className="form-input" id="dispute-caller"
-                      placeholder="G..." autoComplete="off" spellCheck="false" />
+                    <label className="form-label" htmlFor="dispute-caller">
+                      Your Address (Caller)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      id="dispute-caller"
+                      placeholder="G..."
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="dispute-id">Commitment ID</label>
-                    <input type="number" className="form-input" id="dispute-id"
-                      placeholder="1" min="1" />
-                    <div className="form-hint">The ID of the commitment whose attestation you wish to contest.</div>
+                    <label className="form-label" htmlFor="dispute-id">
+                      Commitment ID
+                    </label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      id="dispute-id"
+                      placeholder="1"
+                      min="1"
+                    />
+                    <div className="form-hint">
+                      The ID of the commitment whose attestation you wish to contest.
+                    </div>
                   </div>
 
-                  <button className="btn btn-destructive btn-full" id="btn-dispute" onClick={() => { }}>
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 2L1 14h14L8 2z" /><path d="M8 6v4" />
+                  <button
+                    className="btn btn-destructive btn-full"
+                    id="btn-dispute"
+                    onClick={() => {}}
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M8 2L1 14h14L8 2z" />
+                      <path d="M8 6v4" />
                     </svg>
                     <div className="spinner"></div>
                     <span className="btn-text">Raise Dispute</span>
@@ -793,11 +1089,17 @@ export default function App() {
                 <div className="card-header">
                   <div className="card-title">Dispute Process</div>
                 </div>
-                <div className="card-body" style={{ paddingTop: "14px" }}>
+                <div className="card-body" style={{ paddingTop: '14px' }}>
                   <div className="timeline">
                     <div className="timeline-item">
                       <div className="timeline-dot-wrap">
-                        <div className="timeline-dot" style={{ background: "var(--orange)", boxShadow: "0 0 0 2px rgba(255,159,10,0.2)" }}></div>
+                        <div
+                          className="timeline-dot"
+                          style={{
+                            background: 'var(--orange)',
+                            boxShadow: '0 0 0 2px rgba(255,159,10,0.2)',
+                          }}
+                        ></div>
                         <div className="timeline-line"></div>
                       </div>
                       <div className="timeline-body">
@@ -807,7 +1109,13 @@ export default function App() {
                     </div>
                     <div className="timeline-item">
                       <div className="timeline-dot-wrap">
-                        <div className="timeline-dot" style={{ background: "var(--purple)", boxShadow: "0 0 0 2px rgba(175,82,222,0.2)" }}></div>
+                        <div
+                          className="timeline-dot"
+                          style={{
+                            background: 'var(--purple)',
+                            boxShadow: '0 0 0 2px rgba(175,82,222,0.2)',
+                          }}
+                        ></div>
                         <div className="timeline-line"></div>
                       </div>
                       <div className="timeline-body">
@@ -817,7 +1125,13 @@ export default function App() {
                     </div>
                     <div className="timeline-item">
                       <div className="timeline-dot-wrap">
-                        <div className="timeline-dot" style={{ background: "var(--green)", boxShadow: "0 0 0 2px rgba(52,199,89,0.2)" }}></div>
+                        <div
+                          className="timeline-dot"
+                          style={{
+                            background: 'var(--green)',
+                            boxShadow: '0 0 0 2px rgba(52,199,89,0.2)',
+                          }}
+                        ></div>
                       </div>
                       <div className="timeline-body">
                         <div className="timeline-label">Resolution</div>
@@ -829,7 +1143,6 @@ export default function App() {
               </div>
             </div>
           </section>
-
 
           {/* ──────────────────────────────────────────────
          PAGE: Resolve Dispute
@@ -849,26 +1162,52 @@ export default function App() {
                 </div>
                 <div className="card-body">
                   <div className="inline-alert info">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="8" cy="8" r="6" /><path d="M8 6v4M8 11.5v.5" />
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="8" cy="8" r="6" />
+                      <path d="M8 6v4M8 11.5v.5" />
                     </svg>
-                    Only the designated arbitrator address (set at contract initialization) can call this function.
+                    Only the designated arbitrator address (set at contract initialization) can call
+                    this function.
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="resolve-arbitrator">Arbitrator Address</label>
-                    <input type="text" className="form-input" id="resolve-arbitrator"
-                      placeholder="G..." autoComplete="off" spellCheck="false" />
+                    <label className="form-label" htmlFor="resolve-arbitrator">
+                      Arbitrator Address
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      id="resolve-arbitrator"
+                      placeholder="G..."
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="resolve-id">Commitment ID</label>
-                    <input type="number" className="form-input" id="resolve-id"
-                      placeholder="1" min="1" />
+                    <label className="form-label" htmlFor="resolve-id">
+                      Commitment ID
+                    </label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      id="resolve-id"
+                      placeholder="1"
+                      min="1"
+                    />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="resolve-outcome">Final Outcome</label>
+                    <label className="form-label" htmlFor="resolve-outcome">
+                      Final Outcome
+                    </label>
                     <select className="form-select" id="resolve-outcome">
                       <option value="">Select final outcome...</option>
                       <option value="Fulfilled">Fulfilled</option>
@@ -877,7 +1216,7 @@ export default function App() {
                     </select>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-resolve" onClick={() => { }}>
+                  <button className="btn btn-primary btn-full" id="btn-resolve" onClick={() => {}}>
                     <div className="spinner"></div>
                     <span className="btn-text">Submit Resolution</span>
                   </button>
@@ -888,7 +1227,7 @@ export default function App() {
                 <div className="card-header">
                   <div className="card-title">Arbitrator Info</div>
                 </div>
-                <div className="card-body" style={{ paddingTop: "14px" }}>
+                <div className="card-body" style={{ paddingTop: '14px' }}>
                   <div className="detail-panel">
                     <div className="detail-row">
                       <span className="detail-key">Role</span>
@@ -904,36 +1243,45 @@ export default function App() {
                     </div>
                     <div className="detail-row">
                       <span className="detail-key">Finality</span>
-                      <span className="detail-val">Resolution is permanent and cannot be overridden</span>
+                      <span className="detail-val">
+                        Resolution is permanent and cannot be overridden
+                      </span>
                     </div>
                   </div>
-                  <div style={{ marginTop: "14px" }}>
-                    <button className="btn btn-secondary btn-full" onClick={() => { }}>
-                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <div style={{ marginTop: '14px' }}>
+                    <button className="btn btn-secondary btn-full" onClick={() => {}}>
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      >
                         <circle cx="6.5" cy="6.5" r="4.5" />
                         <path d="M14 14l-3-3" />
                       </svg>
                       Fetch Current Arbitrator
                     </button>
-                    <div id="arbitrator-result" style={{ marginTop: "10px" }}></div>
+                    <div id="arbitrator-result" style={{ marginTop: '10px' }}></div>
                   </div>
                 </div>
               </div>
             </div>
           </section>
 
-
           {/* ──────────────────────────────────────────────
          PAGE: Reputation Lookup
          ────────────────────────────────────────────── */}
-          <section className={`page ${activePage === 'reputation' ? 'active' : ''}`} id="page-reputation">
+          <section
+            className={`page ${activePage === 'reputation' ? 'active' : ''}`}
+            id="page-reputation"
+          >
             <ReputationDashboard
               initialAddress={reputationAddress}
               onNavigateAddress={(addr) => handleNavigateReputation(addr)}
               onLaunchCreate={() => setActivePage('create')}
             />
           </section>
-
 
           {/* ──────────────────────────────────────────────
          PAGE: Get Commitment
@@ -942,24 +1290,41 @@ export default function App() {
             <div className="section-header">
               <div>
                 <div className="section-title">Get Commitment</div>
-                <div className="section-sub">Fetch the full details of any commitment by its ID</div>
+                <div className="section-sub">
+                  Fetch the full details of any commitment by its ID
+                </div>
               </div>
             </div>
 
             <div className="two-col">
               <div>
-                <div className="card" style={{ marginBottom: "16px" }}>
+                <div className="card" style={{ marginBottom: '16px' }}>
                   <div className="card-header">
                     <div className="card-title">Commitment ID Lookup</div>
                   </div>
                   <div className="card-body">
                     <div className="form-group">
-                      <label className="form-label" htmlFor="lookup-id">Commitment ID</label>
-                      <input type="number" className="form-input" id="lookup-id" placeholder="e.g. 1" min="1" />
+                      <label className="form-label" htmlFor="lookup-id">
+                        Commitment ID
+                      </label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        id="lookup-id"
+                        placeholder="e.g. 1"
+                        min="1"
+                      />
                     </div>
-                    <div style={{ display: "flex", gap: "10px" }}>
-                      <button className="btn btn-secondary" onClick={() => { }}>Check Overdue</button>
-                      <button className="btn btn-primary" style={{ flex: "1" }} id="btn-lookup" onClick={() => { }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button className="btn btn-secondary" onClick={() => {}}>
+                        Check Overdue
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        style={{ flex: '1' }}
+                        id="btn-lookup"
+                        onClick={() => {}}
+                      >
                         <div className="spinner"></div>
                         <span className="btn-text">Fetch Commitment</span>
                       </button>
@@ -968,16 +1333,20 @@ export default function App() {
                 </div>
 
                 {/* Result */}
-                <div className="card" id="lookup-result-card" style={{ display: "none" }}>
+                <div className="card" id="lookup-result-card" style={{ display: 'none' }}>
                   <div className="card-header">
                     <div className="card-title">Commitment Details</div>
                     <span className="badge" id="lookup-status-badge"></span>
                   </div>
-                  <div className="card-body" style={{ paddingTop: "14px" }}>
+                  <div className="card-body" style={{ paddingTop: '14px' }}>
                     <div className="detail-panel" id="lookup-details"></div>
-                    <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => { }}>Attest This</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => { }}>Dispute This</button>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => {}}>
+                        Attest This
+                      </button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => {}}>
+                        Dispute This
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -988,18 +1357,20 @@ export default function App() {
                 <div className="card-header">
                   <div className="card-title">Sample Commitments</div>
                 </div>
-                <div className="card-body" style={{ paddingTop: "14px" }}>
+                <div className="card-body" style={{ paddingTop: '14px' }}>
                   <div className="commitment-list" id="sample-commitments"></div>
                 </div>
               </div>
             </div>
           </section>
 
-
           {/* ──────────────────────────────────────────────
          PAGE: Initialize
          ────────────────────────────────────────────── */}
-          <section className={`page ${activePage === 'initialize' ? 'active' : ''}`} id="page-initialize">
+          <section
+            className={`page ${activePage === 'initialize' ? 'active' : ''}`}
+            id="page-initialize"
+          >
             <div className="section-header">
               <div>
                 <div className="section-title">Initialize Contract</div>
@@ -1014,20 +1385,40 @@ export default function App() {
                 </div>
                 <div className="card-body">
                   <div className="inline-alert warning">
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 2L1 14h14L8 2z" /><path d="M8 6v4M8 11.5v.5" />
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M8 2L1 14h14L8 2z" />
+                      <path d="M8 6v4M8 11.5v.5" />
                     </svg>
-                    This can only be called once. Once an arbitrator is set it cannot be changed without redeploying the contract.
+                    This can only be called once. Once an arbitrator is set it cannot be changed
+                    without redeploying the contract.
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label" htmlFor="init-arbitrator">Arbitrator Address</label>
-                    <input type="text" className="form-input" id="init-arbitrator"
-                      placeholder="G..." autoComplete="off" spellCheck="false" />
-                    <div className="form-hint">This address will be the sole entity able to resolve disputed commitments. It must authorize this transaction.</div>
+                    <label className="form-label" htmlFor="init-arbitrator">
+                      Arbitrator Address
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      id="init-arbitrator"
+                      placeholder="G..."
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
+                    <div className="form-hint">
+                      This address will be the sole entity able to resolve disputed commitments. It
+                      must authorize this transaction.
+                    </div>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-init" onClick={() => { }}>
+                  <button className="btn btn-primary btn-full" id="btn-init" onClick={() => {}}>
                     <div className="spinner"></div>
                     <span className="btn-text">Initialize Contract</span>
                   </button>
@@ -1038,11 +1429,13 @@ export default function App() {
                 <div className="card-header">
                   <div className="card-title">Contract Status</div>
                 </div>
-                <div className="card-body" style={{ paddingTop: "14px" }}>
+                <div className="card-body" style={{ paddingTop: '14px' }}>
                   <div className="detail-panel">
                     <div className="detail-row">
                       <span className="detail-key">Contract ID</span>
-                      <span className="detail-val mono" style={{ fontSize: "11px" }}>CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E</span>
+                      <span className="detail-val mono" style={{ fontSize: '11px' }}>
+                        CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E
+                      </span>
                     </div>
                     <div className="detail-row">
                       <span className="detail-key">Network</span>
@@ -1050,23 +1443,37 @@ export default function App() {
                     </div>
                     <div className="detail-row">
                       <span className="detail-key">Status</span>
-                      <span className="detail-val"><span className="badge fulfilled"><span className="badge-dot"></span>Already Initialized</span></span>
+                      <span className="detail-val">
+                        <span className="badge fulfilled">
+                          <span className="badge-dot"></span>Already Initialized
+                        </span>
+                      </span>
                     </div>
                   </div>
-                  <button className="btn btn-secondary btn-full" style={{ marginTop: "12px" }} onClick={() => { }}>
-                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <button
+                    className="btn btn-secondary btn-full"
+                    style={{ marginTop: '12px' }}
+                    onClick={() => {}}
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    >
                       <circle cx="6.5" cy="6.5" r="4.5" />
                       <path d="M14 14l-3-3" />
                     </svg>
                     Check Current Arbitrator
                   </button>
-                  <div id="init-arbitrator-result" style={{ marginTop: "10px" }}></div>
+                  <div id="init-arbitrator-result" style={{ marginTop: '10px' }}></div>
                 </div>
               </div>
             </div>
           </section>
-
-        </main></div>
+        </main>
+      </div>
     </>
-  )
+  );
 }
