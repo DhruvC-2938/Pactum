@@ -15,7 +15,7 @@
     "lint:fix": "eslint \"**/*.{ts,tsx,js,jsx}\" --fix --ignore-path .eslintignore",
     "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "format:fix": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",
