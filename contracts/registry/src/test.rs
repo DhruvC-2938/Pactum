@@ -4,7 +4,7 @@ use super::*;
 use crate::commitments::CommitmentStatus;
 use crate::errors::Error;
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{contracttype, Address, BytesN, Env};
 
 fn setup_test() -> (
     Env,
@@ -1056,8 +1056,8 @@ fn test_dispute_requires_auth() {
     let counterparty = Address::generate(&env);
     let resolver = Address::generate(&env);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
-
     let due_at = 2000;
+
     env.mock_all_auths();
     let id = client.create_commitment(
         &issuer,
@@ -1235,19 +1235,18 @@ fn test_reputation_reflects_final_outcome_after_dispute() {
     let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let due_at = 2000;
     let id = client.create_commitment(
         &issuer,
         &counterparty,
-        &terms_hash,
-        &due_at,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &2000,
         &resolver,
         &None,
         &None,
         &Vec::new(&env),
         &0,
     );
+
     // 1. Attest as Breached
     client.attest(&issuer, &id, &CommitmentStatus::Breached);
     let rep1 = client.get_reputation(&issuer);
@@ -1273,15 +1272,13 @@ fn test_reputation_aggregates_multiple_commitments() {
     let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let _terms_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let due_at = 2000;
 
     // Comm 1: Fulfilled (direct)
     let id1 = client.create_commitment(
         &issuer,
         &counterparty,
         &BytesN::from_array(&env, &[1u8; 32]),
-        &due_at,
+        &2000,
         &resolver,
         &None,
         &None,
@@ -1290,28 +1287,28 @@ fn test_reputation_aggregates_multiple_commitments() {
     );
     client.attest(&issuer, &id1, &CommitmentStatus::Fulfilled);
 
-    // Comm 2: Fulfilled initially, disputed, overturned to Late
+    // Comm 2: Late (disputed, resolved as Late)
     let id2 = client.create_commitment(
         &issuer,
         &counterparty,
         &BytesN::from_array(&env, &[2u8; 32]),
-        &due_at,
+        &2000,
         &resolver,
         &None,
         &None,
         &Vec::new(&env),
         &0,
     );
-    client.attest(&issuer, &id2, &CommitmentStatus::Fulfilled);
+    client.attest(&issuer, &id2, &CommitmentStatus::Fulfilled); // Attested as Fulfilled initially
     client.dispute(&counterparty, &id2);
-    client.resolve_dispute(&resolver, &id2, &CommitmentStatus::Late);
+    client.resolve_dispute(&resolver, &id2, &CommitmentStatus::Late); // Overturned to Late
 
     // Comm 3: Breached (direct)
     let id3 = client.create_commitment(
         &issuer,
         &counterparty,
         &BytesN::from_array(&env, &[3u8; 32]),
-        &due_at,
+        &2000,
         &resolver,
         &None,
         &None,
@@ -1325,7 +1322,7 @@ fn test_reputation_aggregates_multiple_commitments() {
         &issuer,
         &counterparty,
         &BytesN::from_array(&env, &[4u8; 32]),
-        &due_at,
+        &2000,
         &resolver,
         &None,
         &None,
@@ -1371,8 +1368,8 @@ fn test_dispute_fails_if_already_resolved() {
     let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let due_at = 2000;
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let due_at = 2000;
     let id = client.create_commitment(
         &issuer,
         &counterparty,
@@ -1400,8 +1397,8 @@ fn test_realistic_sequence() {
     let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let due_at = 2000;
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let due_at = 2000;
     let id = client.create_commitment(
         &issuer,
         &counterparty,
@@ -1670,7 +1667,7 @@ fn test_read_functions_succeed_while_paused() {
         &resolver,
         &None,
         &None,
-        &Vec::new(&env),
+        &soroban_sdk::Vec::new(&env),
         &0,
     );
 
@@ -1890,9 +1887,9 @@ fn test_custom_resolver_delegation() {
     assert_eq!(resolved.status, CommitmentStatus::Breached);
 }
 
-#[soroban_sdk::contracttype]
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LegacyCommitmentV0 {
+struct PreOracleCommitment {
     id: u64,
     issuer: Address,
     counterparty: Address,
@@ -1910,7 +1907,7 @@ fn test_legacy_commitment_storage_migration() {
     // Directly seed a LegacyCommitment in persistent storage (simulating pre-upgrade storage)
     let arbitrator = client.get_arbitrator();
     let legacy_id = 99u64;
-    let legacy_comm = LegacyCommitmentV0 {
+    let legacy_comm = PreOracleCommitment {
         id: legacy_id,
         issuer: issuer.clone(),
         counterparty: counterparty.clone(),
@@ -1944,13 +1941,78 @@ fn test_legacy_commitment_storage_migration() {
     assert_eq!(final_comm.status, CommitmentStatus::Breached);
 }
 
+/// Shape of a record written after milestone support landed but before
+/// attestor-panel voting (`attestors` / `vote_threshold`) was added.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PreAttestorVotingCommitment {
+    id: u64,
+    issuer: Address,
+    counterparty: Address,
+    terms_hash: BytesN<32>,
+    due_at: u64,
+    status: CommitmentStatus,
+    created_at: u64,
+    attested_at: Option<u64>,
+    resolver_address: Address,
+    milestone_count: u32,
+    milestones_attested: u32,
+    late_milestones: u32,
+    oracle: Option<Address>,
+    schema_id: Option<u32>,
+}
+
+#[test]
+fn test_mid_tier_milestone_commitment_migration_preserves_counters() {
+    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+
+    let mid_id = 77u64;
+    let mid_comm = PreAttestorVotingCommitment {
+        id: mid_id,
+        issuer: issuer.clone(),
+        counterparty: counterparty.clone(),
+        terms_hash: BytesN::from_array(&env, &[6u8; 32]),
+        due_at: 2000,
+        status: CommitmentStatus::Pending,
+        created_at: 1000,
+        attested_at: None,
+        resolver_address: resolver.clone(),
+        milestone_count: 3,
+        milestones_attested: 1,
+        late_milestones: 0,
+        oracle: None,
+        schema_id: None,
+    };
+
+    env.as_contract(&client.address, || {
+        env.storage()
+            .persistent()
+            .set(&commitments::DataKey::Commitment(mid_id), &mid_comm);
+    });
+
+    // The real milestone counters must survive migration rather than being
+    // collapsed to a single already-resolved milestone.
+    let migrated = client.get_commitment(&mid_id);
+    assert_eq!(migrated.id, mid_id);
+    assert_eq!(migrated.resolver_address, resolver);
+    assert_eq!(migrated.milestone_count(), 3);
+    assert_eq!(migrated.milestones_attested(), 1);
+    assert_eq!(migrated.late_milestones(), 0);
+    assert!(migrated.attestors.is_empty());
+    assert_eq!(migrated.vote_threshold(), 0);
+
+    // The commitment stays usable: the next milestone can still be attested.
+    client.attest_milestone(&issuer, &mid_id, &1, &CommitmentStatus::Fulfilled);
+    assert_eq!(client.get_commitment(&mid_id).milestones_attested(), 2);
+}
+
 #[test]
 fn test_legacy_commitment_migration_fails_if_uninitialized() {
     // Set up uninitialized contract
     let (env, client, issuer, counterparty, _resolver) = setup_test();
 
     let legacy_id = 101u64;
-    let legacy_comm = LegacyCommitmentV0 {
+    let legacy_comm = PreOracleCommitment {
         id: legacy_id,
         issuer: issuer.clone(),
         counterparty: counterparty.clone(),
@@ -1978,7 +2040,7 @@ fn test_legacy_commitment_migration_fails_if_payload_id_mismatch() {
 
     let storage_key_id = 200u64;
     let payload_id = 999u64; // Inconsistent with storage key
-    let legacy_comm = LegacyCommitmentV0 {
+    let legacy_comm = PreOracleCommitment {
         id: payload_id,
         issuer: issuer.clone(),
         counterparty: counterparty.clone(),
@@ -2028,13 +2090,12 @@ fn test_create_commitment_defaults_to_a_single_milestone() {
     let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
-    let due_at = 2000;
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
     let id = client.create_commitment(
         &issuer,
         &counterparty,
         &terms_hash,
-        &due_at,
+        &2000,
         &resolver,
         &None,
         &None,
@@ -2043,16 +2104,15 @@ fn test_create_commitment_defaults_to_a_single_milestone() {
     );
 
     let commitment = client.get_commitment(&id);
-    assert_eq!(commitment.milestone_count, 1);
+    assert_eq!(commitment.milestone_count(), 1);
 }
 
 #[test]
-fn test_oracle_attest_success() {
+fn test_create_milestone_commitment_rejects_zero_milestones() {
     let (env, client, issuer, counterparty, resolver) = setup_test();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
-    let _due_at = 2000;
 
     let res = client.try_create_milestone_commitment(
         &issuer,
@@ -2099,6 +2159,285 @@ fn test_commitment_stays_pending_until_the_final_milestone() {
     client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
     let commitment = client.get_commitment(&id);
     assert_eq!(commitment.status, CommitmentStatus::Pending);
+    assert_eq!(commitment.milestones_attested(), 1);
+    assert_eq!(commitment.attested_at, None);
+
+    client.attest_milestone(&issuer, &id, &1, &CommitmentStatus::Fulfilled);
+    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Pending);
+
+    client.attest_milestone(&issuer, &id, &2, &CommitmentStatus::Fulfilled);
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+    assert_eq!(commitment.milestones_attested(), 3);
+    assert_eq!(commitment.attested_at, Some(1000));
+}
+
+#[test]
+fn test_create_milestone_commitment_initializes_counters() {
+    let (_env, client, _issuer, _counterparty, id) = setup_milestone_commitment(4);
+
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.milestone_count(), 4);
+    assert_eq!(commitment.milestones_attested(), 0);
+    assert_eq!(commitment.late_milestones(), 0);
+    assert_eq!(commitment.status, CommitmentStatus::Pending);
+}
+
+#[test]
+fn test_commitment_resolves_late_when_any_milestone_is_late() {
+    let (_env, client, issuer, counterparty, id) = setup_milestone_commitment(3);
+
+    client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+    client.attest_milestone(&counterparty, &id, &1, &CommitmentStatus::Late);
+    client.attest_milestone(&issuer, &id, &2, &CommitmentStatus::Fulfilled);
+
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Late);
+    assert_eq!(commitment.late_milestones(), 1);
+    assert_eq!(client.get_reputation(&issuer).late_count, 1);
+    assert_eq!(client.get_reputation(&issuer).fulfilled_count, 0);
+}
+
+#[test]
+fn test_breached_milestone_resolves_the_commitment_immediately() {
+    let (_env, client, issuer, _counterparty, id) = setup_milestone_commitment(4);
+
+    client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+    client.attest_milestone(&issuer, &id, &1, &CommitmentStatus::Breached);
+
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Breached);
+    assert_eq!(commitment.milestones_attested(), 2);
+    assert_eq!(commitment.attested_at, Some(1000));
+    assert_eq!(client.get_reputation(&issuer).breached_count, 1);
+
+    let res = client.try_attest_milestone(&issuer, &id, &2, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::AlreadyResolved.into())));
+}
+
+#[test]
+fn test_attest_walks_milestones_in_order_without_an_index() {
+    let (_env, client, issuer, _counterparty, id) = setup_milestone_commitment(3);
+
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(client.get_commitment(&id).status, CommitmentStatus::Pending);
+
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    assert_eq!(
+        client.get_commitment(&id).status,
+        CommitmentStatus::Fulfilled
+    );
+}
+
+#[test]
+fn test_attest_milestone_rejects_an_out_of_range_index() {
+    let (_env, client, issuer, _counterparty, id) = setup_milestone_commitment(2);
+
+    let res = client.try_attest_milestone(&issuer, &id, &2, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::InvalidMilestoneIndex.into())));
+}
+
+#[test]
+fn test_attest_milestone_rejects_an_already_attested_index() {
+    let (_env, client, issuer, _counterparty, id) = setup_milestone_commitment(3);
+
+    client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+
+    let res = client.try_attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::MilestoneAlreadyAttested.into())));
+}
+
+#[test]
+fn test_attest_milestone_rejects_an_out_of_order_index() {
+    let (_env, client, issuer, _counterparty, id) = setup_milestone_commitment(3);
+
+    let res = client.try_attest_milestone(&issuer, &id, &1, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::MilestoneOutOfOrder.into())));
+}
+
+#[test]
+fn test_attest_milestone_rejects_an_unauthorized_caller() {
+    let (env, client, _issuer, _counterparty, id) = setup_milestone_commitment(2);
+
+    let stranger = Address::generate(&env);
+    let res = client.try_attest_milestone(&stranger, &id, &0, &CommitmentStatus::Fulfilled);
+    assert_eq!(res, Err(Ok(Error::Unauthorized.into())));
+}
+
+#[test]
+fn test_get_milestone_returns_recorded_outcomes() {
+    let (_env, client, issuer, _counterparty, id) = setup_milestone_commitment(3);
+
+    assert_eq!(client.get_milestone(&id, &0), None);
+
+    client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+    client.attest_milestone(&issuer, &id, &1, &CommitmentStatus::Late);
+
+    assert_eq!(
+        client.get_milestone(&id, &0),
+        Some(CommitmentStatus::Fulfilled)
+    );
+    assert_eq!(client.get_milestone(&id, &1), Some(CommitmentStatus::Late));
+    assert_eq!(client.get_milestone(&id, &2), None);
+}
+
+#[test]
+fn test_get_milestone_falls_back_to_legacy_persistent_storage() {
+    let (_env, client, _issuer, _counterparty, id) = setup_milestone_commitment(2);
+
+    // Simulate a milestone outcome written before Milestone records moved
+    // from Persistent to Temporary storage.
+    _env.as_contract(&client.address, || {
+        _env.storage().persistent().set(
+            &commitments::DataKey::Milestone(id, 0),
+            &CommitmentStatus::Fulfilled,
+        );
+    });
+
+    assert_eq!(
+        client.get_milestone(&id, &0),
+        Some(CommitmentStatus::Fulfilled)
+    );
+}
+
+#[test]
+fn test_get_milestone_rejects_an_out_of_range_index() {
+    let (_env, client, _issuer, _counterparty, id) = setup_milestone_commitment(2);
+
+    let res = client.try_get_milestone(&id, &5);
+    assert_eq!(res, Err(Ok(Error::InvalidMilestoneIndex.into())));
+}
+
+#[test]
+fn test_get_milestone_extends_the_milestone_ttl() {
+    use soroban_sdk::testutils::storage::Temporary as _;
+
+    let (env, client, issuer, _counterparty, id) = setup_milestone_commitment(2);
+
+    client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+
+    let key = crate::commitments::DataKey::Milestone(id, 0);
+    let ttl = || env.as_contract(&client.address, || env.storage().temporary().get_ttl(&key));
+
+    // Age the entry past the bump threshold without letting it expire.
+    let aged_by =
+        crate::commitments::TTL_EXTEND_LEDGERS - crate::commitments::TTL_THRESHOLD_LEDGERS + 10_000;
+    env.ledger().with_mut(|l| l.sequence_number += aged_by);
+    assert!(ttl() < crate::commitments::TTL_THRESHOLD_LEDGERS);
+
+    assert_eq!(
+        client.get_milestone(&id, &0),
+        Some(CommitmentStatus::Fulfilled)
+    );
+    assert_eq!(ttl(), crate::commitments::TTL_EXTEND_LEDGERS);
+}
+
+#[test]
+fn test_reputation_counts_a_milestone_commitment_once() {
+    let (_env, client, issuer, _counterparty, id) = setup_milestone_commitment(3);
+
+    client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Fulfilled);
+    client.attest_milestone(&issuer, &id, &1, &CommitmentStatus::Fulfilled);
+    assert_eq!(client.get_reputation(&issuer).fulfilled_count, 0);
+
+    client.attest_milestone(&issuer, &id, &2, &CommitmentStatus::Fulfilled);
+    let reputation = client.get_reputation(&issuer);
+    assert_eq!(reputation.fulfilled_count, 1);
+    assert_eq!(reputation.late_count, 0);
+    assert_eq!(reputation.breached_count, 0);
+}
+
+#[test]
+fn test_milestone_attested_events_emitted() {
+    use soroban_sdk::testutils::Events;
+    use soroban_sdk::{symbol_short, FromVal, IntoVal, Val, Vec};
+
+    let (env, client, issuer, _counterparty, id) = setup_milestone_commitment(2);
+
+    client.attest_milestone(&issuer, &id, &0, &CommitmentStatus::Late);
+
+    let events = env.events().all();
+    assert_eq!(events.len(), 1);
+    let milestone_event = events.get(0).unwrap();
+    let expected_topics: Vec<Val> = (symbol_short!("milestone"), id).into_val(&env);
+    assert_eq!(milestone_event.0, client.address);
+    assert_eq!(milestone_event.1, expected_topics);
+    assert_eq!(
+        <(u32, CommitmentStatus)>::from_val(&env, &milestone_event.2),
+        (0u32, CommitmentStatus::Late)
+    );
+
+    client.attest_milestone(&issuer, &id, &1, &CommitmentStatus::Fulfilled);
+
+    let events = env.events().all();
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        <(u32, CommitmentStatus)>::from_val(&env, &events.get(0).unwrap().2),
+        (1u32, CommitmentStatus::Fulfilled)
+    );
+
+    let attested_event = events.get(1).unwrap();
+    let expected_attested_topics: Vec<Val> = (symbol_short!("attested"), id).into_val(&env);
+    assert_eq!(attested_event.1, expected_attested_topics);
+    assert_eq!(
+        CommitmentStatus::from_val(&env, &attested_event.2),
+        CommitmentStatus::Late
+    );
+}
+
+#[test]
+fn test_single_milestone_commitment_emits_no_milestone_event() {
+    use soroban_sdk::testutils::Events;
+
+    let (env, client, issuer, counterparty, resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &2000,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
+
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+
+    assert_eq!(env.events().all().len(), 1);
+}
+
+#[test]
+fn test_oracle_attest_success() {
+    let (env, client, issuer, counterparty, resolver) = setup_test();
+    let oracle = Address::generate(&env);
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let due_at = 2000;
+
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &due_at,
+        &resolver,
+        &Some(oracle.clone()),
+        &Some(123),
+        &Vec::new(&env),
+        &0,
+    );
+
+    env.ledger().with_mut(|l| l.timestamp = 1500);
+    client.attest(&oracle, &id, &CommitmentStatus::Fulfilled);
+
+    let commitment = client.get_commitment(&id);
+    assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+    assert_eq!(commitment.attested_at, Some(1500));
 }
 
 #[test]
@@ -2214,4 +2553,49 @@ fn test_legacy_attestation_without_oracle() {
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     let commitment = client.get_commitment(&id);
     assert_eq!(commitment.status, CommitmentStatus::Fulfilled);
+}
+
+// -----------------------------------------------------------------------------
+// Gas/storage-footprint benchmark (issue #16)
+// -----------------------------------------------------------------------------
+//
+// Prints the metered CPU instructions and ledger write bytes for
+// `create_commitment` and `attest` under the bitpacked `Commitment.counters`
+// layout. Run with:
+//
+//   cargo test -p registry gas_benchmark -- --nocapture
+#[test]
+fn gas_benchmark_create_and_attest() {
+    extern crate std;
+    use std::println;
+
+    let (env, client, issuer, counterparty, resolver) = setup_test();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &2000,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
+    let create_res = env.cost_estimate().resources();
+    let create_fee = env.cost_estimate().fee();
+    println!(
+        "create_commitment: instructions={} write_bytes={} mem_bytes={} total_fee={}",
+        create_res.instructions, create_res.write_bytes, create_res.mem_bytes, create_fee.total
+    );
+
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    let attest_res = env.cost_estimate().resources();
+    let attest_fee = env.cost_estimate().fee();
+    println!(
+        "attest: instructions={} write_bytes={} mem_bytes={} total_fee={}",
+        attest_res.instructions, attest_res.write_bytes, attest_res.mem_bytes, attest_fee.total
+    );
 }
