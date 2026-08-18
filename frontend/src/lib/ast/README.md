@@ -35,8 +35,15 @@ before anything runs:
 - **Prototype-pollution guard.** Field paths and error paths reject `__proto__`,
   `prototype`, and `constructor`; runtime field reads use own-property access
   only.
-- **ReDoS guard.** Regex patterns are length-capped, `g`/`y` (stateful) flags are
-  rejected, and match input is length-capped.
+- **ReDoS guard.** `match` patterns are statically analyzed at compile time and
+  those prone to *exponential* backtracking are rejected before they can ever run
+  on the synchronous `onChange` path: nested quantifiers (regex "star height" ≥ 2,
+  e.g. `(a+)+$`) and oversized `{n,m}` repetition bounds. Pattern and match-input
+  lengths are also capped, and stateful `g`/`y` flags are rejected. This is a
+  conservative static check — the same core guarantee as the well-known
+  `safe-regex` heuristic — not a formal guarantee for every polynomial case (e.g.
+  overlapping alternation like `(a|a)*`); a hard guarantee would require a
+  linear-time engine (RE2) or a worker with a deadline.
 - **Total runtime.** For ordinary input the evaluator never throws — an
   out-of-range or type-mismatched comparison is simply `false`. Callers
   (`useValidationRules`) fall back to bundled defaults if a download or compile

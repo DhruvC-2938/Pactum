@@ -48,6 +48,8 @@ export const LIMITS = Object.freeze({
   MAX_MESSAGE_LEN: 512,
   /** Maximum length of a regular-expression pattern. */
   MAX_REGEX_LEN: 512,
+  /** Maximum explicit `{n,m}` repetition bound allowed in a regex. */
+  MAX_REGEX_QUANTIFIER: 1000,
   /** Maximum number of segments in a dotted field path. */
   MAX_FIELD_PATH_SEGMENTS: 16,
   /** Inputs longer than this are not matched against a regex (ReDoS guard). */
@@ -234,6 +236,163 @@ interface Budget {
   nodes: number;
 }
 
+/**
+ * Conservative static guard against exponential regex backtracking (ReDoS).
+ *
+ * Length caps alone do **not** prevent catastrophic backtracking — e.g. `(a+)+$`
+ * runs in exponential time on a short, non-matching input while staying well
+ * under both the pattern- and input-length limits, and `RegExp.test` runs
+ * synchronously on the `onChange` hot path. This walks the (already syntactically
+ * valid) pattern and rejects the dominant exponential class: a repetition
+ * quantifier applied to a sub-expression that itself contains a repetition —
+ * i.e. a regex "star height" >= 2. That is the same core guarantee the
+ * well-known `safe-regex` heuristic provides. It also caps explicit `{n,m}`
+ * repetition bounds so a single quantifier cannot request unbounded work.
+ *
+ * This is deliberately conservative, not a formal guarantee: it targets the
+ * severe, most common nested-quantifier blowups, not every possible polynomial
+ * case (e.g. overlapping alternation such as `(a|a)*`, which `safe-regex` also
+ * misses). Combined with the pattern/input length caps and the fact that rule
+ * sets are governance-controlled, it removes the practical ReDoS risk. Callers
+ * that need a hard guarantee should move matching to a linear-time engine (RE2)
+ * or a worker with a deadline.
+ */
+function assertSafeRegexPattern(pattern: string, path: string): void {
+  const n = pattern.length;
+  let i = 0;
+
+  const consumeLazy = (): void => {
+    // A trailing `?` makes a quantifier lazy; it changes match order, not the
+    // backtracking blowup, so treat it identically.
+    if (i < n && pattern[i] === '?') i += 1;
+  };
+
+  // Attempts to consume a `{n}` / `{n,}` / `{n,m}` quantifier at `i`. Returns
+  // whether it repeats the atom >= 2 times, or null if `{` is a literal here.
+  const tryBraceQuantifier = (): { repeats: boolean } | null => {
+    let j = i + 1;
+    let minStr = '';
+    while (j < n && pattern[j] >= '0' && pattern[j] <= '9') minStr += pattern[j++];
+    if (minStr === '') return null; // not a quantifier — `{` is a literal
+    let hasComma = false;
+    let maxStr = '';
+    if (j < n && pattern[j] === ',') {
+      hasComma = true;
+      j += 1;
+      while (j < n && pattern[j] >= '0' && pattern[j] <= '9') maxStr += pattern[j++];
+    }
+    if (j >= n || pattern[j] !== '}') return null; // not a valid quantifier
+    const min = Number(minStr);
+    const max = hasComma ? (maxStr === '' ? Infinity : Number(maxStr)) : min;
+    if (min > LIMITS.MAX_REGEX_QUANTIFIER || (Number.isFinite(max) && max > LIMITS.MAX_REGEX_QUANTIFIER)) {
+      throw new AstValidationError('regex repetition bound is too large', path);
+    }
+    i = j + 1; // consume through `}`
+    return { repeats: !Number.isFinite(max) || max >= 2 };
+  };
+
+  const skipCharClass = (): void => {
+    i += 1; // consume `[`
+    if (i < n && pattern[i] === '^') i += 1;
+    if (i < n && pattern[i] === ']') i += 1; // a leading `]` is a literal
+    while (i < n && pattern[i] !== ']') {
+      i += pattern[i] === '\\' ? 2 : 1;
+    }
+    if (i < n) i += 1; // consume closing `]`
+  };
+
+  const skipGroupPrefix = (): void => {
+    if (i < n && pattern[i] === '?') {
+      i += 1;
+      const c = pattern[i];
+      if (c === ':' || c === '=' || c === '!') {
+        i += 1;
+      } else if (c === '<') {
+        i += 1;
+        if (pattern[i] === '=' || pattern[i] === '!') {
+          i += 1; // lookbehind
+        } else {
+          while (i < n && pattern[i] !== '>') i += 1; // named group (?<name>…)
+          if (i < n) i += 1;
+        }
+      }
+    }
+  };
+
+  // Each of these returns the star height of the sub-expression it consumes.
+  const parseAtom = (): number => {
+    const c = pattern[i];
+    if (c === '\\') {
+      i += 2; // escape: the pattern is valid, so a following char exists
+      return 0;
+    }
+    if (c === '[') {
+      skipCharClass();
+      return 0;
+    }
+    if (c === '(') {
+      i += 1;
+      skipGroupPrefix();
+      const h = parseAlternation();
+      if (i < n && pattern[i] === ')') i += 1;
+      return h; // a group by itself does not raise star height
+    }
+    i += 1; // any other single char (literal, `.`, `^`, `$`, or a literal `{`)
+    return 0;
+  };
+
+  const parseQuantified = (): number => {
+    const atomHeight = parseAtom();
+    if (i < n) {
+      const c = pattern[i];
+      if (c === '*' || c === '+') {
+        i += 1;
+        consumeLazy();
+        return atomHeight + 1;
+      }
+      if (c === '?') {
+        i += 1;
+        consumeLazy();
+        return atomHeight; // 0-or-1 is not a repetition
+      }
+      if (c === '{') {
+        const q = tryBraceQuantifier();
+        if (q) {
+          consumeLazy();
+          return q.repeats ? atomHeight + 1 : atomHeight;
+        }
+      }
+    }
+    return atomHeight;
+  };
+
+  function parseConcatenation(): number {
+    let height = 0;
+    while (i < n && pattern[i] !== '|' && pattern[i] !== ')') {
+      height = Math.max(height, parseQuantified());
+    }
+    return height;
+  }
+
+  function parseAlternation(): number {
+    let height = parseConcatenation();
+    while (i < n && pattern[i] === '|') {
+      i += 1;
+      height = Math.max(height, parseConcatenation());
+    }
+    return height;
+  }
+
+  const starHeight = parseAlternation();
+  if (starHeight >= 2) {
+    throw new AstValidationError(
+      'regex may be vulnerable to catastrophic backtracking (nested quantifiers)',
+      path,
+    );
+  }
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Expression compiler (validate + compile-to-closures)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -387,6 +546,9 @@ function compileExpr(node: unknown, path: string, depth: number, budget: Budget)
           `${path}.pattern`,
         );
       }
+      // Length caps alone do not stop catastrophic backtracking; reject
+      // exponential-backtracking patterns before they can run on the hot path.
+      assertSafeRegexPattern(pattern, `${path}.pattern`);
       const value = compileExpr(node.value, `${path}.value`, childDepth, budget);
       return (ctx) => {
         const s = stringify(value(ctx));
