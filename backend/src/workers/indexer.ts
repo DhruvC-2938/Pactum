@@ -1,4 +1,5 @@
 import { rpc } from '@stellar/stellar-sdk';
+import { parseLedgerEvents } from '../indexer/events';
 import { createRedisClientFromEnv, ReputationCache } from '../cache/reputationCache';
 import pool from '../db/timescale';
 import { FinalityIndexer } from '../indexer/listener';
@@ -32,7 +33,13 @@ async function run(): Promise<void> {
     store: new PostgresIndexerStore(pool),
     finalityDepth,
     startSequence,
-    onLedgerCommitted: (ledger) => projector.ledgerCommitted(ledger),
+    onLedgerCommitted: async (ledger) => {
+      await projector.ledgerCommitted(ledger);
+      const events = await parseLedgerEvents(ledger);
+      for (const event of events) {
+        redis.publish('pactum:events', JSON.stringify({ ...event, sequence: ledger.sequence }));
+      }
+    },
   });
 
   while (true) {

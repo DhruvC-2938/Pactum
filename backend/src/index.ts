@@ -18,6 +18,8 @@ import { SorobanClient } from './soroban/client';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
 
+import { WebSocketService } from './ws/WebSocketService';
+
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
@@ -49,7 +51,7 @@ client.collectDefaultMetrics({ register });
 // Sets HSTS, X-Content-Type-Options, X-Frame-Options, and related headers on
 // every response to harden the API against common web vulnerabilities.
 // ---------------------------------------------------------------------------
-app.use((_req: Request, res: Response, next: NextFunction): void => {
+app.use((req: Request, res: Response, next: NextFunction): void => {
   // Strict-Transport-Security: enforce HTTPS for 1 year, include subdomains
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   // Prevent MIME-type sniffing
@@ -188,16 +190,19 @@ if (process.env.INDEXER_ENABLED !== 'off') {
 }
 
 let server: ReturnType<typeof app.listen>;
+let wsService: WebSocketService | undefined;
 
 async function init() {
   server = app.listen(port, () => {
     logger.info(`Server running on port ${port}`, { port, metricsPort });
+    wsService = new WebSocketService(server);
   });
 }
 
 init();
 
 export const stop = async () => {
+  wsService?.close();
   server?.close();
 };
 export default app;

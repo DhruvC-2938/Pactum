@@ -11,8 +11,13 @@ import { useCommitments } from './hooks/useCommitments';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
 import { Menu, X, User } from 'lucide-react';
+import { wsClient } from './lib/wsClient';
+import { useStore } from './store/useStore';
 
-function renderCommitmentItem(commitment: Commitment) {
+function CommitmentItem({ commitment }: { commitment: Commitment }) {
+  const realtime = useStore(state => state.getRealtimeCommitment(commitment.id));
+  const status = realtime?.status || commitment.status;
+
   return (
     <div className="commitment-item" key={commitment.id}>
       <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
@@ -28,9 +33,9 @@ function renderCommitmentItem(commitment: Commitment) {
         </div>
       </div>
       <div className="commitment-status">
-        <span className={`badge ${commitment.status.toLowerCase()}`}>
+        <span className={`badge ${status.toLowerCase()}`}>
           <span className="badge-dot"></span>
-          {commitment.status}
+          {status}
         </span>
       </div>
     </div>
@@ -85,7 +90,13 @@ export default function App() {
 
     handleUrlChange();
     window.addEventListener('popstate', handleUrlChange);
-    return () => window.removeEventListener('popstate', handleUrlChange);
+    
+    wsClient.connect();
+    
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      wsClient.disconnect();
+    };
   }, []);
 
   if (activePage === 'landing') {
@@ -826,7 +837,7 @@ export default function App() {
                   Failed to load commitments from the backend.
                 </div>
               )}
-              {commitmentsQuery.data?.map(renderCommitmentItem)}
+              {commitmentsQuery.data?.map(c => <CommitmentItem key={c.id} commitment={c} />)}
             </div>
           </section>
 

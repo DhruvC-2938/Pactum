@@ -80,6 +80,7 @@ function createRateLimiter(options: RateLimiterOptions): RequestHandler {
     sweep(now);
 
     const key = keyGenerator(req);
+    let timestamps = store.get(key) ?? [];
 
     // Prune timestamps outside the current sliding window.
     timestamps = timestamps.filter((ts) => ts > windowStart);
