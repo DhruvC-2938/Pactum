@@ -50,6 +50,8 @@ fn create_and_attest(
         &BytesN::from_array(env, &[terms; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
         &Vec::new(env),
         &0,
     );

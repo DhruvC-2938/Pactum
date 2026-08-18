@@ -18,7 +18,7 @@ function getPool(): Pool | null {
   if (process.env.DATABASE_URL && !poolInstance) {
     poolInstance = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     });
   }
   return poolInstance;
@@ -44,7 +44,10 @@ export async function initializeDLQTable(): Promise<void> {
   try {
     await pool.query(query);
   } catch (error) {
-    console.warn('[DLQ] Warning: Failed to execute CREATE TABLE IF NOT EXISTS for webhook_dlq:', error);
+    console.warn(
+      '[DLQ] Warning: Failed to execute CREATE TABLE IF NOT EXISTS for webhook_dlq:',
+      error,
+    );
   }
 }
 
@@ -55,7 +58,7 @@ export async function saveToDLQ(entry: DLQEntry): Promise<DLQEntry> {
   const record: DLQEntry = {
     ...entry,
     id: entry.id || `dlq_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    failedAt: entry.failedAt || new Date()
+    failedAt: entry.failedAt || new Date(),
   };
 
   // Always retain in fallback store for inspection and testing convenience
@@ -74,12 +77,15 @@ export async function saveToDLQ(entry: DLQEntry): Promise<DLQEntry> {
         JSON.stringify(record.payload),
         record.attempts,
         record.lastError,
-        record.failedAt
+        record.failedAt,
       ]);
       if (res.rows[0]) {
         return {
           ...res.rows[0],
-          payload: typeof res.rows[0].payload === 'string' ? JSON.parse(res.rows[0].payload) : res.rows[0].payload
+          payload:
+            typeof res.rows[0].payload === 'string'
+              ? JSON.parse(res.rows[0].payload)
+              : res.rows[0].payload,
         };
       }
     } catch (error) {
@@ -97,13 +103,18 @@ export async function getDLQEntries(): Promise<DLQEntry[]> {
   const pool = getPool();
   if (pool) {
     try {
-      const res = await pool.query('SELECT id, url, payload, attempts, last_error AS "lastError", failed_at AS "failedAt" FROM webhook_dlq ORDER BY failed_at DESC');
-      return res.rows.map(row => ({
+      const res = await pool.query(
+        'SELECT id, url, payload, attempts, last_error AS "lastError", failed_at AS "failedAt" FROM webhook_dlq ORDER BY failed_at DESC',
+      );
+      return res.rows.map((row) => ({
         ...row,
-        payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload
+        payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
       }));
     } catch (error) {
-      console.warn('[DLQ] Error querying PostgreSQL webhook_dlq table, returning in-memory store:', error);
+      console.warn(
+        '[DLQ] Error querying PostgreSQL webhook_dlq table, returning in-memory store:',
+        error,
+      );
     }
   }
   return [...inMemoryDLQStore];

@@ -125,9 +125,7 @@ export class PostgresIndexerStore implements IndexerStore {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SELECT pg_advisory_xact_lock($1)', [
-        INDEXER_ADVISORY_LOCK_KEY,
-      ]);
+      await client.query('SELECT pg_advisory_xact_lock($1)', [INDEXER_ADVISORY_LOCK_KEY]);
       const checkpointResult = await client.query<{
         sequence: string;
         ledger_hash: string;
@@ -208,24 +206,17 @@ export class PostgresIndexerStore implements IndexerStore {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SELECT pg_advisory_xact_lock($1)', [
-        INDEXER_ADVISORY_LOCK_KEY,
-      ]);
+      await client.query('SELECT pg_advisory_xact_lock($1)', [INDEXER_ADVISORY_LOCK_KEY]);
       await client.query(
         `SELECT sequence
          FROM ${this.checkpointTable}
          WHERE singleton = TRUE
          FOR UPDATE`,
       );
-      await client.query(
-        `DELETE FROM ${this.indexedLedgersTable} WHERE sequence > $1`,
-        [sequence],
-      );
+      await client.query(`DELETE FROM ${this.indexedLedgersTable} WHERE sequence > $1`, [sequence]);
 
       if (sequence <= 0) {
-        await client.query(
-          `DELETE FROM ${this.checkpointTable} WHERE singleton = TRUE`,
-        );
+        await client.query(`DELETE FROM ${this.checkpointTable} WHERE singleton = TRUE`);
       } else {
         const result = await client.query<{ ledger_hash: string }>(
           `SELECT ledger_hash FROM ${this.indexedLedgersTable} WHERE sequence = $1`,

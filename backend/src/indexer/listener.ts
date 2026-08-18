@@ -23,6 +23,7 @@ const indexerLagSeconds = new client.Gauge({
   help: 'Current indexer lag in seconds (difference between latest and finalized sequence)',
 });
 import { InMemoryCursorCache, PostgresCursorCache } from './cache';
+import { CommitmentIndex, indexCommitmentsFromLedger } from './commitments';
 
 // ─── Existing FinalityIndexer (unchanged) ────────────────────────────────────
 
@@ -55,9 +56,7 @@ export class LedgerLinkageError extends Error {
     public readonly expectedPreviousHash: string,
     public readonly receivedPreviousHash: string | null,
   ) {
-    super(
-      `Ledger ${sequence} links to ${receivedPreviousHash}, expected ${expectedPreviousHash}`,
-    );
+    super(`Ledger ${sequence} links to ${receivedPreviousHash}, expected ${expectedPreviousHash}`);
     this.name = 'LedgerLinkageError';
   }
 }
@@ -83,8 +82,7 @@ export class FinalityIndexer {
 
     this.startSequence = options.startSequence ?? 1;
     this.maxBatchSize = options.maxBatchSize ?? 100;
-    this.maxRollbackDepth = options.maxRollbackDepth
-      ?? Math.max(100, options.finalityDepth * 2);
+    this.maxRollbackDepth = options.maxRollbackDepth ?? Math.max(100, options.finalityDepth * 2);
     if (!Number.isInteger(this.startSequence) || this.startSequence < 1) {
       throw new Error('startSequence must be a positive integer');
     }
@@ -98,17 +96,15 @@ export class FinalityIndexer {
 
   async sync(): Promise<SyncResult> {
     const latest = await this.options.source.getLatestLedger();
-    const finalizedSequence = Math.max(
-      0,
-      latest.sequence - this.options.finalityDepth,
-    );
+    const finalizedSequence = Math.max(0, latest.sequence - this.options.finalityDepth);
     let checkpoint = await this.options.store.getCheckpoint();
     let rolledBackFrom: number | null = null;
 
     if (checkpoint) {
-      const canonicalCheckpoint = checkpoint.sequence <= latest.sequence
-        ? await this.options.source.getLedger(checkpoint.sequence)
-        : null;
+      const canonicalCheckpoint =
+        checkpoint.sequence <= latest.sequence
+          ? await this.options.source.getLedger(checkpoint.sequence)
+          : null;
       if (!canonicalCheckpoint || canonicalCheckpoint.hash !== checkpoint.hash) {
         const ancestorSequence = await this.findCommonAncestor(
           checkpoint.sequence,
@@ -125,10 +121,7 @@ export class FinalityIndexer {
     }
 
     let nextSequence = checkpoint ? checkpoint.sequence + 1 : this.startSequence;
-    const endSequence = Math.min(
-      finalizedSequence,
-      nextSequence + this.maxBatchSize - 1,
-    );
+    const endSequence = Math.min(finalizedSequence, nextSequence + this.maxBatchSize - 1);
     let committed = 0;
 
     while (nextSequence <= endSequence) {
@@ -141,13 +134,10 @@ export class FinalityIndexer {
       }
 
       await this.options.store.appendLedger(ledger);
-      // appendLedger is the finality boundary. Await the projector so stale
-      // values cannot survive beyond the millisecond the ledger is committed.
-      await this.options.onLedgerCommitted?.(ledger);
-      checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
-      nextSequence += 1;
-      committed += 1;
-
+      // appendLedger is the finality boundary, so the checkpoint is already
+      // persisted by the time the hook runs. Its failures are logged and
+      // swallowed: a committed ledger is canonical whether or not a downstream
+      // cache or projector noticed.
       if (this.options.onLedgerCommitted) {
         try {
           await this.options.onLedgerCommitted(ledger);
@@ -155,6 +145,9 @@ export class FinalityIndexer {
           console.error(`[indexer] Ledger ${ledger.sequence} commit hook failed:`, error);
         }
       }
+      checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
+      nextSequence += 1;
+      committed += 1;
     }
 
     // Update Prometheus metrics
@@ -189,6 +182,38 @@ export class FinalityIndexer {
 
     return floor === this.startSequence && sawCanonicalCandidate ? 0 : null;
   }
+}
+
+/**
+ * Builds an `onLedgerCommitted` hook that keeps the address → commitment reverse
+ * index in step with the ledgers the indexer finalizes: it decodes any
+ * `commitment_created` events in each committed ledger and upserts them, so
+ * `GET /commitments?address=` can list an address's commitments without an
+ * on-chain scan.
+ *
+ * Pass the result as `FinalityIndexerOptions.onLedgerCommitted`. Indexing runs
+ * inside that hook, whose failures the indexer logs and swallows, so a decode or
+ * database hiccup never stalls ledger progress — reconcile with
+ * `backfillCommitmentIndex` if needed. To also invalidate caches on commit,
+ * compose the two hooks:
+ *
+ * ```ts
+ * const indexCommitments = createCommitmentIndexingHook(commitmentIndex);
+ * new FinalityIndexer({
+ *   // …
+ *   onLedgerCommitted: async (ledger) => {
+ *     await indexCommitments(ledger);
+ *     await invalidateLedger(ledger);
+ *   },
+ * });
+ * ```
+ */
+export function createCommitmentIndexingHook(
+  index: CommitmentIndex,
+): (ledger: LedgerSnapshot) => Promise<void> {
+  return async (ledger) => {
+    await indexCommitmentsFromLedger(ledger, index);
+  };
 }
 
 // ─── Horizon SSE Indexer ──────────────────────────────────────────────────────

@@ -31,7 +31,7 @@ export type PactumEventType = keyof ContractEventMap;
 
 export type EventCallback<T extends PactumEventType> = (
   payload: ContractEventMap[T],
-  rawEvent?: RawSorobanEvent
+  rawEvent?: RawSorobanEvent,
 ) => void;
 
 export interface RawSorobanEvent {
@@ -48,7 +48,9 @@ export interface RawSorobanEvent {
  * Decodes raw Soroban RPC event topics and values into strongly typed JavaScript objects.
  * Handles both raw XDR/RPC response structures and pre-parsed native values.
  */
-export function decodeSorobanEvent(rawEvent: RawSorobanEvent): { type: PactumEventType; payload: any } | null {
+export function decodeSorobanEvent(
+  rawEvent: RawSorobanEvent,
+): { type: PactumEventType; payload: any } | null {
   if (!rawEvent || !rawEvent.topic || rawEvent.topic.length === 0) {
     return null;
   }

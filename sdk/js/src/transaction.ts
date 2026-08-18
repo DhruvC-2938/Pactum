@@ -56,17 +56,10 @@ export async function invokeContract(
   args: xdr.ScVal[],
 ): Promise<string> {
   const keypair = Keypair.fromSecret(secret);
-  const { simulation, tx } = await buildAndSimulate(
-    opts,
-    keypair.publicKey(),
-    method,
-    args,
-  );
+  const { simulation, tx } = await buildAndSimulate(opts, keypair.publicKey(), method, args);
 
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error(
-      `Soroban simulation error in '${method}': ${simulation.error}`,
-    );
+    throw new Error(`Soroban simulation error in '${method}': ${simulation.error}`);
   }
 
   const prepared = rpc.assembleTransaction(tx, simulation).build();
@@ -81,9 +74,7 @@ export async function invokeContract(
 
   const finalResult = await opts.rpcServer.pollTransaction(sendResult.hash);
   if (finalResult.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
-    throw new Error(
-      `Transaction failed in '${method}': status=${finalResult.status}`,
-    );
+    throw new Error(`Transaction failed in '${method}': status=${finalResult.status}`);
   }
 
   return sendResult.hash;
@@ -113,9 +104,7 @@ export async function queryContract(
   const simulation = await opts.rpcServer.simulateTransaction(tx);
 
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error(
-      `Soroban simulation error in '${method}': ${simulation.error}`,
-    );
+    throw new Error(`Soroban simulation error in '${method}': ${simulation.error}`);
   }
 
   const successSim = simulation as rpc.Api.SimulateTransactionSuccessResponse;
