@@ -131,6 +131,11 @@ router.get('/', async (req: Request, res: Response) => {
     conditions.push(`status = $${params.length}`);
   }
 
+  if (template) {
+    params.push(template);
+    conditions.push(`template = $${params.length}`);
+  }
+
   if (decodedCursor) {
     params.push(decodedCursor.time);
     params.push(decodedCursor.id);
@@ -147,6 +152,7 @@ router.get('/', async (req: Request, res: Response) => {
       amount,
       currency,
       status,
+      template,
       outcome,
       due_date as "dueDate",
       completed_at as "completedAt",
@@ -185,21 +191,13 @@ router.get('/', async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    logger.warn('Database query failed for /commitments, falling back to response envelope', {
-      error: error instanceof Error ? error.message : String(error),
+    logger.error('Database query failed for /commitments', error, {
+      filter: { issuer, counterparty, status, template },
     });
 
-    res.status(200).json({
-      items: [],
-      next_cursor: null,
-      limit,
-      has_more: false,
-      filter: {
-        ...(issuer ? { issuer } : {}),
-        ...(counterparty ? { counterparty } : {}),
-        ...(status ? { status } : {}),
-        ...(template ? { template } : {}),
-      },
+    res.status(503).json({
+      error: 'Service Unavailable',
+      message: 'Database query failed for commitments.',
     });
   }
 });
