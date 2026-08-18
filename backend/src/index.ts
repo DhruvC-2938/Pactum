@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import commitmentsRouter from './routes/commitments';
 import { createReputationRouter } from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
+import { createProofsRouter } from './routes/proofs';
+import { RelayerService } from './relayer/relayerService';
 import pool from './db/timescale';
 import { PostgresReputationRepository } from './reputation/repository';
 import { createRedisClientFromEnv, ReputationCache } from './cache/reputationCache';
@@ -124,6 +126,16 @@ app.use('/reputation', reputationRouterInstance);
 app.use('/api/reputation', reputationRouterInstance);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api-docs', createOpenApiRouter());
+
+const relayerService = new RelayerService({
+  rpcUrl: process.env.SOROBAN_RPC_URL,
+  contractId: process.env.REGISTRY_CONTRACT_ID || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015',
+});
+const proofsRouter = createProofsRouter(relayerService);
+app.use('/proofs', proofsRouter);
+app.use('/api/proofs', proofsRouter);
+app.use('/api/v1/proofs', proofsRouter);
 
 // Metrics endpoint for Prometheus scraping
 app.get('/metrics', async (req: Request, res: Response) => {
