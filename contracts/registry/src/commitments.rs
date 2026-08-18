@@ -71,6 +71,17 @@ pub struct Commitment {
     pub milestones_attested: u32,
     /// How many of the attested milestones came in `Late`.
     pub late_milestones: u32,
+    /// Optional designated oracle for automated attestation.
+    pub oracle: Option<Address>,
+    /// Optional identifier for the schema used to generate terms_hash.
+    pub schema_id: Option<u32>,
+    /// The panel of staked attestors that vote on disputes for this commitment.
+    /// An empty panel keeps the commitment on the single-resolver dispute path.
+    pub attestors: Vec<Address>,
+    /// How many matching attestor votes are required to resolve a dispute.
+    /// Must be between 1 and `attestors.len()` when a panel is configured,
+    /// and zero when it is not.
+    pub vote_threshold: u32,
 }
 
 /// Legacy representation of a Commitment prior to custom resolver support.
@@ -93,6 +104,10 @@ pub struct LegacyCommitment {
     pub created_at: u64,
     /// Unix timestamp (seconds) when the commitment was attested, if it has been attested.
     pub attested_at: Option<u64>,
+    /// Optional designated oracle for automated attestation.
+    pub oracle: Option<Address>,
+    /// Optional identifier for the schema used to generate terms_hash.
+    pub schema_id: Option<u32>,
 }
 
 /// Storage keys used for persisting commitments and contract state.
@@ -121,6 +136,16 @@ pub enum DataKey {
     /// Persistent storage key for the running vote tally of a disputed
     /// commitment, keyed by commitment ID.
     Votes(u64),
+    /// Persistent storage key for an attestor's staking record.
+    Stake(Address),
+    /// Instance storage key for the address of the staking (vault) token.
+    StakingToken,
+    /// Persistent storage key for a single attestor's vote on a disputed
+    /// commitment, keyed by commitment ID and attestor address.
+    VoteRecord(u64, Address),
+    /// Persistent storage key for the running vote tally of a disputed
+    /// commitment.
+    DisputeTally(u64),
 }
 
 /// Running tally of arbitrator votes on a single disputed commitment.
@@ -220,8 +245,14 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
     let map = Map::<Symbol, Val>::try_from_val(env, &val).ok()?;
     let resolver_sym = Symbol::new(env, "resolver_address");
     let milestone_sym = Symbol::new(env, "milestone_count");
+    let attestors_sym = Symbol::new(env, "attestors");
+    let threshold_sym = Symbol::new(env, "vote_threshold");
 
-    if map.contains_key(resolver_sym.clone()) && map.contains_key(milestone_sym) {
+    if map.contains_key(resolver_sym.clone())
+        && map.contains_key(milestone_sym)
+        && map.contains_key(attestors_sym)
+        && map.contains_key(threshold_sym)
+    {
         return Commitment::try_from_val(env, &val).ok();
     }
 
@@ -258,6 +289,14 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
         Some(v) => v.try_into_val(env).ok()?,
         None => None,
     };
+    let oracle: Option<Address> = match map.get(Symbol::new(env, "oracle")) {
+        Some(v) => v.try_into_val(env).ok()?,
+        None => None,
+    };
+    let schema_id: Option<u32> = match map.get(Symbol::new(env, "schema_id")) {
+        Some(v) => v.try_into_val(env).ok()?,
+        None => None,
+    };
 
     let resolver_address: Address = match map.get(resolver_sym) {
         Some(v) => v.try_into_val(env).ok()?,
@@ -285,6 +324,12 @@ pub fn get_commitment_record(env: &soroban_sdk::Env, id: u64) -> Option<Commitme
         milestone_count: 1,
         milestones_attested: if resolved { 1 } else { 0 },
         late_milestones: u32::from(status == CommitmentStatus::Late),
+        oracle,
+        schema_id,
+        // A legacy record predates attestor voting: it has no panel and stays
+        // on the single-resolver dispute path.
+        attestors: Vec::new(env),
+        vote_threshold: 0,
     };
 
     env.storage()
@@ -308,6 +353,10 @@ pub fn create(
     due_at: u64,
     resolver_address: Address,
     milestone_count: u32,
+    oracle: Option<Address>,
+    schema_id: Option<u32>,
+    attestors: Vec<Address>,
+    vote_threshold: u32,
 ) -> u64 {
     // 0. Enter the reentrancy guard before any external interaction (including
     //    the require_auth call below, which may invoke a custom account contract).
@@ -327,7 +376,14 @@ pub fn create(
         soroban_sdk::panic_with_error!(env, crate::errors::Error::InvalidMilestoneCount);
     }
 
-    // 4. Assign the next available ID.
+    // 4. Validate the attestor voting panel: a threshold is only meaningful
+    //    together with a non-empty panel, and must not exceed the panel size.
+    let has_panel = !attestors.is_empty();
+    if has_panel != (vote_threshold > 0) || vote_threshold > attestors.len() {
+        soroban_sdk::panic_with_error!(env, crate::errors::Error::ThresholdInvalid);
+    }
+
+    // 5. Assign the next available ID.
     let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
     let next_id = id
         .checked_add(1)
@@ -337,7 +393,7 @@ pub fn create(
         .instance()
         .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
 
-    // 5. Create the Commitment object with Pending status.
+    // 6. Create the Commitment object with Pending status.
     let commitment = Commitment {
         id,
         issuer: issuer.clone(),
@@ -351,9 +407,13 @@ pub fn create(
         milestone_count,
         milestones_attested: 0,
         late_milestones: 0,
+        oracle,
+        schema_id,
+        attestors,
+        vote_threshold,
     };
 
-    // 6. Store in persistent storage keyed by id and extend TTL.
+    // 7. Store in persistent storage keyed by id and extend TTL.
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
@@ -363,10 +423,17 @@ pub fn create(
         TTL_EXTEND_LEDGERS,
     );
 
-    // 7. Emit Created event.
-    crate::events::commitment_created(env, id, &issuer, &counterparty);
+    // 8. Emit Created event.
+    crate::events::commitment_created(
+        env,
+        id,
+        &issuer,
+        &counterparty,
+        &commitment.oracle,
+        commitment.schema_id,
+    );
 
-    // 8. Release the reentrancy guard.
+    // 9. Release the reentrancy guard.
     crate::reentrancy::exit(env);
 
     id

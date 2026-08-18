@@ -71,6 +71,22 @@ export const insertCommitmentOutcome = async (outcome: CommitmentOutcome): Promi
   );
 };
 
+export const updateCommitmentOutcome = async (
+  commitmentId: string,
+  status: string,
+  outcome: string,
+  completedAt: Date,
+): Promise<void> => {
+  await queryTimescale(
+    `UPDATE commitment_outcomes
+        SET status = $2,
+            outcome = $3,
+            completed_at = $4
+      WHERE commitment_id = $1`,
+    [commitmentId, status, outcome, completedAt]
+  );
+};
+
 export const batchInsertTrustScores = async (snapshots: TrustScoreSnapshot[]): Promise<void> => {
   if (snapshots.length === 0) return;
 

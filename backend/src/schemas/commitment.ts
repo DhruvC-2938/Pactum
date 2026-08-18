@@ -29,7 +29,10 @@ export const commitmentSchema = z.object({
     .max(255, "partyB must not exceed 255 characters")
     .optional(),
   
-  status: z.enum(['pending', 'active', 'completed', 'disputed']).optional()
+  status: z.enum(['pending', 'active', 'completed', 'disputed']).optional(),
+
+  template: z.enum(['Freeform', 'RefundDeposit', 'SLAGuarantee', 'MilestoneCheckIn'])
+    .optional()
 });
 
 export type CommitmentInput = z.infer<typeof commitmentSchema>;

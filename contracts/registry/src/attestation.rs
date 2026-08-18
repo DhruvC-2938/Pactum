@@ -101,8 +101,11 @@ fn attest_inner(
     let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 5. Verify caller is either issuer or counterparty.
-    if caller != commitment.issuer && caller != commitment.counterparty {
+    // 5. Verify caller is either issuer, counterparty, or designated oracle.
+    if caller != commitment.issuer
+        && caller != commitment.counterparty
+        && Some(caller) != commitment.oracle
+    {
         panic_with_error!(env, Error::Unauthorized);
     }
 

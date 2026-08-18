@@ -1,9 +1,28 @@
+import pool from '../db/timescale';
+import { insertCommitmentOutcome, updateCommitmentOutcome } from '../workers/timescaleSnapshot';
+import { invalidateLedger } from './cache';
+import { CommitmentCreatedEvent, parseLedgerEvents } from './events';
+import { createSorobanRpcLedgerClient, SorobanLedgerSource } from './rpc-source';
+import { PostgresIndexerStore } from './store';
 import {
   IndexerStore,
   LedgerCheckpoint,
   LedgerSnapshot,
   LedgerSource,
+  LedgerSnapshot,
 } from './types';
+import client from 'prom-client';
+
+// Prometheus metrics for indexer
+const eventsIndexedTotal = new client.Counter({
+  name: 'events_indexed_total',
+  help: 'Total number of events indexed by the indexer',
+});
+
+const indexerLagSeconds = new client.Gauge({
+  name: 'indexer_lag_seconds',
+  help: 'Current indexer lag in seconds (difference between latest and finalized sequence)',
+});
 import { InMemoryCursorCache, PostgresCursorCache } from './cache';
 
 // ─── Existing FinalityIndexer (unchanged) ────────────────────────────────────
@@ -123,6 +142,9 @@ export class FinalityIndexer {
       }
 
       await this.options.store.appendLedger(ledger);
+      // appendLedger is the finality boundary. Await the projector so stale
+      // values cannot survive beyond the millisecond the ledger is committed.
+      await this.options.onLedgerCommitted?.(ledger);
       checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
       nextSequence += 1;
       committed += 1;
@@ -135,6 +157,10 @@ export class FinalityIndexer {
         }
       }
     }
+
+    // Update Prometheus metrics
+    eventsIndexedTotal.inc(committed);
+    indexerLagSeconds.set(latest.sequence - finalizedSequence);
 
     return {
       latestSequence: latest.sequence,
