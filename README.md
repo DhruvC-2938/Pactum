@@ -188,7 +188,14 @@ The frontend is built to call the API on its own origin, and nginx proxies `/api
 - [x] Milestone-based commitments — partial attestations against one commitment ID
 - [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
 - [x] Public reputation lookup API
-<<<<<<< HEAD
+- [ ] JS/TS SDK (`@pactum/sdk`)
+- [ ] Marketplace integration example (check a counterparty's history before a deal)
+- [ ] Rate limiting & spam-commitment protections
+- [x] Dashboard endpoint (commitments created/fulfilled over time)
+- [x] Verifiable reputation export — prove `Trust Score > threshold` in zero knowledge
+      ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
+
+Open an issue if you'd like to pick up any of these — contributions welcome.
 
 ### Reputation cache
 
@@ -202,16 +209,6 @@ advances.
 Run `npm run load:reputation` from `backend/` against a warmed local stack to
 enforce the 10,000 req/s and P99 <15ms SLO. Set `LOAD_TEST_URL`,
 `LOAD_TEST_CONNECTIONS`, or `LOAD_TEST_DURATION_SECONDS` to tune the run.
-=======
->>>>>>> main
-- [ ] JS/TS SDK (`@pactum/sdk`)
-- [ ] Marketplace integration example (check a counterparty's history before a deal)
-- [ ] Rate limiting & spam-commitment protections
-- [x] Dashboard endpoint (commitments created/fulfilled over time)
-- [x] Verifiable reputation export — prove `Trust Score > threshold` in zero knowledge
-      ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
-
-Open an issue if you'd like to pick up any of these — contributions welcome.
 
 ---
 

@@ -9,7 +9,6 @@ import {
   LedgerCheckpoint,
   LedgerSnapshot,
   LedgerSource,
-  LedgerSnapshot,
 } from './types';
 import client from 'prom-client';
 
@@ -143,13 +142,14 @@ export class FinalityIndexer {
       }
 
       await this.options.store.appendLedger(ledger);
-      // appendLedger is the finality boundary. Await the projector so stale
-      // values cannot survive beyond the millisecond the ledger is committed.
-      await this.options.onLedgerCommitted?.(ledger);
       checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
       nextSequence += 1;
       committed += 1;
 
+      // appendLedger is the finality boundary, so the checkpoint is already
+      // persisted by the time the hook runs. Its failures are logged and
+      // swallowed: a committed ledger is canonical whether or not a downstream
+      // cache or projector noticed.
       if (this.options.onLedgerCommitted) {
         try {
           await this.options.onLedgerCommitted(ledger);

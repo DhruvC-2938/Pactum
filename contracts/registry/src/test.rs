@@ -1128,8 +1128,6 @@ fn test_resolve_dispute_requires_auth() {
         &Vec::new(&env),
         &0,
     );
-    );
->>>>>>> upstream/main
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
     client.dispute(&counterparty, &id);
 
