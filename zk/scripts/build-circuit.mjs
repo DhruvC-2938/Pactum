@@ -18,7 +18,10 @@ import * as snarkjs from 'snarkjs';
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const buildDir = join(packageRoot, 'build');
 const circuitsDir = join(packageRoot, 'circuits');
-const circomlibCircuits = join(packageRoot, 'node_modules', 'circomlib', 'circuits');
+let circomlibCircuits = join(packageRoot, 'node_modules', 'circomlib', 'circuits');
+if (!existsSync(circomlibCircuits)) {
+  circomlibCircuits = join(packageRoot, '..', 'node_modules', 'circomlib', 'circuits');
+}
 
 const CURVE = 'bn128';
 const PTAU_ENTROPY = 'pactum zk-reputation dev ceremony — NOT SECURE, see docs';
