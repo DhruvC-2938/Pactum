@@ -60,6 +60,8 @@ fn test_mock_resolver_cross_contract_dispute_resolution() {
         &terms_hash,
         &due_at,
         &resolver_client.address,
+        &None,
+        &None,
         &Vec::new(&env),
         &0,
     );
@@ -122,6 +124,8 @@ fn test_mock_resolver_rejected_if_not_designated_resolver() {
         &terms_hash,
         &due_at,
         &other_resolver,
+        &None,
+        &None,
         &Vec::new(&env),
         &0,
     );
