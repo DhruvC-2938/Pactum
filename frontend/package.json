@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build:wasm": "npx wasm-pack build ../contracts/validation --target web --out-dir ../../frontend/src/wasm/pactum-validation -- --features wasm",
+    "build": "npm run build:wasm && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "test:e2e": "playwright test",

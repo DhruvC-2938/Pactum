@@ -115,6 +115,10 @@ test.beforeEach(async ({ page }) => {
     }
   });
   await page.goto('/');
+  const launchBtn = page.getByRole('button', { name: /launch app/i }).first();
+  if (await launchBtn.isVisible()) {
+    await launchBtn.click();
+  }
 });
 
 test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
@@ -189,4 +193,39 @@ test('loading spinners display during network requests', async ({ page }) => {
 
   await expect(page.locator('div[style*="animation: pulse"]')).toBeVisible();
   await expect(page.locator('div[style*="animation: pulse"]')).not.toBeVisible({ timeout: 5000 });
+});
+
+test('WASM validation failure blocks transaction simulation and wallet submission', async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__signCalled = false;
+    const originalSign = (window as any).freighter?.signTransaction;
+    if ((window as any).freighter) {
+      (window as any).freighter.signTransaction = (...args: any[]) => {
+        (window as any).__signCalled = true;
+        return originalSign ? originalSign(...args) : Promise.resolve({ status: 'SUCCESS' });
+      };
+    }
+  });
+
+  // Navigate to Create Commitment wizard page
+  await page.locator('#nav-create').click();
+
+  // Step 0: Counterparty
+  await page.locator('#wizard-counterparty').fill('GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7');
+  await page.getByRole('button', { name: /continue/i }).click();
+
+  // Step 1: Terms
+  await page.locator('#wizard-terms').fill('Test commitment terms');
+  await page.getByRole('button', { name: /continue/i }).click();
+
+  // Step 2: Deadline - Fill past date to trigger WASM contract validation error
+  await page.locator('#wizard-dueat').fill('2020-01-01T00:00');
+  await page.getByRole('button', { name: /create commitment/i }).click();
+
+  // WASM validation error should appear and stop submit flow
+  await expect(page.getByText(/Due date must be set in the future|Contract validation failed/i)).toBeVisible();
+
+  // Verify wallet signTransaction was NEVER called
+  const signCalled = await page.evaluate(() => (window as any).__signCalled);
+  expect(signCalled).toBeFalsy();
 });

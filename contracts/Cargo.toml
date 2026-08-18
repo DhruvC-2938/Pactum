@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "validation",
     "registry",
     "mock_resolver",
     "timelock",
