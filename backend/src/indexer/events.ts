@@ -1,7 +1,6 @@
-import type {
-  scValToNative as ScValToNative,
-  xdr as ScValXdr,
-} from '@stellar/stellar-sdk' with { 'resolution-mode': 'import' };
+import type { scValToNative as ScValToNative, xdr as ScValXdr } from '@stellar/stellar-sdk' with {
+  'resolution-mode': 'import',
+};
 import { LedgerEvent, LedgerSnapshot } from './types';
 
 export type CommitmentOutcomeName = 'fulfilled' | 'late' | 'breached';
@@ -87,9 +86,7 @@ const toOutcome = (value: unknown): CommitmentOutcomeName | null => {
  * XDR) into a typed record, keyed off the leading topic symbol. Events from
  * other contracts, unknown symbols, and undecodable payloads are ignored.
  */
-export const parseContractEvent = async (
-  event: LedgerEvent,
-): Promise<ContractEvent | null> => {
+export const parseContractEvent = async (event: LedgerEvent): Promise<ContractEvent | null> => {
   const payload = event.payload as { topic?: unknown; value?: unknown } | null;
   if (!payload || typeof payload !== 'object') return null;
   if (!Array.isArray(payload.topic) || payload.topic.length === 0) return null;

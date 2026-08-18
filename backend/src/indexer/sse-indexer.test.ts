@@ -101,7 +101,9 @@ test('starts stream with undefined cursor when cache is empty', async () => {
   const indexer = new HorizonSSEIndexer({
     streamClient: client,
     cursorCache: cache,
-    onEvent: async (r) => { received.push(r); },
+    onEvent: async (r) => {
+      received.push(r);
+    },
   });
   indexer.start();
 
@@ -137,7 +139,9 @@ test('invokes onEvent for each incoming record', async () => {
   const indexer = new HorizonSSEIndexer({
     streamClient: client,
     cursorCache: cache,
-    onEvent: async (r) => { received.push(r); },
+    onEvent: async (r) => {
+      received.push(r);
+    },
   });
   indexer.start();
   await waitFor(() => client.openCount === 1);
@@ -184,7 +188,9 @@ test('does not advance cursor when onEvent throws', async () => {
   const indexer = new HorizonSSEIndexer({
     streamClient: client,
     cursorCache: cache,
-    onEvent: async () => { throw new Error('processing failed'); },
+    onEvent: async () => {
+      throw new Error('processing failed');
+    },
   });
   indexer.start();
   await waitFor(() => client.openCount === 1);
@@ -209,7 +215,9 @@ test('reconnects after a stream error and resumes from persisted cursor', async 
   const indexer = new HorizonSSEIndexer({
     streamClient: client,
     cursorCache: cache,
-    onEvent: async (r) => { received.push(r.paging_token); },
+    onEvent: async (r) => {
+      received.push(r.paging_token);
+    },
     initialReconnectDelayMs: 10,
   });
   indexer.start();
@@ -456,7 +464,9 @@ test(
       const indexer = new HorizonSSEIndexer({
         streamClient,
         cursorCache: cache,
-        onEvent: async (r) => { received.push(r.paging_token); },
+        onEvent: async (r) => {
+          received.push(r.paging_token);
+        },
         initialReconnectDelayMs: 10,
       });
       indexer.start();

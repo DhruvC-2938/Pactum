@@ -6,7 +6,9 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
   let client: PactumClient;
 
   beforeEach(() => {
-    client = new PactumClient({ contractId: 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E' });
+    client = new PactumClient({
+      contractId: 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E',
+    });
   });
 
   describe('Event Listener Subscription and Dispatch', () => {
@@ -17,7 +19,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
       client.emit('created', {
         id: 42n,
         issuer: 'GABC123',
-        counterparty: 'GXYZ456'
+        counterparty: 'GXYZ456',
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -25,9 +27,9 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
         {
           id: 42n,
           issuer: 'GABC123',
-          counterparty: 'GXYZ456'
+          counterparty: 'GXYZ456',
         },
-        undefined
+        undefined,
       );
     });
 
@@ -37,7 +39,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
 
       client.emit('attested', {
         id: 100n,
-        status: 'Fulfilled'
+        status: 'Fulfilled',
       });
 
       expect(callback).toHaveBeenCalledTimes(1);
@@ -61,7 +63,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
     it('decodes raw created event from Soroban topics and value', () => {
       const rawEvent: RawSorobanEvent = {
         topic: ['created', 'GABC_ISSUER', 'GXYZ_COUNTERPARTY'],
-        value: '123'
+        value: '123',
       };
 
       const callback = vi.fn();
@@ -73,16 +75,16 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
         {
           id: 123n,
           issuer: 'GABC_ISSUER',
-          counterparty: 'GXYZ_COUNTERPARTY'
+          counterparty: 'GXYZ_COUNTERPARTY',
         },
-        rawEvent
+        rawEvent,
       );
     });
 
     it('decodes raw attested event from Soroban topics and value', () => {
       const rawEvent: RawSorobanEvent = {
         topic: ['attested', '999'],
-        value: 'late'
+        value: 'late',
       };
 
       const callback = vi.fn();
@@ -96,7 +98,7 @@ describe('Pactum JS SDK - Typed Event Listeners', () => {
     it('decodes raw resolved event from Soroban topics and value', () => {
       const rawEvent: RawSorobanEvent = {
         topic: ['resolved', '77'],
-        value: 'Breached'
+        value: 'Breached',
       };
 
       const callback = vi.fn();

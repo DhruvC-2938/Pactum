@@ -3,11 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { Pool } from 'pg';
-import {
-  FinalityIndexer,
-  LedgerLinkageError,
-  NoCommonAncestorError,
-} from './listener';
+import { FinalityIndexer, LedgerLinkageError, NoCommonAncestorError } from './listener';
 import { SorobanLedgerSource } from './rpc-source';
 import { InMemoryIndexerStore, PostgresIndexerStore } from './store';
 import { LedgerSnapshot, LedgerSource } from './types';
@@ -101,7 +97,10 @@ test('awaits the cache projector immediately after each finalized commit', async
     store,
     finalityDepth: 0,
     async onLedgerCommitted(ledger) {
-      assert.deepEqual(await store.getCheckpoint(), { sequence: ledger.sequence, hash: ledger.hash });
+      assert.deepEqual(await store.getCheckpoint(), {
+        sequence: ledger.sequence,
+        hash: ledger.hash,
+      });
       projected.push(ledger.sequence);
     },
   });
@@ -370,13 +369,15 @@ test('maps Soroban RPC ledger headers and events into the indexer model', async 
         return { events: firstPageEvents, cursor: 'page-2' };
       }
       return {
-        events: [{
-          id: 'event-2-final',
-          type: 'contract',
-          ledger: 2,
-          value: { toXDR: () => 'value-xdr-final' },
-          ignored: undefined,
-        }],
+        events: [
+          {
+            id: 'event-2-final',
+            type: 'contract',
+            ledger: 2,
+            value: { toXDR: () => 'value-xdr-final' },
+            ignored: undefined,
+          },
+        ],
         cursor: 'page-2-final',
       };
     },

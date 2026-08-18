@@ -56,9 +56,7 @@ export class LedgerLinkageError extends Error {
     public readonly expectedPreviousHash: string,
     public readonly receivedPreviousHash: string | null,
   ) {
-    super(
-      `Ledger ${sequence} links to ${receivedPreviousHash}, expected ${expectedPreviousHash}`,
-    );
+    super(`Ledger ${sequence} links to ${receivedPreviousHash}, expected ${expectedPreviousHash}`);
     this.name = 'LedgerLinkageError';
   }
 }
@@ -84,8 +82,7 @@ export class FinalityIndexer {
 
     this.startSequence = options.startSequence ?? 1;
     this.maxBatchSize = options.maxBatchSize ?? 100;
-    this.maxRollbackDepth = options.maxRollbackDepth
-      ?? Math.max(100, options.finalityDepth * 2);
+    this.maxRollbackDepth = options.maxRollbackDepth ?? Math.max(100, options.finalityDepth * 2);
     if (!Number.isInteger(this.startSequence) || this.startSequence < 1) {
       throw new Error('startSequence must be a positive integer');
     }
@@ -99,17 +96,15 @@ export class FinalityIndexer {
 
   async sync(): Promise<SyncResult> {
     const latest = await this.options.source.getLatestLedger();
-    const finalizedSequence = Math.max(
-      0,
-      latest.sequence - this.options.finalityDepth,
-    );
+    const finalizedSequence = Math.max(0, latest.sequence - this.options.finalityDepth);
     let checkpoint = await this.options.store.getCheckpoint();
     let rolledBackFrom: number | null = null;
 
     if (checkpoint) {
-      const canonicalCheckpoint = checkpoint.sequence <= latest.sequence
-        ? await this.options.source.getLedger(checkpoint.sequence)
-        : null;
+      const canonicalCheckpoint =
+        checkpoint.sequence <= latest.sequence
+          ? await this.options.source.getLedger(checkpoint.sequence)
+          : null;
       if (!canonicalCheckpoint || canonicalCheckpoint.hash !== checkpoint.hash) {
         const ancestorSequence = await this.findCommonAncestor(
           checkpoint.sequence,
@@ -126,10 +121,7 @@ export class FinalityIndexer {
     }
 
     let nextSequence = checkpoint ? checkpoint.sequence + 1 : this.startSequence;
-    const endSequence = Math.min(
-      finalizedSequence,
-      nextSequence + this.maxBatchSize - 1,
-    );
+    const endSequence = Math.min(finalizedSequence, nextSequence + this.maxBatchSize - 1);
     let committed = 0;
 
     while (nextSequence <= endSequence) {

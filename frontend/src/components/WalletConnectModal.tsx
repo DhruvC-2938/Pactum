@@ -9,8 +9,16 @@ export interface WalletConnectModalProps {
 }
 
 export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, onClose }) => {
-  const { address, provider, isConnected, isConnecting, connectWallet, disconnectWallet, error, errorCode } =
-    useWallet();
+  const {
+    address,
+    provider,
+    isConnected,
+    isConnecting,
+    connectWallet,
+    disconnectWallet,
+    error,
+    errorCode,
+  } = useWallet();
   const [copied, setCopied] = React.useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -62,12 +70,32 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
         boxShadow: '0 16px 36px -6px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(0,0,0,0.04)',
         textAlign: 'left',
         transformOrigin: 'top right',
-        animation: 'slideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
+        animation: 'slideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       {/* Top Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #f1f5f9' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '800', color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '14px',
+          paddingBottom: '12px',
+          borderBottom: '1px solid #f1f5f9',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '11px',
+            fontWeight: '800',
+            color: '#6366f1',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}
+        >
           <Wallet size={13} />
           Stellar Wallet
         </div>
@@ -84,7 +112,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
             alignItems: 'center',
             justifyContent: 'center',
             color: '#64748b',
-            cursor: 'pointer'
+            cursor: 'pointer',
           }}
           title="Close"
         >
@@ -106,7 +134,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
             padding: '10px 12px',
             marginBottom: '14px',
             fontSize: '11.5px',
-            lineHeight: '1.5'
+            lineHeight: '1.5',
           }}
         >
           <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
@@ -120,7 +148,15 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
                 href="https://freighter.app/settings"
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontWeight: '700', color: '#92400e', textDecoration: 'underline' }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  marginTop: '6px',
+                  fontWeight: '700',
+                  color: '#92400e',
+                  textDecoration: 'underline',
+                }}
               >
                 Switch Freighter to Testnet <ExternalLink size={11} />
               </a>
@@ -132,16 +168,45 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
       {/* Connected View */}
       {isConnected && address ? (
         <div>
-          <div style={{
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '14px',
-            marginBottom: '14px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '10.5px', fontWeight: '800', color: '#16a34a', background: '#dcfce7', padding: '2px 8px', borderRadius: '100px', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#22c55e' }}></span>
+          <div
+            style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '14px',
+              padding: '14px',
+              marginBottom: '14px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '10.5px',
+                  fontWeight: '800',
+                  color: '#16a34a',
+                  background: '#dcfce7',
+                  padding: '2px 8px',
+                  borderRadius: '100px',
+                  border: '1px solid #bbf7d0',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span
+                  style={{
+                    width: '5px',
+                    height: '5px',
+                    borderRadius: '50%',
+                    background: '#22c55e',
+                  }}
+                ></span>
                 {providerLabel} · Stellar Testnet
               </span>
               <button
@@ -157,7 +222,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
                   fontWeight: '700',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
                 }}
               >
                 {copied ? <Check size={11} color="#16a34a" /> : <Copy size={11} />}
@@ -165,7 +230,15 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               </button>
             </div>
 
-            <div style={{ fontFamily: 'monospace', fontSize: '13.5px', fontWeight: '800', color: '#0f172a', wordBreak: 'break-all' }}>
+            <div
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '13.5px',
+                fontWeight: '800',
+                color: '#0f172a',
+                wordBreak: 'break-all',
+              }}
+            >
               {truncateAddress(address, 8, 8)}
             </div>
           </div>
@@ -188,7 +261,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               fontWeight: '700',
               padding: '9px',
               borderRadius: '10px',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
             <LogOut size={13} />
@@ -213,20 +286,22 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               cursor: isConnecting ? 'wait' : 'pointer',
               boxShadow: '0 2px 8px rgba(99, 102, 241, 0.08)',
               transition: 'all 0.15s ease',
-              textAlign: 'left'
+              textAlign: 'left',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <Wallet size={18} />
               </div>
               <div>
@@ -258,20 +333,22 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               borderRadius: '14px',
               cursor: isConnecting ? 'wait' : 'pointer',
               transition: 'all 0.15s ease',
-              textAlign: 'left'
+              textAlign: 'left',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <Shield size={18} />
               </div>
               <div>
@@ -305,7 +382,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
                 fontSize: '12px',
                 padding: '10px',
                 borderRadius: '10px',
-                textDecoration: 'none'
+                textDecoration: 'none',
               }}
             >
               <ExternalLink size={13} />
@@ -313,7 +390,17 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
             </a>
           )}
 
-          <div style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+          <div
+            style={{
+              textAlign: 'center',
+              fontSize: '11px',
+              color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+            }}
+          >
             <Shield size={11} />
             100% Non-Custodial Browser Security
           </div>

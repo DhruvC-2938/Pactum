@@ -22,9 +22,8 @@ interface CommitmentOutcome {
 }
 
 export const insertTrustScoreSnapshot = async (snapshot: TrustScoreSnapshot): Promise<void> => {
-  const fulfillmentRate = snapshot.totalCommitments > 0 
-    ? snapshot.fulfilledCommitments / snapshot.totalCommitments 
-    : 0;
+  const fulfillmentRate =
+    snapshot.totalCommitments > 0 ? snapshot.fulfilledCommitments / snapshot.totalCommitments : 0;
 
   await queryTimescale(
     `INSERT INTO trust_score_snapshots 
@@ -46,8 +45,8 @@ export const insertTrustScoreSnapshot = async (snapshot: TrustScoreSnapshot): Pr
       snapshot.fulfilledCommitments,
       snapshot.lateCommitments,
       snapshot.breachedCommitments,
-      fulfillmentRate
-    ]
+      fulfillmentRate,
+    ],
   );
 };
 
@@ -66,8 +65,8 @@ export const insertCommitmentOutcome = async (outcome: CommitmentOutcome): Promi
       outcome.status,
       outcome.outcome,
       outcome.dueDate,
-      outcome.completedAt || null
-    ]
+      outcome.completedAt || null,
+    ],
   );
 };
 
@@ -83,25 +82,27 @@ export const updateCommitmentOutcome = async (
             outcome = $3,
             completed_at = $4
       WHERE commitment_id = $1`,
-    [commitmentId, status, outcome, completedAt]
+    [commitmentId, status, outcome, completedAt],
   );
 };
 
 export const batchInsertTrustScores = async (snapshots: TrustScoreSnapshot[]): Promise<void> => {
   if (snapshots.length === 0) return;
 
-  const values = snapshots.map((snapshot, index) => {
-    const fulfillmentRate = snapshot.totalCommitments > 0 
-      ? snapshot.fulfilledCommitments / snapshot.totalCommitments 
-      : 0;
-    const baseIndex = index * 8;
-    return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8})`;
-  }).join(', ');
+  const values = snapshots
+    .map((snapshot, index) => {
+      const fulfillmentRate =
+        snapshot.totalCommitments > 0
+          ? snapshot.fulfilledCommitments / snapshot.totalCommitments
+          : 0;
+      const baseIndex = index * 8;
+      return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8})`;
+    })
+    .join(', ');
 
-  const params = snapshots.flatMap(snapshot => {
-    const fulfillmentRate = snapshot.totalCommitments > 0 
-      ? snapshot.fulfilledCommitments / snapshot.totalCommitments 
-      : 0;
+  const params = snapshots.flatMap((snapshot) => {
+    const fulfillmentRate =
+      snapshot.totalCommitments > 0 ? snapshot.fulfilledCommitments / snapshot.totalCommitments : 0;
     return [
       new Date(),
       snapshot.address,
@@ -110,7 +111,7 @@ export const batchInsertTrustScores = async (snapshots: TrustScoreSnapshot[]): P
       snapshot.fulfilledCommitments,
       snapshot.lateCommitments,
       snapshot.breachedCommitments,
-      fulfillmentRate
+      fulfillmentRate,
     ];
   });
 
@@ -126,19 +127,23 @@ export const batchInsertTrustScores = async (snapshots: TrustScoreSnapshot[]): P
        late_commitments = EXCLUDED.late_commitments,
        breached_commitments = EXCLUDED.breached_commitments,
        fulfillment_rate = EXCLUDED.fulfillment_rate`,
-    params
+    params,
   );
 };
 
-export const batchInsertCommitmentOutcomes = async (outcomes: CommitmentOutcome[]): Promise<void> => {
+export const batchInsertCommitmentOutcomes = async (
+  outcomes: CommitmentOutcome[],
+): Promise<void> => {
   if (outcomes.length === 0) return;
 
-  const values = outcomes.map((outcome, index) => {
-    const baseIndex = index * 10;
-    return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8}, $${baseIndex + 9}, $${baseIndex + 10})`;
-  }).join(', ');
+  const values = outcomes
+    .map((outcome, index) => {
+      const baseIndex = index * 10;
+      return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8}, $${baseIndex + 9}, $${baseIndex + 10})`;
+    })
+    .join(', ');
 
-  const params = outcomes.flatMap(outcome => [
+  const params = outcomes.flatMap((outcome) => [
     new Date(),
     outcome.commitmentId,
     outcome.partyA,
@@ -148,14 +153,14 @@ export const batchInsertCommitmentOutcomes = async (outcomes: CommitmentOutcome[
     outcome.status,
     outcome.outcome,
     outcome.dueDate,
-    outcome.completedAt || null
+    outcome.completedAt || null,
   ]);
 
   await queryTimescale(
     `INSERT INTO commitment_outcomes 
      (time, commitment_id, party_a, party_b, amount, currency, status, outcome, due_date, completed_at)
      VALUES ${values}`,
-    params
+    params,
   );
 };
 
@@ -170,16 +175,14 @@ export const snapshotNetworkDailyStats = async (): Promise<void> => {
       COUNT(DISTINCT party_a) + COUNT(DISTINCT party_b) - COUNT(DISTINCT CASE WHEN party_a = party_b THEN party_a END) as unique_addresses,
       COALESCE(SUM(amount), 0) as total_volume
      FROM commitment_outcomes
-     WHERE time >= date_trunc('day', NOW())`
+     WHERE time >= date_trunc('day', NOW())`,
   );
 
   const stats = result.rows[0];
-  const fulfillmentRate = stats.total_commitments > 0 
-    ? stats.total_fulfilled / stats.total_commitments 
-    : 0;
-  const breachRate = stats.total_commitments > 0 
-    ? stats.total_breached / stats.total_commitments 
-    : 0;
+  const fulfillmentRate =
+    stats.total_commitments > 0 ? stats.total_fulfilled / stats.total_commitments : 0;
+  const breachRate =
+    stats.total_commitments > 0 ? stats.total_breached / stats.total_commitments : 0;
 
   await queryTimescale(
     `INSERT INTO network_daily_stats 
@@ -206,7 +209,7 @@ export const snapshotNetworkDailyStats = async (): Promise<void> => {
       fulfillmentRate,
       breachRate,
       stats.unique_addresses,
-      stats.total_volume
-    ]
+      stats.total_volume,
+    ],
   );
 };

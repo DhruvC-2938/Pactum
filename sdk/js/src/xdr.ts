@@ -4,12 +4,7 @@
  * All Soroban contract values are encoded as ScVal (XDR). This module
  * provides thin, type-safe wrappers so callers never touch raw XDR.
  */
-import {
-  Address,
-  nativeToScVal,
-  scValToNative,
-  xdr,
-} from '@stellar/stellar-sdk';
+import { Address, nativeToScVal, scValToNative, xdr } from '@stellar/stellar-sdk';
 import { CommitmentStatus, type Commitment, type Reputation } from './types.js';
 
 // ─── Encoding ────────────────────────────────────────────────────────────────
@@ -90,9 +85,7 @@ export function decodeCommitment(val: xdr.ScVal): Commitment {
     status: decodeCommitmentStatus(raw.status),
     createdAt: BigInt(raw.created_at),
     attestedAt: raw.attested_at != null ? BigInt(raw.attested_at) : null,
-    attestors: Array.isArray(raw.attestors)
-      ? raw.attestors.map((a: unknown) => String(a))
-      : [],
+    attestors: Array.isArray(raw.attestors) ? raw.attestors.map((a: unknown) => String(a)) : [],
     threshold: Number(raw.threshold),
   };
 }

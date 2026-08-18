@@ -15,11 +15,7 @@ export const PACTUM_NETWORK_NAME = 'TESTNET';
 export const FREIGHTER_HOMEPAGE = 'https://www.freighter.app/';
 
 export type WalletErrorCode =
-  | 'NOT_INSTALLED'
-  | 'CONNECTION_REJECTED'
-  | 'NETWORK_MISMATCH'
-  | 'INVALID_ADDRESS'
-  | 'UNKNOWN';
+  'NOT_INSTALLED' | 'CONNECTION_REJECTED' | 'NETWORK_MISMATCH' | 'INVALID_ADDRESS' | 'UNKNOWN';
 
 export class WalletConnectionError extends Error {
   readonly code: WalletErrorCode;
@@ -40,8 +36,7 @@ export { freighterGetAddress as getFreighterAddress, freighterGetNetwork as getF
 
 export function isFreighterInstalled(): boolean {
   return Boolean(
-    typeof window !== 'undefined' &&
-      (window as unknown as Record<string, unknown>).freighter
+    typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).freighter,
   );
 }
 
@@ -67,7 +62,7 @@ function assertTestnetNetwork(network: string | undefined, passphrase: string | 
     throw new WalletConnectionError(
       'NETWORK_MISMATCH',
       `Freighter is connected to ${network}. Pactum requires Stellar Testnet. ` +
-        'Please switch your wallet network to Testnet (Settings → Network) and try again.'
+        'Please switch your wallet network to Testnet (Settings → Network) and try again.',
     );
   }
 }
@@ -83,7 +78,7 @@ export async function connectWithFreighter(): Promise<WalletConnectionResult> {
   if (!isFreighterInstalled()) {
     throw new WalletConnectionError(
       'NOT_INSTALLED',
-      'Freighter browser extension was not detected. Please install Freighter from freighter.app.'
+      'Freighter browser extension was not detected. Please install Freighter from freighter.app.',
     );
   }
 
@@ -96,7 +91,7 @@ export async function connectWithFreighter(): Promise<WalletConnectionResult> {
     } else if (accessRes && accessRes.error) {
       throw new WalletConnectionError(
         'CONNECTION_REJECTED',
-        String(accessRes.error) || 'Connection request denied in Freighter.'
+        String(accessRes.error) || 'Connection request denied in Freighter.',
       );
     }
   } catch (err) {
@@ -113,7 +108,7 @@ export async function connectWithFreighter(): Promise<WalletConnectionResult> {
     if (!address) {
       throw new WalletConnectionError(
         'CONNECTION_REJECTED',
-        'Connection request was rejected or cancelled in Freighter.'
+        'Connection request was rejected or cancelled in Freighter.',
       );
     }
   }
@@ -121,14 +116,14 @@ export async function connectWithFreighter(): Promise<WalletConnectionResult> {
   if (!address) {
     throw new WalletConnectionError(
       'CONNECTION_REJECTED',
-      'Unable to retrieve account address from Freighter.'
+      'Unable to retrieve account address from Freighter.',
     );
   }
 
   if (!isStellarAddress(address)) {
     throw new WalletConnectionError(
       'INVALID_ADDRESS',
-      `Freighter returned an invalid Stellar address: ${address}`
+      `Freighter returned an invalid Stellar address: ${address}`,
     );
   }
 
@@ -157,13 +152,13 @@ export async function connectWithAlbedo(): Promise<WalletConnectionResult> {
     if (!res || !res.pubkey) {
       throw new WalletConnectionError(
         'CONNECTION_REJECTED',
-        'Albedo connection was rejected or cancelled.'
+        'Albedo connection was rejected or cancelled.',
       );
     }
     if (!isStellarAddress(res.pubkey)) {
       throw new WalletConnectionError(
         'INVALID_ADDRESS',
-        `Albedo returned an invalid Stellar address: ${res.pubkey}`
+        `Albedo returned an invalid Stellar address: ${res.pubkey}`,
       );
     }
     return { address: res.pubkey, provider: 'albedo' };
@@ -171,7 +166,7 @@ export async function connectWithAlbedo(): Promise<WalletConnectionResult> {
     if (err instanceof WalletConnectionError) throw err;
     throw new WalletConnectionError(
       'CONNECTION_REJECTED',
-      err instanceof Error ? err.message : 'Failed to connect with Albedo wallet.'
+      err instanceof Error ? err.message : 'Failed to connect with Albedo wallet.',
     );
   }
 }

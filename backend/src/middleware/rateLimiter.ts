@@ -41,7 +41,7 @@ function createRateLimiter(options: RateLimiterOptions): RequestHandler {
     let timestamps = store.get(ip) ?? [];
 
     // Prune timestamps outside the current sliding window.
-    timestamps = timestamps.filter(ts => ts > windowStart);
+    timestamps = timestamps.filter((ts) => ts > windowStart);
 
     if (timestamps.length >= max) {
       const retryAfter = Math.ceil(windowMs / 1000);

@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from 'react';
 import {
   connectWallet as connectWithProvider,
   getFreighterAddress,
@@ -36,7 +43,11 @@ function loadPersistedState(): PersistedWalletState | null {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedWalletState;
-    if (!parsed || (parsed.provider !== 'freighter' && parsed.provider !== 'albedo') || !parsed.address) {
+    if (
+      !parsed ||
+      (parsed.provider !== 'freighter' && parsed.provider !== 'albedo') ||
+      !parsed.address
+    ) {
       return null;
     }
     return parsed;
@@ -151,7 +162,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setIsConnecting(false);
       }
     },
-    [applyError]
+    [applyError],
   );
 
   const disconnectWallet = useCallback(() => {
