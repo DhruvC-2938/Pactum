@@ -4,7 +4,12 @@ import { invalidateLedger } from './cache';
 import { CommitmentCreatedEvent, parseLedgerEvents } from './events';
 import { createSorobanRpcLedgerClient, SorobanLedgerSource } from './rpc-source';
 import { PostgresIndexerStore } from './store';
-import { IndexerStore, LedgerCheckpoint, LedgerSnapshot, LedgerSource } from './types';
+import {
+  IndexerStore,
+  LedgerCheckpoint,
+  LedgerSnapshot,
+  LedgerSource,
+} from './types';
 import client from 'prom-client';
 
 // Prometheus metrics for indexer
@@ -18,6 +23,7 @@ const indexerLagSeconds = new client.Gauge({
   help: 'Current indexer lag in seconds (difference between latest and finalized sequence)',
 });
 import { InMemoryCursorCache, PostgresCursorCache } from './cache';
+import { CommitmentIndex, indexCommitmentsFromLedger } from './commitments';
 
 // ─── Existing FinalityIndexer (unchanged) ────────────────────────────────────
 
@@ -128,8 +134,10 @@ export class FinalityIndexer {
       }
 
       await this.options.store.appendLedger(ledger);
-      // appendLedger is the finality boundary. Await the projector so stale
-      // values cannot survive beyond the millisecond the ledger is committed.
+      // appendLedger is the finality boundary, so the checkpoint is already
+      // persisted by the time the hook runs. Its failures are logged and
+      // swallowed: a committed ledger is canonical whether or not a downstream
+      // cache or projector noticed.
       if (this.options.onLedgerCommitted) {
         try {
           await this.options.onLedgerCommitted(ledger);
@@ -174,6 +182,38 @@ export class FinalityIndexer {
 
     return floor === this.startSequence && sawCanonicalCandidate ? 0 : null;
   }
+}
+
+/**
+ * Builds an `onLedgerCommitted` hook that keeps the address → commitment reverse
+ * index in step with the ledgers the indexer finalizes: it decodes any
+ * `commitment_created` events in each committed ledger and upserts them, so
+ * `GET /commitments?address=` can list an address's commitments without an
+ * on-chain scan.
+ *
+ * Pass the result as `FinalityIndexerOptions.onLedgerCommitted`. Indexing runs
+ * inside that hook, whose failures the indexer logs and swallows, so a decode or
+ * database hiccup never stalls ledger progress — reconcile with
+ * `backfillCommitmentIndex` if needed. To also invalidate caches on commit,
+ * compose the two hooks:
+ *
+ * ```ts
+ * const indexCommitments = createCommitmentIndexingHook(commitmentIndex);
+ * new FinalityIndexer({
+ *   // …
+ *   onLedgerCommitted: async (ledger) => {
+ *     await indexCommitments(ledger);
+ *     await invalidateLedger(ledger);
+ *   },
+ * });
+ * ```
+ */
+export function createCommitmentIndexingHook(
+  index: CommitmentIndex,
+): (ledger: LedgerSnapshot) => Promise<void> {
+  return async (ledger) => {
+    await indexCommitmentsFromLedger(ledger, index);
+  };
 }
 
 // ─── Horizon SSE Indexer ──────────────────────────────────────────────────────
