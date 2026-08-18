@@ -52,6 +52,8 @@
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
+                "void",
+                "void",
                 {
                   "vec": []
                 },
@@ -273,11 +275,23 @@
                     },
                     {
                       "key": {
+                        "symbol": "oracle"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "resolver_address"
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "schema_id"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {

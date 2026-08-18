@@ -2,8 +2,7 @@ import { Networks } from '@stellar/stellar-sdk';
 import type { Network } from './types.js';
 
 /** Canonical Pactum contract address on testnet. */
-export const DEFAULT_CONTRACT_ID =
-  'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
+export const DEFAULT_CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
 
 interface NetworkPreset {
   rpcUrl: string;

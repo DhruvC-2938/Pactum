@@ -19,7 +19,11 @@ export class WebhookWorker {
   private maxAttempts: number;
   private dispatcher: WebhookDispatcher;
 
-  constructor(options?: { baseDelayMs?: number; maxAttempts?: number; dispatcher?: WebhookDispatcher }) {
+  constructor(options?: {
+    baseDelayMs?: number;
+    maxAttempts?: number;
+    dispatcher?: WebhookDispatcher;
+  }) {
     this.baseDelayMs = options?.baseDelayMs ?? 1000;
     this.maxAttempts = options?.maxAttempts ?? 5;
     this.dispatcher = options?.dispatcher ?? this.defaultDispatcher;
@@ -30,7 +34,7 @@ export class WebhookWorker {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       return response.ok;
     } catch (error: any) {
@@ -64,13 +68,13 @@ export class WebhookWorker {
       url,
       payload,
       attempts: 0,
-      maxAttempts: this.maxAttempts
+      maxAttempts: this.maxAttempts,
     };
     this.queue.push(job);
 
     // Asynchronously trigger processing without blocking caller
     setImmediate(() => {
-      this.processQueue().catch(err => {
+      this.processQueue().catch((err) => {
         console.error('[WebhookWorker] Unhandled error processing queue:', err);
       });
     });
@@ -88,7 +92,7 @@ export class WebhookWorker {
     try {
       const now = Date.now();
       // Identify jobs ready for delivery/retry
-      const readyJobs = this.queue.filter(job => !job.nextRetryAt || job.nextRetryAt <= now);
+      const readyJobs = this.queue.filter((job) => !job.nextRetryAt || job.nextRetryAt <= now);
 
       for (const job of readyJobs) {
         job.attempts += 1;
@@ -111,7 +115,7 @@ export class WebhookWorker {
               url: job.url,
               payload: job.payload,
               attempts: job.attempts,
-              lastError: errorMessage
+              lastError: errorMessage,
             });
             this.removeFromQueue(job.id);
           } else {
@@ -127,7 +131,7 @@ export class WebhookWorker {
   }
 
   private removeFromQueue(jobId: string): void {
-    this.queue = this.queue.filter(j => j.id !== jobId);
+    this.queue = this.queue.filter((j) => j.id !== jobId);
   }
 
   public getQueue(): WebhookJob[] {

@@ -1,3 +1,4 @@
+/* eslint-disable */
 const autocannon = require('autocannon');
 
 const address = process.env.LOAD_TEST_ADDRESS || `G${'A'.repeat(55)}`;
@@ -17,4 +18,7 @@ async function main() {
   }
 }
 
-main().catch((error) => { console.error(error); process.exit(1); });
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
