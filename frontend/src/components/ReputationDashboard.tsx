@@ -188,12 +188,14 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       {/* ── Search Bar Section ── */}
       <div
         style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '20px',
+          background: 'rgba(255, 255, 255, 0.6)',
+          backdropFilter: 'saturate(180%) blur(40px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+          border: '1px solid rgba(255, 255, 255, 0.8)',
+          borderRadius: '24px',
           padding: '20px 24px',
           marginBottom: '24px',
-          boxShadow: '0 4px 20px -2px rgba(0,0,0,0.05)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
         }}
       >
         <form
@@ -245,15 +247,15 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           <button
             type="submit"
             style={{
-              background: '#0f172a',
+              background: '#1d1d1f',
               color: '#ffffff',
               border: 'none',
-              borderRadius: '12px',
+              borderRadius: '9999px',
               padding: '12px 24px',
               fontSize: '13.5px',
-              fontWeight: '700',
+              fontWeight: '500',
               cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(15,23,42,0.15)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
               transition: 'transform 0.15s ease, background 0.15s ease',
               whiteSpace: 'nowrap',
             }}
@@ -315,8 +317,10 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       {/* ── Light Pastel Hero Identity Card ── */}
       <div
         style={{
-          background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-          border: '1px solid #e2e8f0',
+          background: 'rgba(255, 255, 255, 0.6)',
+          backdropFilter: 'saturate(180%) blur(40px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+          border: '1px solid rgba(255, 255, 255, 0.8)',
           borderRadius: '24px',
           padding: '26px 32px',
           marginBottom: '24px',
@@ -325,7 +329,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '24px',
-          boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
@@ -380,11 +384,11 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             display: 'flex',
             alignItems: 'center',
             gap: '18px',
-            background: '#ffffff',
+            background: 'rgba(255, 255, 255, 0.7)',
             padding: '14px 22px',
-            borderRadius: '16px',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
+            borderRadius: '20px',
+            border: '1px solid rgba(255, 255, 255, 0.9)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
           }}
         >
           <div style={{ textAlign: 'right' }}>
@@ -504,14 +508,16 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             onMouseEnter={() => setHoveredCard('total')}
             onMouseLeave={() => setHoveredCard(null)}
             style={{
-              background: '#ffffff',
-              border: '1.5px solid #e2e8f0',
+              background: 'rgba(255, 255, 255, 0.6)',
+              backdropFilter: 'saturate(180%) blur(40px)',
+              WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+              border: '1px solid rgba(255, 255, 255, 0.9)',
               borderRadius: '20px',
               padding: '24px',
               boxShadow:
                 hoveredCard === 'total'
                   ? '0 12px 28px -6px rgba(0,0,0,0.08)'
-                  : '0 2px 8px rgba(0,0,0,0.03)',
+                  : '0 4px 12px rgba(0,0,0,0.03)',
               transform: hoveredCard === 'total' ? 'translateY(-3px)' : 'translateY(0)',
               transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
@@ -543,14 +549,16 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             onMouseEnter={() => setHoveredCard('fulfilled')}
             onMouseLeave={() => setHoveredCard(null)}
             style={{
-              background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
-              border: '1.5px solid #bbf7d0',
+              background: 'rgba(52, 199, 89, 0.1)',
+              backdropFilter: 'saturate(180%) blur(40px)',
+              WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+              border: '1px solid rgba(52, 199, 89, 0.3)',
               borderRadius: '20px',
               padding: '24px',
               boxShadow:
                 hoveredCard === 'fulfilled'
-                  ? '0 12px 28px -6px rgba(34,197,94,0.18)'
-                  : '0 2px 8px rgba(34,197,94,0.04)',
+                  ? '0 12px 28px -6px rgba(52, 199, 89, 0.2)'
+                  : '0 4px 12px rgba(0,0,0,0.03)',
               transform: hoveredCard === 'fulfilled' ? 'translateY(-3px)' : 'translateY(0)',
               transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
@@ -604,14 +612,16 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             onMouseEnter={() => setHoveredCard('late')}
             onMouseLeave={() => setHoveredCard(null)}
             style={{
-              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-              border: '1.5px solid #fde68a',
+              background: 'rgba(245, 158, 11, 0.1)',
+              backdropFilter: 'saturate(180%) blur(40px)',
+              WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
               borderRadius: '20px',
               padding: '24px',
               boxShadow:
                 hoveredCard === 'late'
-                  ? '0 12px 28px -6px rgba(245,158,11,0.18)'
-                  : '0 2px 8px rgba(245,158,11,0.04)',
+                  ? '0 12px 28px -6px rgba(245, 158, 11, 0.2)'
+                  : '0 4px 12px rgba(0,0,0,0.03)',
               transform: hoveredCard === 'late' ? 'translateY(-3px)' : 'translateY(0)',
               transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
@@ -665,14 +675,16 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             onMouseEnter={() => setHoveredCard('breached')}
             onMouseLeave={() => setHoveredCard(null)}
             style={{
-              background: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)',
-              border: '1.5px solid #fecdd3',
+              background: 'rgba(255, 59, 48, 0.1)',
+              backdropFilter: 'saturate(180%) blur(40px)',
+              WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+              border: '1px solid rgba(255, 59, 48, 0.3)',
               borderRadius: '20px',
               padding: '24px',
               boxShadow:
                 hoveredCard === 'breached'
-                  ? '0 12px 28px -6px rgba(239,68,68,0.18)'
-                  : '0 2px 8px rgba(239,68,68,0.04)',
+                  ? '0 12px 28px -6px rgba(255, 59, 48, 0.2)'
+                  : '0 4px 12px rgba(0,0,0,0.03)',
               transform: hoveredCard === 'breached' ? 'translateY(-3px)' : 'translateY(0)',
               transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
             }}
@@ -726,11 +738,13 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       {/* ── Associated Commitments Table ── */}
       <div
         style={{
-          background: '#ffffff',
-          border: '1.5px solid #e2e8f0',
+          background: 'rgba(255, 255, 255, 0.6)',
+          backdropFilter: 'saturate(180%) blur(40px)',
+          WebkitBackdropFilter: 'saturate(180%) blur(40px)',
+          border: '1px solid rgba(255, 255, 255, 0.8)',
           borderRadius: '24px',
           overflow: 'hidden',
-          boxShadow: '0 4px 20px -2px rgba(0,0,0,0.04)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
         }}
       >
         {fetchError && (
@@ -874,10 +888,10 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                 <thead>
                   <tr
                     style={{
-                      background: '#f8fafc',
-                      borderBottom: '1px solid #e2e8f0',
-                      color: '#64748b',
-                      fontWeight: '800',
+                      background: 'transparent',
+                      borderBottom: '1px solid rgba(0,0,0,0.05)',
+                      color: '#86868b',
+                      fontWeight: '700',
                       fontSize: '11px',
                       textTransform: 'uppercase',
                       letterSpacing: '0.06em',

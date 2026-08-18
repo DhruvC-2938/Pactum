@@ -156,7 +156,7 @@ export default function CreateCommitmentWizard({
       } else {
         setFundMessage('Friendbot request submitted. Please check your balance in Freighter.');
       }
-    } catch (e) {
+    } catch {
       setFundMessage(
         'Could not reach Friendbot automatically. You can also fund in Freighter extension settings.',
       );
