@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useWallet } from '../context/WalletContext';
-import { Wallet, X, Check, Copy, Shield, LogOut } from 'lucide-react';
+import { Wallet, X, Check, Copy, Shield, LogOut, AlertTriangle, ExternalLink } from 'lucide-react';
+import { truncateAddress, FREIGHTER_HOMEPAGE } from '../lib/wallet';
 
 export interface WalletConnectModalProps {
   isOpen: boolean;
@@ -8,7 +9,16 @@ export interface WalletConnectModalProps {
 }
 
 export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, onClose }) => {
-  const { address, isConnected, isConnecting, connectWallet, disconnectWallet } = useWallet();
+  const {
+    address,
+    provider,
+    isConnected,
+    isConnecting,
+    connectWallet,
+    disconnectWallet,
+    error,
+    errorCode,
+  } = useWallet();
   const [copied, setCopied] = React.useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -38,14 +48,11 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleConnectFreighter = async () => {
-    await connectWallet();
+  const handleConnect = async (wallet: 'freighter' | 'albedo') => {
+    await connectWallet(wallet);
   };
 
-  const shorten = (str: string) => {
-    if (!str || str.length < 12) return str;
-    return `${str.substring(0, 6)}...${str.substring(str.length - 4)}`;
-  };
+  const providerLabel = provider === 'albedo' ? 'Albedo' : 'Freighter';
 
   return (
     <div
@@ -63,12 +70,32 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
         boxShadow: '0 16px 36px -6px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(0,0,0,0.04)',
         textAlign: 'left',
         transformOrigin: 'top right',
-        animation: 'slideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1)'
+        animation: 'slideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       {/* Top Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #f1f5f9' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '800', color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '14px',
+          paddingBottom: '12px',
+          borderBottom: '1px solid #f1f5f9',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '11px',
+            fontWeight: '800',
+            color: '#6366f1',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+          }}
+        >
           <Wallet size={13} />
           Stellar Wallet
         </div>
@@ -85,7 +112,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
             alignItems: 'center',
             justifyContent: 'center',
             color: '#64748b',
-            cursor: 'pointer'
+            cursor: 'pointer',
           }}
           title="Close"
         >
@@ -93,20 +120,94 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
         </button>
       </div>
 
+      {/* Error Banner */}
+      {error && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '8px',
+            background: errorCode === 'NETWORK_MISMATCH' ? '#fffbeb' : '#fef2f2',
+            border: `1px solid ${errorCode === 'NETWORK_MISMATCH' ? '#fde68a' : '#fecaca'}`,
+            color: errorCode === 'NETWORK_MISMATCH' ? '#92400e' : '#b91c1c',
+            borderRadius: '10px',
+            padding: '10px 12px',
+            marginBottom: '14px',
+            fontSize: '11.5px',
+            lineHeight: '1.5',
+          }}
+        >
+          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+          <div>
+            <div style={{ fontWeight: '800', marginBottom: '2px' }}>
+              {errorCode === 'NETWORK_MISMATCH' ? 'Wrong network detected' : 'Connection failed'}
+            </div>
+            <div>{error}</div>
+            {errorCode === 'NETWORK_MISMATCH' && (
+              <a
+                href="https://freighter.app/settings"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  marginTop: '6px',
+                  fontWeight: '700',
+                  color: '#92400e',
+                  textDecoration: 'underline',
+                }}
+              >
+                Switch Freighter to Testnet <ExternalLink size={11} />
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Connected View */}
       {isConnected && address ? (
         <div>
-          <div style={{
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            borderRadius: '14px',
-            padding: '14px',
-            marginBottom: '14px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span style={{ fontSize: '10.5px', fontWeight: '800', color: '#16a34a', background: '#dcfce7', padding: '2px 8px', borderRadius: '100px', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#22c55e' }}></span>
-                Stellar Testnet Live
+          <div
+            style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '14px',
+              padding: '14px',
+              marginBottom: '14px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '10.5px',
+                  fontWeight: '800',
+                  color: '#16a34a',
+                  background: '#dcfce7',
+                  padding: '2px 8px',
+                  borderRadius: '100px',
+                  border: '1px solid #bbf7d0',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span
+                  style={{
+                    width: '5px',
+                    height: '5px',
+                    borderRadius: '50%',
+                    background: '#22c55e',
+                  }}
+                ></span>
+                {providerLabel} · Stellar Testnet
               </span>
               <button
                 onClick={handleCopy}
@@ -121,7 +222,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
                   fontWeight: '700',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
                 }}
               >
                 {copied ? <Check size={11} color="#16a34a" /> : <Copy size={11} />}
@@ -129,8 +230,16 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               </button>
             </div>
 
-            <div style={{ fontFamily: 'monospace', fontSize: '13.5px', fontWeight: '800', color: '#0f172a', wordBreak: 'break-all' }}>
-              {shorten(address)}
+            <div
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '13.5px',
+                fontWeight: '800',
+                color: '#0f172a',
+                wordBreak: 'break-all',
+              }}
+            >
+              {truncateAddress(address, 8, 8)}
             </div>
           </div>
 
@@ -152,7 +261,7 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               fontWeight: '700',
               padding: '9px',
               borderRadius: '10px',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
             <LogOut size={13} />
@@ -160,10 +269,10 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
           </button>
         </div>
       ) : (
-        /* Disconnected State: Dropping Banner Option */
-        <div>
+        /* Disconnected State: Wallet Provider Options */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
-            onClick={handleConnectFreighter}
+            onClick={() => handleConnect('freighter')}
             disabled={isConnecting}
             style={{
               width: '100%',
@@ -177,20 +286,22 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               cursor: isConnecting ? 'wait' : 'pointer',
               boxShadow: '0 2px 8px rgba(99, 102, 241, 0.08)',
               transition: 'all 0.15s ease',
-              textAlign: 'left'
+              textAlign: 'left',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <Wallet size={18} />
               </div>
               <div>
@@ -208,7 +319,88 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
             </span>
           </button>
 
-          <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+          <button
+            onClick={() => handleConnect('albedo')}
+            disabled={isConnecting}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 16px',
+              background: '#ffffff',
+              border: '1.5px solid #e2e8f0',
+              borderRadius: '14px',
+              cursor: isConnecting ? 'wait' : 'pointer',
+              transition: 'all 0.15s ease',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #0f172a 0%, #334155 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Shield size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                  Albedo Wallet
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '1px' }}>
+                  Web-based Stellar wallet (no extension)
+                </div>
+              </div>
+            </div>
+
+            <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#334155' }}>
+              {isConnecting ? '...' : 'Connect →'}
+            </span>
+          </button>
+
+          {errorCode === 'NOT_INSTALLED' && (
+            <a
+              href={FREIGHTER_HOMEPAGE}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                background: '#0f172a',
+                color: '#ffffff',
+                fontWeight: '700',
+                fontSize: '12px',
+                padding: '10px',
+                borderRadius: '10px',
+                textDecoration: 'none',
+              }}
+            >
+              <ExternalLink size={13} />
+              Install Freighter Wallet
+            </a>
+          )}
+
+          <div
+            style={{
+              textAlign: 'center',
+              fontSize: '11px',
+              color: '#94a3b8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+            }}
+          >
             <Shield size={11} />
             100% Non-Custodial Browser Security
           </div>
