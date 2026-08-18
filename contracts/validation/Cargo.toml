@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib"]
 
 [features]
-default = ["std"]
+default = []
 std = []
-wasm = ["std", "dep:wasm-bindgen"]
+wasm = ["dep:wasm-bindgen"]
 
 [dependencies]
 wasm-bindgen = { version = "0.2", optional = true }

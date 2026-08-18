@@ -367,7 +367,8 @@ pub fn create(
 
     // 2. Validate parameters using shared validation rules.
     let now = env.ledger().timestamp();
-    if let Err(err) = pactum_validation::validate_commitment_creation(due_at, now, milestone_count) {
+    if let Err(err) = pactum_validation::validate_commitment_creation(due_at, now, milestone_count)
+    {
         match err {
             pactum_validation::ValidationError::DueAtInPast => {
                 soroban_sdk::panic_with_error!(env, crate::errors::Error::DueAtInPast);

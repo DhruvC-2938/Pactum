@@ -122,7 +122,7 @@ jobs:
       # codegen-units = 1, panic = "abort", stripped.
       - name: Build optimized Soroban Wasm contract
         working-directory: contracts
-        run: cargo build --target wasm32v1-none --release
+        run: cargo build --target wasm32v1-none --release -p registry -p timelock
 
       - name: Report Wasm size
         id: size

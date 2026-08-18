@@ -57,9 +57,9 @@ pub fn validate_commitment_params(
         Err(ValidationError::DueAtInPast) => {
             Err(JsValue::from_str("Due date must be set in the future."))
         }
-        Err(ValidationError::InvalidMilestoneCount) => {
-            Err(JsValue::from_str("Milestone count must be between 1 and 256."))
-        }
+        Err(ValidationError::InvalidMilestoneCount) => Err(JsValue::from_str(
+            "Milestone count must be between 1 and 256.",
+        )),
     }
 }
 
@@ -86,7 +86,13 @@ mod tests {
 
     #[test]
     fn test_milestone_count_invalid() {
-        assert_eq!(validate_milestone_count(0), Err(ValidationError::InvalidMilestoneCount));
-        assert_eq!(validate_milestone_count(257), Err(ValidationError::InvalidMilestoneCount));
+        assert_eq!(
+            validate_milestone_count(0),
+            Err(ValidationError::InvalidMilestoneCount)
+        );
+        assert_eq!(
+            validate_milestone_count(257),
+            Err(ValidationError::InvalidMilestoneCount)
+        );
     }
 }
