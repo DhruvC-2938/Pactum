@@ -4,13 +4,7 @@ import { invalidateLedger } from './cache';
 import { CommitmentCreatedEvent, parseLedgerEvents } from './events';
 import { createSorobanRpcLedgerClient, SorobanLedgerSource } from './rpc-source';
 import { PostgresIndexerStore } from './store';
-import {
-  IndexerStore,
-  LedgerCheckpoint,
-  LedgerSnapshot,
-  LedgerSource,
-  LedgerSnapshot,
-} from './types';
+import { IndexerStore, LedgerCheckpoint, LedgerSnapshot, LedgerSource } from './types';
 import client from 'prom-client';
 
 // Prometheus metrics for indexer
@@ -136,11 +130,6 @@ export class FinalityIndexer {
       await this.options.store.appendLedger(ledger);
       // appendLedger is the finality boundary. Await the projector so stale
       // values cannot survive beyond the millisecond the ledger is committed.
-      await this.options.onLedgerCommitted?.(ledger);
-      checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
-      nextSequence += 1;
-      committed += 1;
-
       if (this.options.onLedgerCommitted) {
         try {
           await this.options.onLedgerCommitted(ledger);
@@ -148,6 +137,9 @@ export class FinalityIndexer {
           console.error(`[indexer] Ledger ${ledger.sequence} commit hook failed:`, error);
         }
       }
+      checkpoint = { sequence: ledger.sequence, hash: ledger.hash };
+      nextSequence += 1;
+      committed += 1;
     }
 
     // Update Prometheus metrics
