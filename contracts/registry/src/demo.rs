@@ -74,7 +74,7 @@ fn advance_ledgers(
         let next = seq.saturating_add(CHUNK).min(target_seq);
         env.ledger().with_mut(|l| l.sequence_number = next);
         client.get_arbitrator();
-        client.get_trust_score(issuer);
+        client.get_trust_score(issuer).unwrap_or(50);
         client.get_reputation(issuer);
         seq = next;
     }
@@ -99,7 +99,7 @@ fn demo_time_decay_table() {
     let stranger = Address::generate(&env);
     println!(
         "    get_trust_score(no history)           = {}",
-        client.get_trust_score(&stranger)
+        client.get_trust_score(&stranger).unwrap_or(50)
     );
 
     println!();
@@ -114,7 +114,7 @@ fn demo_time_decay_table() {
     );
     println!(
         "    get_trust_score(issuer)               = {}   (50 - 50, clamped)",
-        client.get_trust_score(&issuer)
+        client.get_trust_score(&issuer).unwrap_or(50)
     );
     println!(
         "    get_reputation(issuer)                = {:?}",
@@ -136,7 +136,7 @@ fn demo_time_decay_table() {
         if buckets > 0 {
             advance_ledgers(&env, &client, &issuer, buckets_ledgers(buckets));
         }
-        let score = client.get_trust_score(&issuer);
+        let score = client.get_trust_score(&issuer).unwrap_or(50);
         println!(
             "    +{:>5} buckets ({:>10} ledgers) -> score {}   (expected {})",
             buckets,
@@ -165,7 +165,7 @@ fn demo_time_decay_table() {
     );
     println!(
         "    get_trust_score(issuer)               = {}",
-        client.get_trust_score(&issuer)
+        client.get_trust_score(&issuer).unwrap_or(50)
     );
 
     println!();
@@ -191,17 +191,17 @@ fn demo_time_decay_table() {
     );
     println!(
         "    same bucket                          -> {}",
-        client2.get_trust_score(&issuer2)
+        client2.get_trust_score(&issuer2).unwrap_or(50)
     );
     advance_ledgers(&env2, &client2, &issuer2, buckets_ledgers(64));
     println!(
         "    +64 buckets (640,000 ledgers)        -> {}",
-        client2.get_trust_score(&issuer2)
+        client2.get_trust_score(&issuer2).unwrap_or(50)
     );
     advance_ledgers(&env2, &client2, &issuer2, buckets_ledgers(128));
     println!(
         "    +128 buckets (1,280,000 ledgers)     -> {}",
-        client2.get_trust_score(&issuer2)
+        client2.get_trust_score(&issuer2).unwrap_or(50)
     );
     println!();
 }

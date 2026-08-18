@@ -84,4 +84,9 @@ pub enum Error {
     UseVotingResolution = 37,
     /// The protocol is currently paused.
     ProtocolPaused = 38,
+    /// The reputation (or trust-history) entry for this address has been
+    /// archived by Soroban state expiration and must be restored before it
+    /// can be read or mutated.  Callers should submit a `RestoreFootprint`
+    /// operation — or invoke `restore_reputation` — and retry.
+    ReputationArchived = 39,
 }

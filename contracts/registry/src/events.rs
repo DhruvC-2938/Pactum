@@ -126,6 +126,17 @@ pub fn reputation_migrated(env: &Env, address: &Address, migrated: &ReputationV2
     );
 }
 
+/// Publishes an event when an archived reputation (or trust-history) entry is
+/// successfully restored by a permissionless caller.
+///
+/// The `restored_v2` flag is `true` when a V2 reputation row was found after
+/// restoration, and `false` when only a legacy V1 row (or trust-history entry)
+/// was present.  Indexers can use this to update their TTL watchlists.
+pub fn reputation_restored(env: &Env, address: &Address, restored_v2: bool) {
+    env.events()
+        .publish((symbol_short!("reprstr"), address.clone()), restored_v2);
+}
+
 /// Publishes an event when an attestor stakes tokens into the registry vault.
 pub fn staked(env: &Env, attestor: &Address, amount: i128) {
     env.events()

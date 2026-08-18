@@ -13,7 +13,9 @@ import { createOpenApiRouter } from './openapi/openapi';
 import { requestLogger } from './middleware/requestLogger';
 import { logger } from './logger/logger';
 import client from 'prom-client';
-import { startSnapshotCron } from './indexer/cron';
+import { startSnapshotCron, startTtlMonitorCron, createTtlRpcClient } from './indexer/cron';
+import { SorobanClient } from './soroban/client';
+import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
 
 dotenv.config();
@@ -117,10 +119,33 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/commitments', commitmentsRouter);
 const redis = createRedisClientFromEnv();
 redis.on('error', (error) => console.error('Redis connection error', error));
-const reputationCache = new ReputationCache(redis, new PostgresReputationRepository(pool), {
-  ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300),
-});
-const reputationRouterInstance = createReputationRouter(reputationCache);
+const reputationCache = new ReputationCache(
+  redis,
+  new PostgresReputationRepository(pool),
+  { ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300) },
+);
+
+// ── Soroban client (shared by reputation router + TTL monitor) ─────────────
+// Built once from env so both the trust-score API endpoint and the TTL monitor
+// cron use the same keypair and network configuration.
+const sorobanRpcUrl = process.env.SOROBAN_RPC_URL;
+const sorobanContractId = process.env.SOROBAN_CONTRACT_ID;
+const sorobanPrivateKey = process.env.ORACLE_PRIVATE_KEY;
+const sorobanNetworkPassphrase = process.env.SOROBAN_NETWORK_PASSPHRASE;
+
+let sharedSorobanClient: SorobanClient | undefined;
+if (sorobanRpcUrl && sorobanContractId && sorobanPrivateKey && sorobanNetworkPassphrase) {
+  sharedSorobanClient = new SorobanClient({
+    rpcUrl: sorobanRpcUrl,
+    contractId: sorobanContractId,
+    networkPassphrase: sorobanNetworkPassphrase,
+    privateKey: sorobanPrivateKey,
+  });
+}
+
+// Pass the optional SorobanClient so the /trust-score endpoint can query
+// the live chain.  The router degrades gracefully when it is undefined.
+const reputationRouterInstance = createReputationRouter(reputationCache, sharedSorobanClient);
 app.use('/reputation', reputationRouterInstance);
 // Also mounted here because that is where the placeholder handler used to live.
 app.use('/api/reputation', reputationRouterInstance);
@@ -145,6 +170,21 @@ app.get('/metrics', async (req: Request, res: Response) => {
 
 if (process.env.INDEXER_ENABLED !== 'off') {
   startSnapshotCron();
+
+  // ── Soroban State Archival / TTL Monitor (Issue #58) ──────────────────
+  // Proactively bumps the TTL of high-value reputation entries before they
+  // reach the Soroban archive threshold, so dormant-address lookups never
+  // encounter an archived-entry host rejection.
+  if (sharedSorobanClient && sorobanRpcUrl) {
+    const rpcServer = new SorobanRpc.Server(sorobanRpcUrl, { allowHttp: true });
+    const ttlRpcClient = createTtlRpcClient(rpcServer);
+    startTtlMonitorCron(ttlRpcClient, sharedSorobanClient);
+  } else {
+    console.warn(
+      '[TTL Monitor] Skipping TTL monitor cron: SOROBAN_RPC_URL, SOROBAN_CONTRACT_ID, ' +
+      'ORACLE_PRIVATE_KEY, or SOROBAN_NETWORK_PASSPHRASE is not set.',
+    );
+  }
 }
 
 let server: ReturnType<typeof app.listen>;

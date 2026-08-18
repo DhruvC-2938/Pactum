@@ -22,6 +22,9 @@ pub mod voting;
 mod test_trust_score;
 
 #[cfg(test)]
+mod test_archival;
+
+#[cfg(test)]
 mod test;
 
 #[cfg(test)]
@@ -700,9 +703,54 @@ impl RegistryContract {
     /// * `address` - The address to query.
     ///
     /// # Returns
-    /// * `u32` - The trust score in the range 0..=100 (50 = neutral baseline).
-    pub fn get_trust_score(env: Env, address: Address) -> u32 {
+    /// * `Some(score)` — the trust score in the range 0..=100 (50 = neutral
+    ///   baseline) when a live or absent (never-written) entry exists.
+    /// * `None` — the trust-history entry for this address is currently
+    ///   **archived** (Soroban state expiration).  Callers should submit a
+    ///   `RestoreFootprint` + `restore_reputation(address)` transaction and
+    ///   retry, rather than treating the missing value as a score of 0.
+    pub fn get_trust_score(env: Env, address: Address) -> Option<u32> {
         trust_score::get_trust_score(&env, address)
+    }
+
+    /// Restores an archived reputation entry for `address` and extends its TTL.
+    ///
+    /// This function is **permissionless** — anyone (e.g. the indexer, a lending
+    /// protocol, an end user) may call it to unarchive another address's data and
+    /// pay the small restoration fee.
+    ///
+    /// The caller **must** include a `RestoreFootprint` Soroban host operation in
+    /// the same transaction (listing the V2 reputation key, the legacy V1 key, and
+    /// the trust-history key) so the host brings those ledger entries back into the
+    /// live state before this contract function runs.  The SDK's `simulateTransaction`
+    /// response includes the required `restoreFootprint` field when any of those keys
+    /// are archived, so the restore transaction can be assembled automatically.
+    ///
+    /// # Arguments
+    /// * `address` - The address whose reputation data should be restored.
+    ///
+    /// # Returns
+    /// * `true`  — at least one live entry was found and its TTL extended to
+    ///   [`commitments::TTL_EXTEND_LEDGERS`].
+    /// * `false` — no live entry was found after restoration (either the address
+    ///   was never scored or the `RestoreFootprint` operation was omitted).
+    ///
+    /// Emits a `reputation_restored` event so the indexer can update its TTL
+    /// watchlist.
+    pub fn restore_reputation(env: Env, address: Address) -> bool {
+        reputation::restore_reputation(&env, address)
+    }
+
+    /// Extends the TTL of `address`'s trust-history entry so it does not archive.
+    ///
+    /// This is the lightweight alternative to `restore_reputation` when only the
+    /// `TrustKey::TrustHistory` entry needs to be kept alive (e.g. the indexer has
+    /// already bumped the reputation rows separately).
+    ///
+    /// Permissionless: anyone may call this. Returns `true` if a live entry was
+    /// found and its TTL extended, `false` if the address has never been scored.
+    pub fn restore_trust_history(env: Env, address: Address) -> bool {
+        trust_score::restore_trust_history(&env, address)
     }
 
     // ---------------------------------------------------------------------
