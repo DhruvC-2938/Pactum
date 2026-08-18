@@ -3,14 +3,17 @@ use crate::reputation::ReputationV2;
 use soroban_sdk::{symbol_short, Address, BytesN, Env};
 
 /// Publishes an event when a new commitment is created.
-pub fn commitment_created(env: &Env, id: u64, issuer: &Address, counterparty: &Address) {
+pub fn commitment_created(
+    env: &Env,
+    id: u64,
+    issuer: &Address,
+    counterparty: &Address,
+    oracle: &Option<Address>,
+    schema_id: Option<u32>,
+) {
     env.events().publish(
-        (
-            symbol_short!("created"),
-            issuer.clone(),
-            counterparty.clone(),
-        ),
-        id,
+        (symbol_short!("created"), issuer.clone(), counterparty.clone(), oracle.clone()),
+        (id, schema_id),
     );
 }
 
@@ -58,6 +61,34 @@ pub fn arbitrator_vote_cast(
     );
 }
 
+/// Publishes an event when a panel attestor casts a vote on a disputed commitment.
+pub fn attestor_vote_cast(env: &Env, id: u64, attestor: &Address, outcome: CommitmentStatus) {
+    env.events()
+        .publish((symbol_short!("votecast"), id, attestor.clone()), outcome);
+}
+
+/// Publishes an event when attestor voting resolves a disputed commitment to a final outcome.
+pub fn commitment_resolved(env: &Env, id: u64, final_outcome: CommitmentStatus) {
+    env.events()
+        .publish((symbol_short!("voteres"), id), final_outcome);
+}
+
+/// Publishes an event when an unresolved dispute falls back to `Breached` after
+/// the attestor voting window elapses without reaching the threshold.
+pub fn commitment_fallback(env: &Env, id: u64, fallback_outcome: CommitmentStatus) {
+    env.events()
+        .publish((symbol_short!("votefall"), id), fallback_outcome);
+}
+pub fn protocol_paused(env: &Env) {
+    let topics = (symbol_short!("paused"),);
+    env.events().publish(topics, ());
+}
+
+pub fn protocol_unpaused(env: &Env) {
+    let topics = (symbol_short!("unpaused"),);
+    env.events().publish(topics, ());
+}
+
 /// Publishes an event when the contract's executable is replaced.
 ///
 /// Emitted by the *outgoing* executable, before the swap takes effect, so the log
@@ -90,12 +121,22 @@ pub fn reputation_migrated(env: &Env, address: &Address, migrated: &ReputationV2
     );
 }
 
-/// Publishes an event when the protocol is paused (emergency halt) by the admin.
-pub fn protocol_paused(env: &Env) {
-    env.events().publish((symbol_short!("paused"),), ());
+/// Publishes an event when an attestor stakes tokens into the registry vault.
+pub fn staked(env: &Env, attestor: &Address, amount: i128) {
+    env.events()
+        .publish((symbol_short!("staked"), attestor.clone()), amount);
 }
 
-/// Publishes an event when the protocol is unpaused by the admin.
-pub fn protocol_unpaused(env: &Env) {
-    env.events().publish((symbol_short!("unpaused"),), ());
+/// Publishes an event when an attestor requests an unstake, starting the unbonding period.
+pub fn unstake_requested(env: &Env, attestor: &Address, unbonding_until: u64) {
+    env.events().publish(
+        (symbol_short!("unbndreq"), attestor.clone()),
+        unbonding_until,
+    );
+}
+
+/// Publishes an event when an attestor withdraws their stake after the unbonding period.
+pub fn unstaked(env: &Env, attestor: &Address, amount: i128) {
+    env.events()
+        .publish((symbol_short!("unstaked"), attestor.clone()), amount);
 }

@@ -82,7 +82,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   }, [activeAddress, statusFilter]);
 
   const loadMore = React.useCallback(async () => {
-    if (isFetchingRef.current || !hasMore) return;
+    if (isLoading || isFetchingRef.current || !hasMore) return;
 
     isFetchingRef.current = true;
     setIsFetchingMore(true);
@@ -142,7 +142,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           loadMore();
         }
       },
-      { threshold: 1.0 }
+      { threshold: 0.1 }
     );
 
     if (bottomRef.current) {

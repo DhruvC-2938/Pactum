@@ -2,15 +2,40 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import commitmentsRouter from './routes/commitments';
-import reputationRouter from './routes/reputation';
+import { createReputationRouter } from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
+import pool from './db/timescale';
+import { PostgresReputationRepository } from './reputation/repository';
+import { createRedisClientFromEnv, ReputationCache } from './cache/reputationCache';
+import client from 'prom-client';
 import { startSnapshotCron } from './indexer/cron';
-import { closeCache, initCache, isCacheAvailable } from './indexer/cache';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
 
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
+const metricsPort = process.env.METRICS_PORT || 9090;
+
+// Prometheus metrics setup
+const register = new client.Registry();
+
+// HTTP request latency histogram
+const httpRequestDuration = new client.Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests in seconds',
+  labelNames: ['method', 'route', 'status_code'],
+  registers: [register],
+});
+
+// Active WebSocket connections gauge (placeholder for future WebSocket implementation)
+const activeWebSocketConnections = new client.Gauge({
+  name: 'websocket_active_connections',
+  help: 'Number of active WebSocket connections',
+  registers: [register],
+});
+
+// Collect default metrics (CPU, memory, etc.)
+client.collectDefaultMetrics({ register });
 
 // ---------------------------------------------------------------------------
 // Security headers (helmet-equivalent)
@@ -62,39 +87,64 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
 app.use(cors());
 app.use(express.json());
 
+// Middleware to track HTTP request duration
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    httpRequestDuration
+      .labels(req.method, req.path, res.statusCode.toString())
+      .observe(duration);
+  });
+  next();
+});
+
 // Health check route
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({
     status: 'ok',
-    cache: isCacheAvailable(),
+    
     timestamp: new Date().toISOString(),
   });
 });
 
 // Mount the routers
 app.use('/commitments', commitmentsRouter);
-app.use('/reputation', reputationRouter);
+const redis = createRedisClientFromEnv();
+redis.on('error', (error) => console.error('Redis connection error', error));
+const reputationCache = new ReputationCache(
+  redis,
+  new PostgresReputationRepository(pool),
+  { ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300) },
+);
+const reputationRouterInstance = createReputationRouter(reputationCache);
+app.use('/reputation', reputationRouterInstance);
 // Also mounted here because that is where the placeholder handler used to live.
-app.use('/api/reputation', reputationRouter);
+app.use('/api/reputation', reputationRouterInstance);
 app.use('/api/analytics', analyticsRoutes);
 
-if (process.env.REPUTATION_SNAPSHOT_CRON !== 'off') {
+// Metrics endpoint for Prometheus scraping
+app.get('/metrics', async (req: Request, res: Response) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
+});
+
+if (process.env.INDEXER_ENABLED !== 'off') {
   startSnapshotCron();
 }
 
-initCache().finally(() => {
-  const server = app.listen(port, () => {
-    console.log(`[server]: Pactum Backend running at http://localhost:${port}`);
+let server: ReturnType<typeof app.listen>;
+
+async function init() {
+  server = app.listen(port, () => {
+    console.log(`[api] Server running on port ${port}`);
+    console.log(`[metrics] Prometheus metrics on port ${metricsPort}`);
   });
+}
 
-  const shutdown = () => {
-    server.close(() => {
-      closeCache().finally(() => process.exit(0));
-    });
-  };
+init();
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-});
-
+export const stop = async () => {
+  server?.close();
+};
 export default app;

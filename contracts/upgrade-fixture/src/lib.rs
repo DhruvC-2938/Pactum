@@ -89,6 +89,8 @@ pub struct Commitment {
     pub milestone_count: u32,
     pub milestones_attested: u32,
     pub late_milestones: u32,
+    pub attestors: Vec<Address>,
+    pub vote_threshold: u32,
 }
 
 /// Mirror of `registry::commitments::DataKey`.
