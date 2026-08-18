@@ -11,7 +11,8 @@
     "test": "npm run test:indexer",
     "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src/indexer -type f -name '*.test.js' -exec node --test {} +",
     "analytics:worker": "node dist/workers/analyticsWorker.js",
-    "migrate:timescale": "node dist/db/migrate.js"
+    "migrate:timescale": "node dist/db/migrate.js",
+    "backfill:commitments": "node dist/indexer/backfill-commitments.js"
   },
   "keywords": [],
   "author": "",

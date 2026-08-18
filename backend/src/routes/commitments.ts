@@ -2,8 +2,35 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { commitmentSchema } from '../schemas/commitment';
 import { ZodError } from 'zod';
 import { strictLimiter } from '../middleware/rateLimiter';
+import pool from '../db/timescale';
+import {
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  PostgresCommitmentIndex,
+} from '../indexer/commitments';
 
 const router = Router();
+
+// Reverse index over the shared TimescaleDB pool, populated by the indexer from
+// on-chain `commitment_created` events. See src/indexer/commitments.ts.
+const commitmentIndex = new PostgresCommitmentIndex(pool);
+
+const STELLAR_ADDRESS = /^[GC][A-Z2-7]{55}$/;
+
+// Query params arrive as string | string[] | undefined; take the integer form
+// of a single string value, otherwise fall back (findByAddress clamps range).
+const parseIntParam = (value: unknown, fallback: number): number => {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+};
+
+const roleOf = (address: string, issuer: string, counterparty: string): string => {
+  const isIssuer = issuer === address;
+  const isCounterparty = counterparty === address;
+  if (isIssuer && isCounterparty) return 'both';
+  return isIssuer ? 'issuer' : 'counterparty';
+};
 
 /**
  * Validation middleware using Zod.
@@ -58,9 +85,45 @@ router.get('/:id', (req: Request, res: Response) => {
   res.status(200).json({ message: 'Get commitment', id: req.params.id });
 });
 
-// GET /commitments - List commitments
-router.get('/', (req: Request, res: Response) => {
-  res.status(200).json({ message: 'List commitments' });
+// GET /commitments?address=<stellar_address> - List commitments an address is party to
+//
+// Address-based lookup the registry cannot serve on-chain (it only exposes
+// get_commitment(id)). Results come from the reverse index the indexer builds
+// from `commitment_created` events, returning the commitments where the address
+// is the issuer or the counterparty, newest first. Paginated with `limit`
+// (default 50, max 200) and `offset`.
+router.get('/', async (req: Request, res: Response) => {
+  const { address } = req.query;
+
+  // `address` is required: this endpoint queries by party. Listing every
+  // commitment in the registry is intentionally not offered here.
+  if (typeof address !== 'string') {
+    res.status(400).json({ error: "Query parameter 'address' is required" });
+    return;
+  }
+  if (!STELLAR_ADDRESS.test(address)) {
+    res.status(400).json({ error: 'Invalid Stellar address' });
+    return;
+  }
+
+  try {
+    const { items, total, limit, offset } = await commitmentIndex.findByAddress(address, {
+      limit: parseIntParam(req.query.limit, DEFAULT_LIMIT),
+      offset: parseIntParam(req.query.offset, 0),
+    });
+
+    res.json({
+      address,
+      pagination: { limit, offset, total },
+      commitments: items.map((commitment) => ({
+        ...commitment,
+        role: roleOf(address, commitment.issuer, commitment.counterparty),
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching commitments by address:', error);
+    res.status(500).json({ error: 'Failed to fetch commitments' });
+  }
 });
 
 export default router;

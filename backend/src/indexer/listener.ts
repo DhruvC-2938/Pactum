@@ -5,6 +5,7 @@ import {
   LedgerSource,
 } from './types';
 import { InMemoryCursorCache, PostgresCursorCache } from './cache';
+import { CommitmentIndex, indexCommitmentsFromLedger } from './commitments';
 
 // ─── Existing FinalityIndexer (unchanged) ────────────────────────────────────
 
@@ -164,6 +165,38 @@ export class FinalityIndexer {
 
     return floor === this.startSequence && sawCanonicalCandidate ? 0 : null;
   }
+}
+
+/**
+ * Builds an `onLedgerCommitted` hook that keeps the address → commitment reverse
+ * index in step with the ledgers the indexer finalizes: it decodes any
+ * `commitment_created` events in each committed ledger and upserts them, so
+ * `GET /commitments?address=` can list an address's commitments without an
+ * on-chain scan.
+ *
+ * Pass the result as `FinalityIndexerOptions.onLedgerCommitted`. Indexing runs
+ * inside that hook, whose failures the indexer logs and swallows, so a decode or
+ * database hiccup never stalls ledger progress — reconcile with
+ * `backfillCommitmentIndex` if needed. To also invalidate caches on commit,
+ * compose the two hooks:
+ *
+ * ```ts
+ * const indexCommitments = createCommitmentIndexingHook(commitmentIndex);
+ * new FinalityIndexer({
+ *   // …
+ *   onLedgerCommitted: async (ledger) => {
+ *     await indexCommitments(ledger);
+ *     await invalidateLedger(ledger);
+ *   },
+ * });
+ * ```
+ */
+export function createCommitmentIndexingHook(
+  index: CommitmentIndex,
+): (ledger: LedgerSnapshot) => Promise<void> {
+  return async (ledger) => {
+    await indexCommitmentsFromLedger(ledger, index);
+  };
 }
 
 // ─── Horizon SSE Indexer ──────────────────────────────────────────────────────
