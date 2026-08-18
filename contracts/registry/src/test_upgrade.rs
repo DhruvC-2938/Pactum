@@ -865,9 +865,13 @@ mod wasm {
         let commitment = after
             .read_commitment(&id)
             .expect("milestone commitment survived the executable swap");
-        assert_eq!(commitment.milestone_count(), 3);
-        assert_eq!(commitment.milestones_attested(), 2);
-        assert_eq!(commitment.late_milestones(), 1);
+        // The four counters are bitpacked into a single `u64` in the optimized
+        // layout: milestone_count=3, milestones_attested=2, late_milestones=1,
+        // vote_threshold=0.
+        assert_eq!(
+            commitment.counters,
+            crate::commitments::Commitment::pack_counters(&f.env, 3, 2, 1, 0)
+        );
         assert_eq!(
             commitment.status,
             fixture_contract::CommitmentStatus::Pending

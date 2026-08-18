@@ -86,13 +86,12 @@ pub struct Commitment {
     pub created_at: u64,
     pub attested_at: Option<u64>,
     pub resolver_address: Address,
-    pub milestone_count: u32,
-    pub milestones_attested: u32,
-    pub late_milestones: u32,
     pub oracle: Option<Address>,
     pub schema_id: Option<u32>,
     pub attestors: Vec<Address>,
-    pub vote_threshold: u32,
+    /// Bitpacked milestone/vote counters, mirroring
+    /// `registry::commitments::Commitment::counters`.
+    pub counters: u64,
 }
 
 /// Mirror of `registry::commitments::DataKey`.
@@ -151,9 +150,12 @@ impl UpgradeFixture {
     }
 
     /// Reads a milestone outcome written by the pre-upgrade executable.
+    ///
+    /// Milestone entries live in temporary storage (matching
+    /// `registry::attestation`), so read them from there.
     pub fn read_milestone(env: Env, id: u64, milestone_index: u32) -> Option<CommitmentStatus> {
         env.storage()
-            .persistent()
+            .temporary()
             .get(&DataKey::Milestone(id, milestone_index))
     }
 
