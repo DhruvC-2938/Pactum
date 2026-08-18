@@ -8,6 +8,8 @@ import pool from './db/timescale';
 import { PostgresReputationRepository } from './reputation/repository';
 import { createRedisClientFromEnv, ReputationCache } from './cache/reputationCache';
 import { createOpenApiRouter } from './openapi/openapi';
+import { requestLogger } from './middleware/requestLogger';
+import { logger } from './logger/logger';
 import client from 'prom-client';
 import { startSnapshotCron } from './indexer/cron';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
@@ -88,6 +90,7 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
 
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 
 // Middleware to track HTTP request duration
 app.use((req, res, next) => {
@@ -136,8 +139,7 @@ let server: ReturnType<typeof app.listen>;
 
 async function init() {
   server = app.listen(port, () => {
-    console.log(`[api] Server running on port ${port}`);
-    console.log(`[metrics] Prometheus metrics on port ${metricsPort}`);
+    logger.info(`Server running on port ${port}`, { port, metricsPort });
   });
 }
 
