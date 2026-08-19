@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { sha256Hex } from '../lib/hash';
 import { stellarAddressSchema } from '../lib/stellar';
 import { decodeRegistryContractError } from '../lib/errors';
+import { createAstResolver, composeResolvers } from '../lib/ast';
+import { useValidationRules } from '../hooks/useValidationRules';
 import { useWallet } from '../context/WalletContext';
 import {
   submitCreateCommitment,
@@ -103,6 +105,18 @@ export default function CreateCommitmentWizard({
 }: CreateCommitmentWizardProps) {
   const { address: connectedAddress, isConnected, connectWallet } = useWallet();
 
+  // Dynamic, governance-controlled validation rules (downloaded as a JSON AST,
+  // compiled once) layered on top of the static Zod schema.
+  const { compiled: dynamicRules } = useValidationRules();
+  const resolver = useMemo(
+    () =>
+      composeResolvers<CommitmentFormValues>(
+        zodResolver(commitmentFormSchema),
+        createAstResolver<CommitmentFormValues>(dynamicRules),
+      ),
+    [dynamicRules],
+  );
+
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [funding, setFunding] = useState(false);
@@ -119,7 +133,7 @@ export default function CreateCommitmentWizard({
     reset,
     formState: { errors },
   } = useForm<CommitmentFormValues>({
-    resolver: zodResolver(commitmentFormSchema),
+    resolver,
     mode: 'onChange',
     defaultValues: { counterparty: '', terms: '', dueAt: '' },
   });
