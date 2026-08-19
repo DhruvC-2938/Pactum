@@ -6,9 +6,12 @@ export class CertificateService {
    * containing the user's DID, their trust score, and a timestamp.
    * Includes a very short expiry time (1 hour) to prevent replay attacks.
    */
-  public static async generateReputationCertificate(did: string, trustScore: number): Promise<string> {
+  public static async generateReputationCertificate(
+    did: string,
+    trustScore: number,
+  ): Promise<string> {
     const kms = await KmsService.getInstance();
-    
+
     // Calculate timestamps in seconds
     const now = Math.floor(Date.now() / 1000);
     const ONE_HOUR = 3600;
@@ -23,11 +26,11 @@ export class CertificateService {
         type: ['VerifiableCredential', 'ReputationCredential'],
         credentialSubject: {
           id: did,
-          trustScore: trustScore
-        }
+          trustScore: trustScore,
+        },
       },
       iat: now,
-      exp: exp
+      exp: exp,
     };
 
     return kms.signJwt(payload);

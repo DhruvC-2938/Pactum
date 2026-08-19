@@ -37,7 +37,7 @@ fn setup() -> (Env, RegistryContractClient<'static>, Address, Address) {
 fn setup_long_horizon() -> (Env, RegistryContractClient<'static>, Address, Address) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
     (env, client, issuer, counterparty)
 }
 
@@ -66,7 +66,7 @@ fn advance_ledgers(
         let next = seq.saturating_add(CHUNK).min(target_seq);
         env.ledger().with_mut(|l| l.sequence_number = next);
         client.get_arbitrator();
-        client.get_trust_score(issuer);
+        client.get_trust_score(issuer).unwrap_or(50);
         client.get_reputation(issuer);
         if let Some(id) = commitment {
             client.get_commitment(&id);
@@ -84,7 +84,7 @@ fn setup_with_arbitrator() -> (
 ) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
     (env, client, issuer, counterparty, arbitrator)
 }
 
@@ -109,6 +109,10 @@ fn create_and_attest(
         &BytesN::from_array(env, &[terms; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
+        &Vec::new(env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(issuer, &id, &outcome);
@@ -123,7 +127,7 @@ fn create_and_attest(
 fn test_no_history_returns_baseline() {
     let (env, client, _issuer, _counterparty) = setup();
     let stranger = Address::generate(&env);
-    assert_eq!(client.get_trust_score(&stranger), 50);
+    assert_eq!(client.get_trust_score(&stranger).unwrap(), 50);
 }
 
 // -----------------------------------------------------------------------------
@@ -143,7 +147,7 @@ fn test_recent_breach_tanks_score_immediately() {
     );
 
     // Single breach with no history: 50 - 50 = 0.
-    assert_eq!(client.get_trust_score(&issuer), 0);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 }
 
 #[test]
@@ -167,7 +171,7 @@ fn test_recent_breach_tanks_mixed_history() {
     );
 
     // 1 fulfilled (+10) + 1 breached (-50) on the 50 baseline: 50 + 10 - 50 = 10.
-    assert_eq!(client.get_trust_score(&issuer), 10);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 10);
 }
 
 // -----------------------------------------------------------------------------
@@ -194,7 +198,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 25);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 25);
 
     // Bucket 0 -> bucket 128: two decay steps, weight 1/4.
     advance_ledgers(
@@ -204,7 +208,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         1000 + 128 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 37);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 37);
 
     // Bucket 0 -> bucket 256: four decay steps, weight 1/16 -> 50 - 3.125 -> 46.
     advance_ledgers(
@@ -214,7 +218,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         1000 + 256 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 46);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 46);
 
     // Bucket 0 -> bucket 2048: 32 decay steps, weight 0 -> baseline.
     advance_ledgers(
@@ -224,7 +228,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         1000 + 2048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
@@ -255,7 +259,7 @@ fn test_mixed_history_decay_exact_values() {
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 30);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 30);
 
     advance_ledgers(
         &env,
@@ -264,7 +268,7 @@ fn test_mixed_history_decay_exact_values() {
         1000 + 128 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 40);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 40);
 }
 
 // -----------------------------------------------------------------------------
@@ -283,7 +287,7 @@ fn test_score_is_monotone_non_decreasing_over_ledger_advances() {
         CommitmentStatus::Breached,
     );
 
-    let mut previous = client.get_trust_score(&issuer);
+    let mut previous = client.get_trust_score(&issuer).unwrap_or(50);
     assert_eq!(previous, 0);
 
     // 1, 2, 4, ..., 2048, 4096 buckets ahead.
@@ -297,7 +301,7 @@ fn test_score_is_monotone_non_decreasing_over_ledger_advances() {
             1000 + buckets * crate::trust_score::BUCKET_SIZE_LEDGERS,
             None,
         );
-        let current = client.get_trust_score(&issuer);
+        let current = client.get_trust_score(&issuer).unwrap_or(50);
         assert!(
             current >= previous,
             "score regressed from {previous} to {current} at {buckets} buckets"
@@ -326,7 +330,7 @@ fn test_fulfills_raise_score_to_cap() {
         );
     }
     // 50 + 5 * 10 = 100.
-    assert_eq!(client.get_trust_score(&issuer), 100);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 100);
 }
 
 #[test]
@@ -341,7 +345,7 @@ fn test_late_outcome_penalty_and_decay() {
         CommitmentStatus::Late,
     );
 
-    assert_eq!(client.get_trust_score(&issuer), 40);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 40);
 
     advance_ledgers(
         &env,
@@ -350,7 +354,7 @@ fn test_late_outcome_penalty_and_decay() {
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 45);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 45);
 
     advance_ledgers(
         &env,
@@ -359,7 +363,7 @@ fn test_late_outcome_penalty_and_decay() {
         1000 + 2048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
@@ -386,7 +390,7 @@ fn test_fulfilled_and_late_credits_cancel_symmetrically() {
         );
     }
     // 10 fulfills (+100) and 10 lates (-100) cancel on the baseline.
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
@@ -458,6 +462,10 @@ fn test_bucket_boundary_semantics() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Breached);
@@ -467,6 +475,10 @@ fn test_bucket_boundary_semantics() {
         &BytesN::from_array(&env, &[2u8; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
     );
     client.attest(&issuer, &id2, &CommitmentStatus::Fulfilled);
 
@@ -475,7 +487,7 @@ fn test_bucket_boundary_semantics() {
     for sequence in [9_999u32, 10_000, 10_001, 10_002] {
         env.ledger().with_mut(|l| l.sequence_number = sequence);
         assert_eq!(
-            client.get_trust_score(&issuer),
+            client.get_trust_score(&issuer).unwrap_or(50),
             10,
             "score changed at sequence {sequence}"
         );
@@ -483,11 +495,11 @@ fn test_bucket_boundary_semantics() {
 
     // 63 buckets later (9,999 + 63 * 10,000 = 639,999): still zero decay steps.
     advance_ledgers(&env, &client, &issuer, 639_999, None);
-    assert_eq!(client.get_trust_score(&issuer), 10);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 10);
 
     // Exactly 64 buckets later (640,000): first decay step -> 30.
     advance_ledgers(&env, &client, &issuer, 640_000, None);
-    assert_eq!(client.get_trust_score(&issuer), 30);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 30);
 }
 
 // -----------------------------------------------------------------------------
@@ -527,7 +539,7 @@ fn test_huge_ledger_difference_saturates_without_panic() {
     // `max_live_until_ledger = seq + max_entry_ttl - 1` overflows u32 when
     // the contract extends an entry's TTL during the jump.
     advance_ledgers(&env, &client, &issuer, u32::MAX - 6_400_000, None);
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 // -----------------------------------------------------------------------------
@@ -570,7 +582,7 @@ fn test_max_decay_reaches_minimum_weight() {
         1000 + 2048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 // -----------------------------------------------------------------------------
@@ -595,12 +607,16 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
             &BytesN::from_array(&env, &[(i % 250) as u8; 32]),
             &2_000_000,
             &resolver,
+            &None,
+            &None,
+            &Vec::new(&env),
+            &0,
         );
         client.attest(&issuer, &id, &CommitmentStatus::Breached);
     }
 
     // Immediately after the last write: many breaches, score at the floor.
-    assert_eq!(client.get_trust_score(&issuer), 0);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 
     // 2048 buckets past the newest write: every breach fully decayed.
     advance_ledgers(
@@ -610,7 +626,7 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
         1000 + 3048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
     );
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 // -----------------------------------------------------------------------------
@@ -629,12 +645,12 @@ fn test_dispute_retracts_recent_breach_from_score() {
         1,
         CommitmentStatus::Breached,
     );
-    assert_eq!(client.get_trust_score(&issuer), 0);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 
     // Dispute within the window: the breach is retracted from the trust history.
     env.ledger().with_mut(|l| l.timestamp = 1600);
     client.dispute(&counterparty, &1);
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
@@ -649,7 +665,7 @@ fn test_dispute_retracts_aged_breach_from_score() {
         1,
         CommitmentStatus::Breached,
     );
-    assert_eq!(client.get_trust_score(&issuer), 0);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 
     // Advance 64 buckets (the breach has folded into `aged`) but stay within
     // the timestamp-based dispute window. The commitment entry is kept alive
@@ -663,7 +679,7 @@ fn test_dispute_retracts_aged_breach_from_score() {
     );
     env.ledger().with_mut(|l| l.timestamp = 1600);
     client.dispute(&counterparty, &1);
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
@@ -680,10 +696,14 @@ fn test_resolve_dispute_applies_final_outcome_to_score() {
         &BytesN::from_array(&env, &[1u8; 32]),
         &2000,
         &arbitrator,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(&issuer, &id, &CommitmentStatus::Breached);
-    assert_eq!(client.get_trust_score(&issuer), 0);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 
     advance_ledgers(
         &env,
@@ -694,12 +714,12 @@ fn test_resolve_dispute_applies_final_outcome_to_score() {
     );
     env.ledger().with_mut(|l| l.timestamp = 1600);
     client.dispute(&counterparty, &1);
-    assert_eq!(client.get_trust_score(&issuer), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 
     // Arbitrator overturns the breach: only the final outcome counts.
     env.ledger().with_mut(|l| l.timestamp = 1700);
     client.resolve_dispute(&arbitrator, &1, &CommitmentStatus::Fulfilled);
-    assert_eq!(client.get_trust_score(&issuer), 60);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 60);
 }
 
 // -----------------------------------------------------------------------------
@@ -720,7 +740,7 @@ fn test_score_saturates_at_upper_and_lower_bounds() {
             CommitmentStatus::Fulfilled,
         );
     }
-    assert_eq!(client.get_trust_score(&issuer), 100);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 100);
 
     let (env2, client2, issuer2, counterparty2) = setup();
     for i in 0..10u8 {
@@ -733,7 +753,7 @@ fn test_score_saturates_at_upper_and_lower_bounds() {
             CommitmentStatus::Breached,
         );
     }
-    assert_eq!(client2.get_trust_score(&issuer2), 0);
+    assert_eq!(client2.get_trust_score(&issuer2).unwrap(), 0);
 
     // A single fulfill can never push a large breach history above the floor.
     let (env3, client3, issuer3, counterparty3) = setup();
@@ -755,7 +775,7 @@ fn test_score_saturates_at_upper_and_lower_bounds() {
         99,
         CommitmentStatus::Fulfilled,
     );
-    assert_eq!(client3.get_trust_score(&issuer3), 0);
+    assert_eq!(client3.get_trust_score(&issuer3).unwrap(), 0);
 }
 
 #[test]
@@ -769,6 +789,6 @@ fn test_counterparty_without_history_scores_baseline() {
         1,
         CommitmentStatus::Fulfilled,
     );
-    assert_eq!(client.get_trust_score(&issuer), 60);
-    assert_eq!(client.get_trust_score(&counterparty), 50);
+    assert_eq!(client.get_trust_score(&issuer).unwrap(), 60);
+    assert_eq!(client.get_trust_score(&counterparty).unwrap(), 50);
 }

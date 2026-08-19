@@ -3,17 +3,24 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build:wasm": "node -e \"const fs=require('fs'); const p='../contracts/validation/Cargo.toml'; fs.writeFileSync(p, fs.readFileSync(p,'utf8').replace('crate-type = [\\\"rlib\\\"]', 'crate-type = [\\\"cdylib\\\", \\\"rlib\\\"]'));\" && npx wasm-pack build ../contracts/validation --target web --out-dir ../../frontend/src/wasm/pactum-validation -- --features wasm && node -e \"const fs=require('fs'); const p='../contracts/validation/Cargo.toml'; fs.writeFileSync(p, fs.readFileSync(p,'utf8').replace('crate-type = [\\\"cdylib\\\", \\\"rlib\\\"]', 'crate-type = [\\\"rlib\\\"]'));\"",
+    "build": "npm run build:wasm && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "test:unit": "node --test \"tests/unit/*.test.ts\"",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@albedo-link/intent": "^0.13.0",
     "@hookform/resolvers": "^5.9.0",
     "@stellar/freighter-api": "^6.0.1",
+    "@stellar/stellar-sdk": "^16.2.0",
     "@tanstack/react-query": "^5.101.4",
     "clsx": "^2.1.1",
     "lucide-react": "^1.28.0",

@@ -889,6 +889,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pactum-validation"
+version = "0.1.0"
+dependencies = [
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1016,6 +1023,7 @@ dependencies = [
 name = "registry"
 version = "0.1.0"
 dependencies = [
+ "pactum-validation",
  "soroban-sdk",
 ]
 
@@ -1545,6 +1553,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "timelock"
+version = "0.1.0"
+dependencies = [
+ "registry",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "tinyvec"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1570,6 +1586,13 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "upgrade-fixture"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
 
 [[package]]
 name = "version_check"
