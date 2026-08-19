@@ -1,5 +1,14 @@
 import { StrKey, TransactionBuilder, type Transaction, type FeeBumpTransaction } from '@stellar/stellar-sdk';
-import type { WalletAdapter } from './adapter-interface';
+
+interface WalletAdapter {
+  name: string;
+  id: string;
+  icon: unknown;
+  description: string;
+  connect: () => Promise<string | null>;
+  disconnect: () => Promise<void>;
+  isAvailable: () => Promise<boolean>;
+}
 
 // Standard Stellar BIP-32 derivation path (SEP-0005, account 0).
 const LEDGER_STELLAR_PATH = "44'/148'/0'";

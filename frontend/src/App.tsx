@@ -1,15 +1,3 @@
-import { useState, useEffect } from 'react'
-
-import './App.css'
-import LandingPage from './components/LandingPage'
-import DocsPage from './components/DocsPage'
-import CreateCommitmentWizard from './components/CreateCommitmentWizard'
-import ReputationDashboard from './components/ReputationDashboard'
-import { useWallet } from './context/WalletContext'
-import { Wallet, CheckCircle2, LogOut } from 'lucide-react'
-import { useCommitments } from './hooks/useCommitments'
-import type { Commitment, CommitmentStatus } from './lib/api'
-import { WalletButton } from './components/WalletButton'
 import { useState, useEffect } from 'react';
 
 import './App.css';
@@ -19,104 +7,134 @@ import CreateCommitmentWizard from './components/CreateCommitmentWizard';
 import ReputationDashboard from './components/ReputationDashboard';
 import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
+import DecryptTermsModal from './components/DecryptTermsModal';
 import { useCommitments } from './hooks/useCommitments';
+import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
+import type { WalletProvider } from './lib/wallet';
 import { ThemeSelector } from './context/ThemeContext';
-import { Menu, X, User } from 'lucide-react';
+import { Menu, X, User, Lock } from 'lucide-react';
 
-function renderCommitmentItem(commitment: Commitment) {
-  return (
-    <div className="commitment-item" key={commitment.id}>
-      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
-        {commitment.issuer.charAt(0)}
-      </div>
-      <div className="commitment-info">
-        <div className="commitment-id">Commitment #{commitment.id}</div>
-        <div className="commitment-parties">
-          {commitment.issuer} &rarr; {commitment.counterparty}
-        </div>
-        <div className="commitment-due">
-          {new Date(commitment.due_at * 1000).toLocaleDateString()}
-        </div>
-      </div>
-      <div className="commitment-status">
-        <span className={`badge ${commitment.status.toLowerCase()}`}>
-          <span className="badge-dot"></span>
-          {commitment.status}
-        </span>
-      </div>
-    </div>
-  )
+interface CommitmentItemProps {
+  commitment: Commitment;
+  connectedAddress: string | null;
+  provider: WalletProvider | null;
 }
 
-function WalletButton() {
-  const { address, isConnected, isConnecting } = useWallet()
-  const [isOpen, setIsOpen] = useState(false)
+function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentItemProps) {
+  const [showDecryptModal, setShowDecryptModal] = useState(false);
+  const [ciphertext, setCiphertext] = useState<string | null>(null);
+  const [loadingCiphertext, setLoadingCiphertext] = useState(false);
 
-  const shortenKey = (key: string) => {
-    if (!key || key.length < 10) return key
-    return `${key.substring(0, 6)}...${key.substring(key.length - 4)}`
-  }
+  const handleDecryptClick = async () => {
+    if (ciphertext) {
+      setShowDecryptModal(true);
+      return;
+    }
+    setLoadingCiphertext(true);
+    try {
+      const res = await fetchEncryptedTerms(String(commitment.id));
+      setCiphertext(res.ciphertext);
+      setShowDecryptModal(true);
+    } catch (err) {
+      console.error('[CommitmentItem] Failed to fetch ciphertext:', err);
+    } finally {
+      setLoadingCiphertext(false);
+    }
+  };
 
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      {isConnected && address ? (
-        <button
-          onClick={() => setIsOpen((prev) => !prev)}
-          className="btn btn-secondary btn-sm"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: '#f0fdf4',
-            borderColor: '#bbf7d0',
-            color: '#15803d',
-            fontWeight: '700',
-            fontFamily: 'monospace'
-          }}
-          title="Click to view wallet details"
-        >
-          <CheckCircle2 size={13} color="#22c55e" />
-          {shortenKey(address)}
-        </button>
-      ) : (
-        <button
-          onClick={() => setIsOpen((prev) => !prev)}
-          disabled={isConnecting}
-          className="btn btn-secondary btn-sm"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontWeight: '700',
-            borderColor: '#cbd5e1'
-          }}
-        >
-          <Wallet size={14} />
-          {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-        </button>
+    <>
+      <div className="commitment-item" key={commitment.id}>
+        <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
+          {commitment.issuer.charAt(0)}
+        </div>
+        <div className="commitment-info">
+          <div className="commitment-id" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Commitment #{commitment.id}
+            {commitment.encrypted && (
+              <span
+                title="Terms are end-to-end encrypted"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  color: '#4f46e5',
+                  background: '#eef2ff',
+                  padding: '1px 6px',
+                  borderRadius: '100px',
+                  border: '1px solid #a5b4fc',
+                }}
+              >
+                <Lock size={9} /> E2E Encrypted
+              </span>
+            )}
+          </div>
+          <div className="commitment-parties">
+            {commitment.issuer} &rarr; {commitment.counterparty}
+          </div>
+          <div className="commitment-due">
+            {new Date(commitment.due_at * 1000).toLocaleDateString()}
+          </div>
+        </div>
+        <div className="commitment-status" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+          <span className={`badge ${commitment.status.toLowerCase()}`}>
+            <span className="badge-dot"></span>
+            {commitment.status}
+          </span>
+          {commitment.encrypted && (
+            <button
+              type="button"
+              id={`decrypt-btn-${commitment.id}`}
+              onClick={handleDecryptClick}
+              disabled={loadingCiphertext}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: '#4f46e5',
+                background: '#eef2ff',
+                border: '1px solid #a5b4fc',
+                borderRadius: '6px',
+                padding: '3px 8px',
+                cursor: loadingCiphertext ? 'wait' : 'pointer',
+              }}
+            >
+              <Lock size={10} />
+              {loadingCiphertext ? 'Loading…' : 'Decrypt Terms'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showDecryptModal && ciphertext && connectedAddress && (
+        <DecryptTermsModal
+          commitmentId={commitment.id}
+          ciphertext={ciphertext}
+          issuerAddress={commitment.issuer}
+          counterpartyAddress={commitment.counterparty}
+          viewerAddress={connectedAddress}
+          isFreighter={provider === 'freighter'}
+          onClose={() => setShowDecryptModal(false)}
+        />
       )}
-
-      {/* Dropping Banner Popover Dropdown */}
-      <WalletConnectModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
-    </div>
-  )
+    </>
+  );
 }
 
-function InlineWalletError() {
-  const { error, clearError } = useWallet()
-  return <FreighterInstallModal error={error} onDismiss={clearError} />
-}
-
-export default function App() {
-
-  const [activePage, setActivePage] = useState('landing')
-  const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>()
-
-  const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {})
-
-  const [reputationAddress, setReputationAddress] = useState('GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C')
+function renderCommitmentItem(commitment: Commitment, connectedAddress: string | null, provider: WalletProvider | null) {
+  return (
+    <CommitmentItem
+      key={commitment.id}
+      commitment={commitment}
+      connectedAddress={connectedAddress}
+      provider={provider}
+    />
   );
 }
 
@@ -156,32 +174,21 @@ export default function App() {
 
   useEffect(() => {
     const handleUrlChange = () => {
-      const path = window.location.pathname
+      const path = window.location.pathname;
       if (path.startsWith('/reputation/')) {
-        const addr = path.replace('/reputation/', '').trim()
+        const addr = path.replace('/reputation/', '').trim();
         if (addr) {
-          setReputationAddress(addr)
-          setActivePage('reputation')
+          setReputationAddress(addr);
+          setActivePage('reputation');
         }
       }
-    }
+    };
 
-    handleUrlChange()
-    window.addEventListener('popstate', handleUrlChange)
-    return () => window.removeEventListener('popstate', handleUrlChange)
-  }, [])
+    handleUrlChange();
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
 
-  const navigateToReputation = (addr: string) => {
-    setReputationAddress(addr)
-    setActivePage('reputation')
-    window.history.pushState({}, '', `/reputation/${addr}`)
-  }
-  if (activePage === 'landing') {
-    return <LandingPage onLaunchApp={() => setActivePage('dashboard')} onOpenDocs={() => setActivePage('docs')} />
-  }
-
-  if (activePage === 'docs') {
-    return <DocsPage onBack={() => setActivePage('landing')} onLaunchApp={() => setActivePage('dashboard')} />
   if (activePage === 'landing') {
     return (
       <LandingPage
@@ -260,30 +267,6 @@ export default function App() {
               Dashboard
             </button>
 
-    <nav className="sidebar-nav">
-      <span className="nav-section-label">Overview</span>
-
-      <button className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`} id="nav-dashboard" onClick={() => setActivePage('dashboard')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="1" y="1" width="6" height="6" rx="1.5"/>
-            <rect x="9" y="1" width="6" height="6" rx="1.5"/>
-            <rect x="1" y="9" width="6" height="6" rx="1.5"/>
-            <rect x="9" y="9" width="6" height="6" rx="1.5"/>
-          </svg>
-        </span>
-        Dashboard
-      </button>
-
-      <button className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`} id="nav-commitments" onClick={() => setActivePage('commitments')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <path d="M2 4h12M2 8h12M2 12h8"/>
-          </svg>
-        </span>
-        Commitments
-        <span className="nav-badge" id="badge-commitments">4</span>
-      </button>
             <button
               className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`}
               id="nav-commitments"
@@ -334,42 +317,6 @@ export default function App() {
               Create Commitment
             </button>
 
-      <button className={`nav-item ${activePage === 'create' ? 'active' : ''}`} id="nav-create" onClick={() => setActivePage('create')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <path d="M8 2v12M2 8h12"/>
-          </svg>
-        </span>
-        Create Commitment
-      </button>
-
-      <button className={`nav-item ${activePage === 'attest' ? 'active' : ''}`} id="nav-attest" onClick={() => setActivePage('attest')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <path d="M2.5 8.5l3.5 3.5 7.5-7.5"/>
-          </span>
-          Attest
-        </button>
-
-      <button className={`nav-item ${activePage === 'dispute' ? 'active' : ''}`} id="nav-dispute" onClick={() => setActivePage('dispute')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <path d="M8 2L1 14h14L8 2z"/>
-            <path d="M8 6v4M8 11.5v.5"/>
-          </svg>
-        </span>
-        Raise Dispute
-      </button>
-
-      <button className={`nav-item ${activePage === 'resolve' ? 'active' : ''}`} id="nav-resolve" onClick={() => setActivePage('resolve')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <circle cx="8" cy="8" r="6"/>
-            <path d="M5 8l2 2 4-4"/>
-          </svg>
-        </span>
-        Resolve Dispute
-      </button>
             <button
               className={`nav-item ${activePage === 'attest' ? 'active' : ''}`}
               id="nav-attest"
@@ -417,24 +364,6 @@ export default function App() {
               Raise Dispute
             </button>
 
-      <button className={`nav-item ${activePage === 'reputation' ? 'active' : ''}`} id="nav-reputation" onClick={() => setActivePage('reputation')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <circle cx="8" cy="5" r="3"/>
-            <path d="M2 14c0-3.3 2.7-6 6-6s6 2.7 6 6"/>
-          </svg>
-          Reputation Lookup
-        </button>
-
-      <button className={`nav-item ${activePage === 'lookup' ? 'active' : ''}`} id="nav-lookup" onClick={() => setActivePage('lookup')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
-            <circle cx="6.5" cy="6.5" r="4.5"/>
-            <path d="M14 14l-3-3"/>
-          </svg>
-        </span>
-        Get Commitment
-      </button>
             <button
               className={`nav-item ${activePage === 'resolve' ? 'active' : ''}`}
               id="nav-resolve"
@@ -461,87 +390,6 @@ export default function App() {
 
             <span className="nav-section-label">Lookup & Profile</span>
 
-      <button className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`} id="nav-initialize" onClick={() => setActivePage('initialize')}>
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-            <circle cx="8" cy="8" r="2.5"/>
-            <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.42 1.42M11.54 11.54l1.41 1.41M3.05 12.95l1.42-1.42M11.54 4.46l1.41-1.41"/>
-          </svg>
-        </span>
-        Initialize
-      </button>
-    </nav>
-
-    <div className="sidebar-footer">
-      <button
-        className="nav-item"
-        style={{ width: '100%', marginBottom: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}
-        onClick={() => setActivePage('landing')}
-      >
-        <span className="nav-icon">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M1 6.5L8 1l7 5.5V14a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6.5z" />
-          </svg>
-        </span>
-        Home
-      </button>
-      <div className="sidebar-network">
-        <span className="network-dot"></span>
-        <span className="network-name">Stellar Testnet</span>
-        <span className="network-sub">Live</span>
-      </div>
-    </div>
-  </aside>
-
-
-  {/* ── Main Content ── */}
-  <main className="main-content">
-
-    {/* Topbar */}
-    <header className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-        <button
-          onClick={() => setActivePage('landing')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '8px',
-            padding: '6px 12px',
-            fontSize: '12.5px',
-            fontWeight: '700',
-            color: '#475569',
-            cursor: 'pointer',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-            transition: 'all 0.15s ease'
-          }}
-          title="Back to Landing Page"
-        >
-          ← Home
-        </button>
-
-        <span className="topbar-title" id="topbar-title" style={{ margin: 0 }}>
-          {activePage === 'reputation' ? 'Reputation Lookup' :
-           activePage === 'commitments' ? 'Commitments' :
-           activePage === 'create' ? 'Create Commitment' :
-           activePage === 'attest' ? 'Attest' :
-           activePage === 'dispute' ? 'Raise Dispute' :
-           activePage === 'resolve' ? 'Resolve Dispute' :
-           activePage === 'lookup' ? 'Get Commitment' :
-           activePage === 'initialize' ? 'Initialize' : 'Dashboard'}
-        </span>
-      </div>
-
-      <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div className="search-bar">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <circle cx="6.5" cy="6.5" r="4.5"/>
-            <path d="M14 14l-3-3"/>
-          </svg>
-          <input type="text" placeholder="Search commitments..." id="global-search" />
-        </div>
             <button className="nav-item" id="nav-my-profile" onClick={handleMyProfile}>
               <span className="nav-icon">
                 <User size={16} />
@@ -1026,12 +874,6 @@ export default function App() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </main></div>
-        </>
-      )
-    }
           </section>
 
           {/* ──────────────────────────────────────────────
@@ -1086,7 +928,7 @@ export default function App() {
                   Failed to load commitments from the backend.
                 </div>
               )}
-              {commitmentsQuery.data?.map(renderCommitmentItem)}
+              {commitmentsQuery.data?.map((c) => renderCommitmentItem(c, wallet.address, wallet.provider))}
             </div>
           </section>
 
