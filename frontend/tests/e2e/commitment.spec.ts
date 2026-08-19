@@ -15,37 +15,37 @@ test.describe('Commitment Flow', () => {
 
   test('User can view landing page, connect mock wallet, and submit a commitment', async ({ page }) => {
     await page.goto('/');
-    
-    const heroBtn = page.locator('#hero-launch-btn');
-    await expect(heroBtn).toBeVisible();
-    await heroBtn.click();
-    
+    await expect(page.locator('.lp-hero-title')).toContainText('On-chain registry');
+
+    // 2. User can "connect" a mock wallet. (In this UI, we just launch the app which takes us to Dashboard)
+    await page.click('#hero-launch-btn');
+
     // Verify Dashboard is active
     await expect(page.locator('#topbar-title')).toHaveText('Dashboard');
 
     // Navigate to Create Commitment wizard
     await page.click('#nav-create');
-    
-    // Step 0: Counterparty
-    await page.fill('#wizard-counterparty', 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY');
-    await page.getByRole('button', { name: /Continue/i }).click();
 
-    // Step 1: Terms
+    // Verify Create Commitment page is active
+    await expect(page.locator('.section-title').filter({ hasText: 'Create Commitment' })).toBeVisible();
+
+    // 4. Step 1 — Counterparty
+    await page.fill('#wizard-counterparty', 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY');
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    // 5. Step 2 — Terms & Conditions
     await page.fill('#wizard-terms', 'Deliver 500 widgets by end of Q3');
-    await page.getByRole('button', { name: /Continue/i }).click();
-    
-    // Step 2: Due Date
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    // 6. Step 3 — Due date & submit
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + 7);
-    const dateString = futureDate.toISOString().slice(0, 16);
+    const dateString = futureDate.toISOString().slice(0, 16); // format: YYYY-MM-DDTHH:mm
     await page.fill('#wizard-dueat', dateString);
 
-    // Final step: Create Commitment form submit button
-    const submitBtn = page.locator('.wizard-nav').getByRole('button', { name: 'Create Commitment' });
-    await expect(submitBtn).toBeVisible();
-    await submitBtn.click();
+    await page.locator('.wizard').getByRole('button', { name: 'Create Commitment' }).click();
 
-    // Verify submitted payload confirmation is rendered
+    // The wizard confirms the payload was prepared (terms hashed, due date converted to Unix time).
     await expect(page.locator('.inline-alert').filter({ hasText: 'Commitment payload prepared' })).toBeVisible();
   });
 });

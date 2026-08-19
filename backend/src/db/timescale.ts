@@ -1,6 +1,8 @@
 import { Pool, PoolClient } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import { logger } from '../logger/logger';
 
 const pool = new Pool({
   host: process.env.TIMESCALEDB_HOST || 'localhost',
@@ -22,38 +24,111 @@ export const queryTimescale = async (text: string, params?: any[]) => {
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
-    console.log('Executed TimescaleDB query', { text, duration, rows: res.rowCount });
+    logger.debug('Executed TimescaleDB query', { text, duration, rows: res.rowCount });
     return res;
   } catch (error) {
-    console.error('TimescaleDB query error:', error);
+    logger.error('TimescaleDB query error', error, { text });
     throw error;
   }
 };
 
-export const runMigrations = async () => {
+/**
+ * Calculates SHA-256 checksum of SQL migration content for immutability validation.
+ */
+export function calculateMigrationChecksum(content: string): string {
+  return crypto.createHash('sha256').update(content.trim(), 'utf8').digest('hex');
+}
+
+/**
+ * Ensures the schema_migrations tracking table exists.
+ */
+export async function ensureMigrationTable(client: PoolClient): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id SERIAL PRIMARY KEY,
+      version VARCHAR(255) NOT NULL UNIQUE,
+      checksum VARCHAR(64) NOT NULL,
+      executed_at TIMESTAMPTZ DEFAULT NOW(),
+      execution_time_ms INTEGER NOT NULL
+    );
+  `);
+}
+
+/**
+ * Runs pending immutable migrations against the database.
+ * Detects modified past migrations via checksum verification.
+ */
+export const runMigrations = async (
+  customMigrationsDir?: string,
+): Promise<{ applied: string[]; skipped: string[] }> => {
   const client = await getTimescaleClient();
+  const applied: string[] = [];
+  const skipped: string[] = [];
+
   try {
-    await client.query('BEGIN');
-    
-    const migrationsDir = path.join(__dirname, 'migrations');
-    const migrationFiles = fs.readdirSync(migrationsDir)
-      .filter(f => f.endsWith('.sql'))
+    await ensureMigrationTable(client);
+
+    const migrationsDir = customMigrationsDir || path.join(__dirname, 'migrations');
+    if (!fs.existsSync(migrationsDir)) {
+      return { applied, skipped };
+    }
+
+    const migrationFiles = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
       .sort();
+
+    // Fetch existing applied migrations
+    const existingResult = await client.query(
+      'SELECT version, checksum FROM schema_migrations ORDER BY id ASC',
+    );
+    const appliedMap = new Map<string, string>(
+      existingResult.rows.map((row: { version: string; checksum: string }) => [
+        row.version,
+        row.checksum,
+      ]),
+    );
 
     for (const file of migrationFiles) {
       const filePath = path.join(migrationsDir, file);
       const sql = fs.readFileSync(filePath, 'utf8');
-      
-      console.log(`Running migration: ${file}`);
-      await client.query(sql);
+      const checksum = calculateMigrationChecksum(sql);
+
+      if (appliedMap.has(file)) {
+        const recordedChecksum = appliedMap.get(file);
+        if (recordedChecksum !== checksum) {
+          throw new Error(
+            `[Migration Error] Immutable migration '${file}' has been altered! Recorded SHA256: ${recordedChecksum}, Current SHA256: ${checksum}`,
+          );
+        }
+        skipped.push(file);
+        continue;
+      }
+
+      logger.info(`Applying database migration: ${file}`);
+      const startTime = performance.now();
+
+      await client.query('BEGIN');
+      try {
+        await client.query(sql);
+        const durationMs = Math.round(performance.now() - startTime);
+
+        await client.query(
+          'INSERT INTO schema_migrations (version, checksum, execution_time_ms) VALUES ($1, $2, $3)',
+          [file, checksum, durationMs],
+        );
+        await client.query('COMMIT');
+        applied.push(file);
+        logger.info(`Migration ${file} applied successfully (${durationMs}ms)`);
+      } catch (migrationError) {
+        await client.query('ROLLBACK');
+        logger.error(`Migration ${file} failed, transaction rolled back`, migrationError);
+        throw migrationError;
+      }
     }
-    
-    await client.query('COMMIT');
-    console.log('All migrations completed successfully');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Migration failed:', error);
-    throw error;
+
+    logger.info(`Migration cycle complete: ${applied.length} applied, ${skipped.length} skipped.`);
+    return { applied, skipped };
   } finally {
     client.release();
   }
@@ -65,7 +140,7 @@ export const refreshMaterializedViews = async () => {
     'mv_weekly_fulfillment_rates',
     'mv_monthly_fulfillment_rates',
     'mv_moving_averages',
-    'mv_trust_score_trends'
+    'mv_trust_score_trends',
   ];
 
   for (const view of views) {
@@ -73,15 +148,16 @@ export const refreshMaterializedViews = async () => {
     try {
       await queryTimescale(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`);
       const duration = Date.now() - start;
-      console.log(`Refreshed materialized view ${view} in ${duration}ms`);
+      logger.debug(`Refreshed materialized view ${view} in ${duration}ms`);
     } catch (error) {
-      console.error(`Failed to refresh ${view}:`, error);
-      // Fallback to non-concurrent refresh if concurrent fails
+      logger.warn(`Failed to refresh ${view} concurrently, falling back to standard refresh`, {
+        error,
+      });
       try {
         await queryTimescale(`REFRESH MATERIALIZED VIEW ${view}`);
-        console.log(`Refreshed ${view} with non-concurrent refresh`);
+        logger.info(`Refreshed ${view} with standard refresh`);
       } catch (fallbackError) {
-        console.error(`Failed to refresh ${view} with fallback:`, fallbackError);
+        logger.error(`Failed to refresh ${view} with fallback`, fallbackError);
       }
     }
   }

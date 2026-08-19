@@ -1,4 +1,4 @@
-import type { rpc } from '@stellar/stellar-sdk' with { "resolution-mode": "import" };
+import type { rpc } from '@stellar/stellar-sdk' with { 'resolution-mode': 'import' };
 import { LedgerEvent, LedgerSource, LedgerSnapshot } from './types';
 
 const EVENT_PAGE_LIMIT = 100;
@@ -37,9 +37,16 @@ function unixTimestampToIso(value: string): string {
 function isLedgerOutsideRetention(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const candidate = error as { code?: unknown; message?: unknown };
-  return candidate.code === -32600
-    && typeof candidate.message === 'string'
-    && /start ledger .* must be between the oldest ledger:/i.test(candidate.message);
+  return (
+    candidate.code === -32600 &&
+    typeof candidate.message === 'string' &&
+    /start ledger .* must be between the oldest ledger:/i.test(candidate.message)
+  );
+}
+
+export interface RpcEventFilter {
+  type: 'contract';
+  contractIds: string[];
 }
 
 export interface SorobanRpcLedgerClient {
@@ -48,18 +55,19 @@ export interface SorobanRpcLedgerClient {
     startLedger: number;
     pagination: { limit: number };
   }): Promise<{ ledgers: RpcLedger[] }>;
-  getEvents(request:
-    | {
-        filters: [];
-        startLedger: number;
-        endLedger: number;
-        limit: number;
-      }
-    | {
-        filters: [];
-        cursor: string;
-        limit: number;
-      }
+  getEvents(
+    request:
+      | {
+          filters: RpcEventFilter[];
+          startLedger: number;
+          endLedger: number;
+          limit: number;
+        }
+      | {
+          filters: RpcEventFilter[];
+          cursor: string;
+          limit: number;
+        },
   ): Promise<{ events: RpcEvent[]; cursor?: string }>;
 }
 
@@ -84,7 +92,12 @@ function previousHashFromHeader(headerXdr: unknown): string | null {
 }
 
 function toSerializable(value: unknown): unknown | undefined {
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
     return value;
   }
   if (typeof value === 'bigint') return value.toString();
@@ -92,9 +105,7 @@ function toSerializable(value: unknown): unknown | undefined {
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Uint8Array) return Buffer.from(value).toString('hex');
   if (Array.isArray(value)) {
-    return value
-      .map((item) => toSerializable(item))
-      .filter((item) => item !== undefined);
+    return value.map((item) => toSerializable(item)).filter((item) => item !== undefined);
   }
 
   if (typeof value === 'object') {
@@ -130,12 +141,29 @@ function toEvents(sequence: number, events: RpcEvent[]): LedgerEvent[] {
     }));
 }
 
+export interface SorobanLedgerSourceOptions {
+  /**
+   * When set, `getEvents` is scoped to this deployed contract, so the indexer
+   * only sees events emitted by the Pactum registry.
+   */
+  contractId?: string;
+}
+
 /**
  * Adapts Stellar Soroban RPC responses to the finality indexer's deterministic
  * ledger model. The RPC header supplies the parent hash used for fork checks.
  */
 export class SorobanLedgerSource implements LedgerSource {
-  constructor(private readonly rpc: SorobanRpcLedgerClient) {}
+  private readonly eventFilters: RpcEventFilter[];
+
+  constructor(
+    private readonly rpc: SorobanRpcLedgerClient,
+    options: SorobanLedgerSourceOptions = {},
+  ) {
+    this.eventFilters = options.contractId
+      ? [{ type: 'contract', contractIds: [options.contractId] }]
+      : [];
+  }
 
   async getLatestLedger(): Promise<{ sequence: number }> {
     return this.rpc.getLatestLedger();
@@ -155,14 +183,13 @@ export class SorobanLedgerSource implements LedgerSource {
     const ledger = response.ledgers.find((candidate) => candidate.sequence === sequence);
     if (!ledger) return null;
 
-    const previousHash =
-      ledger.previousHash ?? previousHashFromHeader(ledger.headerXdr);
+    const previousHash = ledger.previousHash ?? previousHashFromHeader(ledger.headerXdr);
     if (sequence > 1 && !previousHash) {
       throw new Error(`Soroban RPC ledger ${sequence} did not include its parent hash`);
     }
 
     let eventResponse = await this.rpc.getEvents({
-      filters: [],
+      filters: this.eventFilters,
       startLedger: sequence,
       endLedger: sequence + 1,
       limit: EVENT_PAGE_LIMIT,
@@ -172,7 +199,7 @@ export class SorobanLedgerSource implements LedgerSource {
 
     while (eventResponse.events.length === EVENT_PAGE_LIMIT && cursor) {
       eventResponse = await this.rpc.getEvents({
-        filters: [],
+        filters: this.eventFilters,
         cursor,
         limit: EVENT_PAGE_LIMIT,
       });

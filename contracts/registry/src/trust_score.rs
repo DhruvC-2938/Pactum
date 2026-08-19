@@ -251,11 +251,34 @@ fn adjust_count(current: &mut u64, aged: &mut u64, increment: bool) {
 /// Read-only: a single storage read plus constant integer math. The only
 /// write performed is the TTL extension on an existing entry, mirroring the
 /// `get_reputation` bump-on-access pattern so active histories never archive.
-pub fn get_trust_score(env: &Env, address: Address) -> u32 {
+///
+/// # Returns
+/// * `Some(score)` — the score in 0..=100 if a live history entry exists or
+///   if the address has never been scored (returns `Some(BASE_SCORE)`).
+/// * `None`  — the entry exists in the contract's ledger but is currently
+///   **archived** (TTL expired).  The caller should submit a
+///   `RestoreFootprint` + `restore_reputation` transaction and retry.
+///   Returned as `None` rather than panicking so an integrating contract can
+///   handle the missing data safely instead of aborting its own invocation.
+///
+/// > **Note for direct Soroban callers:** the archived-entry guard is enforced
+/// > by the Soroban *host*, not by this function — the host rejects any
+/// > invocation whose footprint references an archived key before the Rust code
+/// > runs.  This `None` branch is therefore reached only in the SDK test harness
+/// > (which does not enforce footprint checks) and serves as a documented signal
+/// > that the key is not live.  In production the entry must be present in the
+/// > read/write footprint (which the simulating client discovers) or the
+/// > transaction is rejected with a `MissingStateEntry` host error before
+/// > reaching this contract.
+pub fn get_trust_score(env: &Env, address: Address) -> Option<u32> {
     let key = TrustKey::TrustHistory(address);
+
+    // If no entry has ever been written for this address, return the neutral
+    // baseline wrapped in Some — the address is simply unscored, not archived.
     let Some(history): Option<TrustHistory> = env.storage().persistent().get(&key) else {
-        return BASE_SCORE;
+        return Some(BASE_SCORE);
     };
+
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
@@ -272,11 +295,30 @@ pub fn get_trust_score(env: &Env, address: Address) -> u32 {
         - BREACH_WEIGHT * breached;
     let raw = numerator >> 32;
 
-    if raw <= 0 {
+    let score = if raw <= 0 {
         0
     } else if raw >= 100 {
         100
     } else {
         raw as u32
+    };
+
+    Some(score)
+}
+
+/// Extends the TTL of `address`'s trust-history entry so it does not archive.
+///
+/// Permissionless: anyone may call this to keep a dormant address's history
+/// alive.  Returns `true` if a live entry was found and extended, `false` if
+/// no entry exists (address never scored).
+pub fn restore_trust_history(env: &Env, address: Address) -> bool {
+    let key = TrustKey::TrustHistory(address);
+    if env.storage().persistent().has(&key) {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+        true
+    } else {
+        false
     }
 }

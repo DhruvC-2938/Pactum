@@ -25,9 +25,15 @@ use crate::RegistryContract;
 use soroban_sdk::{contractclient, Address, Env};
 
 /// Read-only cross-contract interface for querying an address's trust score.
+///
+/// The trait returns `Option<u32>` so callers can distinguish between an
+/// **archived** entry (Soroban state expiration — returns `None`) and a live
+/// score (returns `Some`).  A `None` result means the caller should submit a
+/// `RestoreFootprint` + `restore_reputation(address)` transaction and retry.
+/// Integrating contracts must never interpret `None` as a score of zero.
 #[contractclient(name = "TrustGateReaderClient")]
 pub trait TrustGateReader {
-    fn get_trust_score(env: Env, address: Address) -> u32;
+    fn get_trust_score(env: Env, address: Address) -> Option<u32>;
 }
 
 /// State-mutating cross-contract interface, kept strictly separate from
@@ -36,11 +42,11 @@ pub trait TrustGateReader {
 #[contractclient(name = "TrustGateWriterClient")]
 pub trait TrustGateWriter {
     fn attest(env: Env, caller: Address, id: u64, outcome: CommitmentStatus);
-    fn resolve_dispute(env: Env, arbitrator: Address, id: u64, final_outcome: CommitmentStatus);
+    fn resolve_dispute(env: Env, caller: Address, id: u64, final_outcome: CommitmentStatus);
 }
 
 impl TrustGateReader for RegistryContract {
-    fn get_trust_score(env: Env, address: Address) -> u32 {
+    fn get_trust_score(env: Env, address: Address) -> Option<u32> {
         RegistryContract::get_trust_score(env, address)
     }
 }
@@ -50,7 +56,7 @@ impl TrustGateWriter for RegistryContract {
         RegistryContract::attest(env, caller, id, outcome)
     }
 
-    fn resolve_dispute(env: Env, arbitrator: Address, id: u64, final_outcome: CommitmentStatus) {
-        RegistryContract::resolve_dispute(env, arbitrator, id, final_outcome)
+    fn resolve_dispute(env: Env, caller: Address, id: u64, final_outcome: CommitmentStatus) {
+        RegistryContract::resolve_dispute(env, caller, id, final_outcome)
     }
 }

@@ -1,12 +1,14 @@
-import { 
-  insertTrustScoreSnapshot, 
+import {
+  insertTrustScoreSnapshot,
   insertCommitmentOutcome,
-  snapshotNetworkDailyStats 
+  snapshotNetworkDailyStats,
 } from './timescaleSnapshot';
 import { refreshMaterializedViews } from '../db/timescale';
 
 const SNAPSHOT_INTERVAL = parseInt(process.env.ANALYTICS_SNAPSHOT_INTERVAL_MS || '3600000');
-const VIEW_REFRESH_INTERVAL = parseInt(process.env.MATERIALIZED_VIEW_REFRESH_INTERVAL_MS || '300000');
+const VIEW_REFRESH_INTERVAL = parseInt(
+  process.env.MATERIALIZED_VIEW_REFRESH_INTERVAL_MS || '300000',
+);
 
 export class AnalyticsWorker {
   private snapshotTimer: NodeJS.Timeout | null = null;
@@ -14,7 +16,7 @@ export class AnalyticsWorker {
 
   start() {
     console.log('[Analytics Worker] Starting analytics worker...');
-    
+
     // Schedule periodic snapshots
     this.snapshotTimer = setInterval(() => {
       this.runSnapshot();
@@ -36,7 +38,7 @@ export class AnalyticsWorker {
 
   stop() {
     console.log('[Analytics Worker] Stopping analytics worker...');
-    
+
     if (this.snapshotTimer) {
       clearInterval(this.snapshotTimer);
       this.snapshotTimer = null;
@@ -77,7 +79,7 @@ export const analyticsWorker = new AnalyticsWorker();
 // Auto-start if this file is run directly
 if (require.main === module) {
   analyticsWorker.start();
-  
+
   // Graceful shutdown
   process.on('SIGINT', () => {
     console.log('[Analytics Worker] Received SIGINT, shutting down...');
