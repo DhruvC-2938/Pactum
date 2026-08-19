@@ -7,6 +7,7 @@ target/
 node_modules/
 dist/
 dist-indexer-test/
+dist-middleware-test/
 .env
 .env.local
 .env.*.local
@@ -23,3 +24,6 @@ evm/typechain-types/
 .DS_Store
 *.swp
 *.swo
+
+# Soroban test snapshots
+test_snapshots/
