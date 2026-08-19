@@ -3,6 +3,7 @@ import { z, ZodError } from 'zod';
 import { ReputationCache } from '../cache/reputationCache';
 import { CertificateService } from '../services/CertificateService';
 import { queryTimescale } from '../db/timescale';
+import { SorobanClient } from '../soroban/client';
 
 const STELLAR_ADDRESS = /^G[A-Z2-7]{55}$/;
 const DEFAULT_HISTORY_DAYS = 30;
@@ -36,7 +37,7 @@ const validateExportRequest = (req: Request, res: Response, next: NextFunction):
   }
 };
 
-export function createReputationRouter(cache: ReputationCache): Router {
+export function createReputationRouter(cache: ReputationCache, sorobanClient?: SorobanClient): Router {
   const router = Router();
 
   // POST /export/certificate - Exports a Reputation Certificate (VC)
@@ -62,6 +63,73 @@ export function createReputationRouter(cache: ReputationCache): Router {
       }
     },
   );
+
+  /**
+   * GET /reputation/:address/trust-score
+   *
+   * Returns the on-chain Soroban trust score for a Stellar address.
+   * Handles the three distinct states:
+   *
+   * 200 { score: number }
+   *     The entry is live and readable.  Score is 0–100 (50 = neutral baseline).
+   *
+   * 503 { archived: true, address: string, message: string, restore_hint: string }
+   *     The trust-history entry for this address has been archived by Soroban state
+   *     expiration.  The indexer's TTL monitor will restore it proactively, or the
+   *     caller can submit a RestoreFootprint + restore_reputation(address) transaction.
+   *
+   * 404 { error: "Soroban client not configured" }
+   *     The backend was started without SOROBAN_RPC_URL / ORACLE_PRIVATE_KEY / etc.
+   *     (development mode with no live Soroban connection).
+   *
+   * 400 { error: "Invalid Stellar account address" }
+   *     The address parameter is not a valid Stellar G… address.
+   *
+   * 500 { error: string }
+   *     Unexpected error querying the Soroban RPC.
+   */
+  router.get('/:address/trust-score', async (req: Request, res: Response) => {
+    const rawAddress = req.params.address;
+    const address = (Array.isArray(rawAddress) ? rawAddress[0] : rawAddress).toUpperCase();
+
+    if (!STELLAR_ADDRESS.test(address)) {
+      res.status(400).json({ error: 'Invalid Stellar account address' });
+      return;
+    }
+
+    if (!sorobanClient) {
+      res.status(404).json({
+        error: 'Soroban client not configured',
+        hint: 'Set SOROBAN_RPC_URL, SOROBAN_CONTRACT_ID, ORACLE_PRIVATE_KEY, and SOROBAN_NETWORK_PASSPHRASE to enable on-chain trust score queries.',
+      });
+      return;
+    }
+
+    try {
+      const scoreResult = await sorobanClient.getTrustScore(address);
+
+      // null means the entry is archived (Option<u32> returned None from the contract).
+      if (scoreResult === null) {
+        res.status(503).json({
+          archived: true,
+          address,
+          message:
+            'The trust-score entry for this address has been archived by Soroban state ' +
+            'expiration.  The TTL monitor will restore it automatically on its next run.  ' +
+            'To restore immediately, submit a RestoreFootprint + restore_reputation transaction.',
+          restore_hint:
+            'Wait for the next TTL monitor cycle, or submit a RestoreFootprint + restore_reputation(address) transaction on-chain.',
+        });
+        return;
+      }
+
+      res.status(200).json({ address, score: scoreResult });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[reputation] Failed to fetch trust score for ${address}:`, message);
+      res.status(500).json({ error: 'Failed to query trust score', details: message });
+    }
+  });
 
   router.get('/:address', async (req: Request, res: Response) => {
     const rawAddress = req.params.address;

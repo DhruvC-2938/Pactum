@@ -7,7 +7,7 @@ test:
 	cargo test --workspace
 
 build:
-	cargo build --target wasm32-unknown-unknown --release
+	cargo build --target wasm32-unknown-unknown --release -p registry -p timelock -p upgrade-fixture
 
 # The upgrade tests perform a real executable swap, so they embed a compiled Wasm
 # fixture and need the artifacts built first.

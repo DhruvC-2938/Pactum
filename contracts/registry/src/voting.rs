@@ -157,7 +157,7 @@ pub fn cast_dispute_vote(env: &Env, attestor: Address, id: u64, outcome: Commitm
     if commitment.status != CommitmentStatus::Disputed {
         panic_with_error!(env, Error::InvalidTransition);
     }
-    if commitment.vote_threshold == 0 {
+    if commitment.vote_threshold() == 0 {
         panic_with_error!(env, Error::InvalidTransition);
     }
 
@@ -219,7 +219,7 @@ pub fn cast_dispute_vote(env: &Env, attestor: Address, id: u64, outcome: Commitm
 
     // 9. The first outcome to reach the threshold wins: resolve the dispute,
     //    unlock the panel, and slash dissenting voters.
-    if votes >= commitment.vote_threshold {
+    if votes >= commitment.vote_threshold() {
         persist_outcome(env, id, &mut commitment, outcome);
         unlock_panel_and_clear(env, id, &commitment, true, outcome);
         events::commitment_resolved(env, id, outcome);
@@ -251,7 +251,7 @@ pub fn check_dispute_timeout(env: &Env, id: u64) {
     if commitment.status != CommitmentStatus::Disputed {
         panic_with_error!(env, Error::InvalidTransition);
     }
-    if commitment.vote_threshold == 0 {
+    if commitment.vote_threshold() == 0 {
         panic_with_error!(env, Error::InvalidTransition);
     }
 

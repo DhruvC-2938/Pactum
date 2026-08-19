@@ -279,7 +279,6 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   const signCalled = await page.evaluate(() => (window as any).__signCalled);
   expect(signCalled).toBeFalsy();
 });
-
 test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend, not plaintext', async ({
   page,
 }) => {

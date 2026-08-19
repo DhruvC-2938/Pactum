@@ -1,4 +1,5 @@
 import {
+  Account,
   Contract,
   rpc,
   TransactionBuilder,
@@ -6,8 +7,11 @@ import {
   BASE_FEE,
   xdr,
   Address,
+  Keypair,
+  nativeToScVal,
   scValToNative,
 } from '@stellar/stellar-sdk';
+import type { Reputation } from './api';
 import { signTransaction } from '@stellar/freighter-api';
 
 export const DEFAULT_SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
@@ -29,6 +33,64 @@ export interface CreateCommitmentResult {
   hash: string;
   commitmentId?: number | bigint;
   status: 'SUCCESS';
+}
+
+export interface TrustedLedgerAnchor {
+  hash: string;
+  sequence: number;
+}
+
+export async function fetchLatestLedgerAnchor(
+  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+): Promise<TrustedLedgerAnchor> {
+  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const ledger = await server.getLatestLedger();
+
+  if (!ledger.id || !ledger.sequence) {
+    throw new Error('Soroban RPC returned an incomplete latest-ledger response');
+  }
+
+  return { hash: ledger.id, sequence: ledger.sequence };
+}
+
+export async function fetchReputationFromRpc(
+  address: string,
+  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
+  networkPassphrase =
+    import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+): Promise<Reputation> {
+  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const contract = new Contract(contractId);
+  const source = new Account(Keypair.random().publicKey(), '0');
+  const transaction = new TransactionBuilder(source, {
+    fee: BASE_FEE,
+    networkPassphrase,
+  })
+    .addOperation(contract.call('get_reputation', nativeToScVal(address, { type: 'address' })))
+    .setTimeout(30)
+    .build();
+
+  const simulation = await server.simulateTransaction(transaction);
+  if (rpc.Api.isSimulationError(simulation)) {
+    throw new Error(`Direct Soroban query failed: ${simulation.error}`);
+  }
+  if (!simulation.result) {
+    throw new Error('Direct Soroban query returned no reputation value');
+  }
+
+  const value = scValToNative(simulation.result.retval) as Record<string, number | bigint>;
+  const fulfilled = Number(value.fulfilled_count ?? value.fulfilledCount ?? 0);
+  const late = Number(value.late_count ?? value.lateCount ?? 0);
+  const breached = Number(value.breached_count ?? value.breachedCount ?? 0);
+
+  return {
+    address,
+    fulfilled,
+    late,
+    breached,
+    total: fulfilled + late + breached,
+  };
 }
 
 /**

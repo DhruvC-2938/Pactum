@@ -363,7 +363,7 @@ fn test_create_rejects_invalid_thresholds() {
     );
     let commitment = client.get_commitment(&id);
     assert!(commitment.attestors.is_empty());
-    assert_eq!(commitment.vote_threshold, 0);
+    assert_eq!(commitment.vote_threshold(), 0);
 }
 
 #[test]

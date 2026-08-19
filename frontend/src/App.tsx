@@ -12,6 +12,7 @@ import { useCommitments } from './hooks/useCommitments';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
+import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
 
 interface CommitmentItemProps {
@@ -215,6 +216,7 @@ export default function App() {
       <div className="app-shell">
         {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
         <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
+          <ThemeSelector />
           <div
             className="sidebar-logo"
             onClick={() => {

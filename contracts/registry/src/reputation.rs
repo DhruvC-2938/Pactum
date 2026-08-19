@@ -320,6 +320,75 @@ pub fn migrate_reputation_batch(env: &Env, addresses: Vec<Address>) -> u32 {
     migrated
 }
 
+/// Restores an archived reputation entry for `address` and extends its TTL.
+///
+/// In the Soroban host the contract cannot call `RestoreFootprint` for a
+/// persistent entry by itself — the caller must include the key in the
+/// transaction's `RestoreFootprint` operation *before* invoking this function.
+/// What this function does is:
+///
+/// 1. Touch both the V2 and V1 reputation keys so the host registers them in
+///    the footprint (a required prerequisite for `RestoreFootprint`).
+/// 2. Extend their TTL to the full [`TTL_EXTEND_LEDGERS`] so the restored data
+///    survives long after the call returns.
+/// 3. Also restore the matching [`crate::trust_score::TrustKey::TrustHistory`]
+///    entry so `get_trust_score` keeps working without a separate call.
+///
+/// The function is **permissionless**: anyone — the indexer, a lending protocol,
+/// an end user — may pay the fee to unarchive another address's data.
+///
+/// # Returns
+/// * `true`  if at least one live entry was found and its TTL extended.
+/// * `false` if no live row exists for this address (never written, or the
+///   `RestoreFootprint` operation in the same transaction was omitted and the
+///   host silently made the entry inaccessible).
+///
+/// # Usage pattern (off-chain)
+/// ```text
+/// // 1. Build a transaction with:
+/// //      - Operation: RestoreFootprint (keys: ReputationKey::ReputationV2(address),
+/// //                                          ReputationKey::Reputation(address),
+/// //                                          TrustKey::TrustHistory(address))
+/// //      - Operation: InvokeContractFunction restore_reputation(address)
+/// // 2. Sign and submit.
+/// // 3. Now get_trust_score / get_reputation work again.
+/// ```
+pub fn restore_reputation(env: &Env, address: Address) -> bool {
+    let v2_key = ReputationKey::ReputationV2(address.clone());
+    let v1_key = ReputationKey::Reputation(address.clone());
+    let trust_key = crate::trust_score::TrustKey::TrustHistory(address.clone());
+
+    let mut restored = false;
+
+    // Touch and extend the V2 row if it is live (post-RestoreFootprint).
+    if env.storage().persistent().has(&v2_key) {
+        bump_ttl(env, &v2_key);
+        restored = true;
+    }
+
+    // Touch and extend the legacy V1 row if it is still present (not yet
+    // migrated, or the contract is still on schema V1).
+    if env.storage().persistent().has(&v1_key) {
+        bump_ttl(env, &v1_key);
+        restored = true;
+    }
+
+    // Extend the trust-history entry so get_trust_score keeps working.
+    if env.storage().persistent().has(&trust_key) {
+        env.storage().persistent().extend_ttl(
+            &trust_key,
+            crate::commitments::TTL_THRESHOLD_LEDGERS,
+            crate::commitments::TTL_EXTEND_LEDGERS,
+        );
+        restored = true;
+    }
+
+    let restored_v2 = env.storage().persistent().has(&v2_key);
+    events::reputation_restored(env, &address, restored_v2);
+
+    restored
+}
+
 /// Applies `outcome` to `issuer`'s reputation.
 ///
 /// `increment` is true when adding an outcome (e.g., in `attest` or `resolve_dispute`),
