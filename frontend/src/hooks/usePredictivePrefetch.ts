@@ -120,6 +120,11 @@ export function usePredictivePrefetch<TElement extends HTMLElement = HTMLElement
             intentTimerRef.current = null
           }, intentDelayMs)
         }
+      } else {
+        if (intentTimerRef.current) {
+          clearTimeout(intentTimerRef.current)
+          intentTimerRef.current = null
+        }
       }
     }
 
@@ -161,6 +166,11 @@ export function usePredictivePrefetch<TElement extends HTMLElement = HTMLElement
             void triggerPrefetch()
             intentTimerRef.current = null
           }, intentDelayMs)
+        }
+      } else {
+        if (intentTimerRef.current) {
+          clearTimeout(intentTimerRef.current)
+          intentTimerRef.current = null
         }
       }
     },

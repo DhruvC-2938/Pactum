@@ -17,9 +17,8 @@ test.describe('Commitment Flow', () => {
     await page.goto('/');
     
     const heroBtn = page.locator('#hero-launch-btn');
-    if (await heroBtn.isVisible()) {
-      await heroBtn.click();
-    }
+    await expect(heroBtn).toBeVisible();
+    await heroBtn.click();
     
     // Verify Dashboard is active
     await expect(page.locator('#topbar-title')).toHaveText('Dashboard');
@@ -45,5 +44,8 @@ test.describe('Commitment Flow', () => {
     const submitBtn = page.locator('.wizard-nav').getByRole('button', { name: 'Create Commitment' });
     await expect(submitBtn).toBeVisible();
     await submitBtn.click();
+
+    // Verify submitted payload confirmation is rendered
+    await expect(page.locator('.inline-alert').filter({ hasText: 'Commitment payload prepared' })).toBeVisible();
   });
 });

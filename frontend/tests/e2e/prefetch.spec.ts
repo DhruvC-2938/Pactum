@@ -16,10 +16,7 @@ test.describe('Predictive UI Prefetching', () => {
   test('Prefetches query when approaching and hovering preset address buttons', async ({ page }) => {
     let prefetchCalled = false
 
-    await page.route('**/reputation/**', async (route) => {
-      if (route.request().resourceType() === 'document') {
-        return route.continue()
-      }
+    await page.route(/reputation\/GB4U/i, async (route) => {
       prefetchCalled = true
       await route.fulfill({
         status: 200,
@@ -34,14 +31,26 @@ test.describe('Predictive UI Prefetching', () => {
       })
     })
 
-    await page.goto('/reputation/GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C')
+    await page.goto('/')
+    const heroBtn = page.locator('#hero-launch-btn')
+    await expect(heroBtn).toBeVisible()
+    await heroBtn.click()
+
+    await expect(page.locator('#topbar-title')).toHaveText('Dashboard')
+    await page.click('#nav-reputation')
 
     const presetBtn = page.getByRole('button', { name: /Counterparty \(GB4U\.\.\.\)/i })
     await expect(presetBtn).toBeVisible()
 
-    await presetBtn.hover()
-    await page.waitForTimeout(300)
+    const box = await presetBtn.boundingBox()
+    if (box) {
+      await page.mouse.move(box.x - 50, box.y - 50)
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 })
+    } else {
+      await presetBtn.hover()
+    }
 
+    await page.waitForTimeout(300)
     expect(prefetchCalled).toBe(true)
   })
 
@@ -55,10 +64,7 @@ test.describe('Predictive UI Prefetching', () => {
       })
     })
 
-    await page.route('**/reputation/**', async (route) => {
-      if (route.request().resourceType() === 'document') {
-        return route.continue()
-      }
+    await page.route(/reputation\/GB4U/i, async (route) => {
       prefetchRequested = true
       await route.fulfill({
         status: 200,
@@ -67,14 +73,26 @@ test.describe('Predictive UI Prefetching', () => {
       })
     })
 
-    await page.goto('/reputation/GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C')
+    await page.goto('/')
+    const heroBtn = page.locator('#hero-launch-btn')
+    await expect(heroBtn).toBeVisible()
+    await heroBtn.click()
+
+    await expect(page.locator('#topbar-title')).toHaveText('Dashboard')
+    await page.click('#nav-reputation')
 
     const presetBtn = page.getByRole('button', { name: /Counterparty \(GB4U\.\.\.\)/i })
     await expect(presetBtn).toBeVisible()
 
-    await presetBtn.hover()
-    await page.waitForTimeout(300)
+    const box = await presetBtn.boundingBox()
+    if (box) {
+      await page.mouse.move(box.x - 50, box.y - 50)
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 })
+    } else {
+      await presetBtn.hover()
+    }
 
+    await page.waitForTimeout(300)
     expect(prefetchRequested).toBe(false)
   })
 })
