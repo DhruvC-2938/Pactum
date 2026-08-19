@@ -5,13 +5,16 @@ import './index.css'
 import App from './App.tsx'
 import { queryClient } from './lib/queryClient'
 import { WalletProvider } from './context/WalletContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <WalletProvider>
-        <App />
-      </WalletProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <WalletProvider>
+          <App />
+        </WalletProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )
