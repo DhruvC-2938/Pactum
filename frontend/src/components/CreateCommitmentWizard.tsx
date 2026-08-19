@@ -4,15 +4,19 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 import { sha256Hex } from '../lib/hash';
+import { encryptCommitmentTerms, type EncryptResult } from '../lib/crypto';
 import { stellarAddressSchema } from '../lib/stellar';
 import { decodeRegistryContractError } from '../lib/errors';
 import { useWallet } from '../context/WalletContext';
+import { useWasmValidation } from '../hooks/useWasmValidation';
 import {
   submitCreateCommitment,
   fundTestnetAccount,
   type CreateCommitmentResult,
 } from '../lib/soroban';
+import { postEncryptedTerms } from '../lib/api';
 import UserProfile from './UserProfile';
+import EncryptionConsentModal from './EncryptionConsentModal';
 import {
   CheckCircle2,
   ExternalLink,
@@ -24,6 +28,8 @@ import {
   FileText,
   Calendar,
   Zap,
+  Lock,
+  ShieldOff,
 } from 'lucide-react';
 
 export interface CreateCommitmentPayload {
@@ -101,7 +107,8 @@ export default function CreateCommitmentWizard({
   onSubmit,
   onSuccess,
 }: CreateCommitmentWizardProps) {
-  const { address: connectedAddress, isConnected, connectWallet } = useWallet();
+  const { address: connectedAddress, isConnected, connectWallet, provider } = useWallet();
+  const { validateCommitmentWithWasm } = useWasmValidation();
 
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -110,6 +117,15 @@ export default function CreateCommitmentWizard({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<CreateCommitmentResult | null>(null);
   const [previewHash, setPreviewHash] = useState<string | null>(null);
+
+  // ── Encryption state ───────────────────────────────────────────────────
+  const [encryptEnabled, setEncryptEnabled] = useState(false);
+  const [showEncryptModal, setShowEncryptModal] = useState(false);
+  // Resolved after the consent modal signs and encrypts (used in reset)
+  const [encryptResolve, setEncryptResolve] = useState<((r: EncryptResult) => void) | null>(null);
+  const [encryptReject, setEncryptReject] = useState<((e: Error) => void) | null>(null);
+
+  const isFreighter = provider === 'freighter';
 
   const {
     register,
@@ -128,16 +144,16 @@ export default function CreateCommitmentWizard({
   const dueAtMs = values.dueAt ? new Date(values.dueAt).getTime() : NaN;
   const dueAtUnix = Number.isNaN(dueAtMs) ? null : Math.floor(dueAtMs / 1000);
 
-  // Compute live SHA-256 hash when terms change
+  // Compute live SHA-256 hash when terms change (when not encrypting)
   useEffect(() => {
-    if (values.terms && values.terms.trim().length > 0) {
+    if (!encryptEnabled && values.terms && values.terms.trim().length > 0) {
       sha256Hex(values.terms)
         .then((h) => setPreviewHash(h))
         .catch(() => setPreviewHash(null));
     } else {
       setPreviewHash(null);
     }
-  }, [values.terms]);
+  }, [values.terms, encryptEnabled]);
 
   const isSameAddress = Boolean(
     connectedAddress &&
@@ -192,11 +208,51 @@ export default function CreateCommitmentWizard({
     setSubmitting(true);
     clearErrorToasts();
     setTxResult(null);
-    setStatusMessage('Preparing commitment data...');
+    setStatusMessage('Validating commitment with WASM contract rules...');
 
     try {
-      const termsHashHex = await sha256Hex(data.terms);
       const dueAtSeconds = Math.floor(new Date(data.dueAt).getTime() / 1000);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+
+      // Pre-flight WASM Web Worker validation before transaction simulation & wallet submission
+      const wasmResult = await validateCommitmentWithWasm(dueAtSeconds, nowSeconds, 1);
+      if (!wasmResult.isValid) {
+        showErrorToast(wasmResult.error || 'Contract validation failed in WASM Web Worker.');
+        setSubmitting(false);
+        setStatusMessage(null);
+        return;
+      }
+
+      setStatusMessage('Preparing commitment data...');
+
+      let termsHashHex: string;
+      let encryptResult: EncryptResult | null = null;
+
+      if (encryptEnabled && isFreighter) {
+        // ── Encrypted path ───────────────────────────────────────────────
+        // Open the consent modal and wait for the user to sign + encrypt
+        setStatusMessage(null);
+        setSubmitting(false); // let modal take over UX
+
+        try {
+          encryptResult = await new Promise<EncryptResult>((resolve, reject) => {
+            setEncryptResolve(() => resolve);
+            setEncryptReject(() => reject);
+            setShowEncryptModal(true);
+          });
+        } catch {
+          // User cancelled or signing failed — abort submission
+          setShowEncryptModal(false);
+          return;
+        }
+
+        setSubmitting(true);
+        setStatusMessage('Encryption complete. Preparing on-chain submission...');
+        termsHashHex = encryptResult.termsHash;
+      } else {
+        // ── Plaintext path (hash of raw terms, same as before) ────────────────
+        termsHashHex = await sha256Hex(data.terms);
+      }
 
       onSubmit?.({
         counterparty: data.counterparty,
@@ -212,6 +268,26 @@ export default function CreateCommitmentWizard({
         dueAtSeconds,
         onStatusUpdate: (msg: string) => setStatusMessage(msg),
       });
+
+      // After on-chain confirmation: upload encrypted blob to backend (encrypted path only)
+      if (encryptResult && result.commitmentId !== undefined) {
+        setStatusMessage('Storing encrypted terms on backend...');
+        try {
+          await postEncryptedTerms({
+            commitmentId: String(result.commitmentId),
+            issuer: connectedAddress,
+            counterparty: data.counterparty,
+            ciphertext: encryptResult.ciphertext,
+          });
+        } catch (uploadErr) {
+          console.warn('[CreateCommitmentWizard] Encrypted payload upload failed:', uploadErr);
+          // Non-fatal: on-chain commitment is already confirmed
+          showErrorToast(
+            'On-chain commitment created, but the encrypted terms could not be stored. ' +
+            'Please retry uploading later.',
+          );
+        }
+      }
 
       setTxResult(result);
       onSuccess?.(result);
@@ -232,9 +308,28 @@ export default function CreateCommitmentWizard({
     setPreviewHash(null);
     setStatusMessage(null);
     setFundMessage(null);
+    setEncryptEnabled(false);
+    setShowEncryptModal(false);
   };
 
   const isLastStep = step === STEP_COUNT - 1;
+
+  // ── Modal onConfirm handler (runs inside the EncryptionConsentModal) ──────
+  const handleEncryptModalConfirm = async () => {
+    if (!connectedAddress || !values.counterparty) return;
+    const result = await encryptCommitmentTerms(
+      values.terms,
+      connectedAddress,
+      values.counterparty,
+    );
+    setShowEncryptModal(false);
+    if (encryptResolve) encryptResolve(result);
+  };
+
+  const handleEncryptModalCancel = () => {
+    setShowEncryptModal(false);
+    if (encryptReject) encryptReject(new Error('User cancelled encryption'));
+  };
 
   return (
     <div className="wizard">
@@ -559,10 +654,94 @@ export default function CreateCommitmentWizard({
                   <div className="form-error">{errors.terms.message}</div>
                 ) : (
                   <div className="form-hint">
-                    Stored as a SHA-256 hash on-chain. Keep a copy of the original off-chain.
+                    {encryptEnabled
+                      ? 'Terms will be AES-256 encrypted locally before leaving your browser.'
+                      : 'Stored as a SHA-256 hash on-chain. Keep a copy of the original off-chain.'}
                   </div>
                 )}
-                {previewHash && (
+                {/* Encryption toggle */}
+                <div
+                  id="encrypt-toggle-container"
+                  style={{
+                    marginTop: '12px',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: encryptEnabled ? '1.5px solid #a5b4fc' : '1px solid #e2e8f0',
+                    background: encryptEnabled ? '#eef2ff' : '#f8fafc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {encryptEnabled ? (
+                      <Lock size={14} color="#4f46e5" />
+                    ) : (
+                      <ShieldOff size={14} color="#94a3b8" />
+                    )}
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '12.5px',
+                          fontWeight: '700',
+                          color: encryptEnabled ? '#312e81' : '#475569',
+                        }}
+                      >
+                        {encryptEnabled ? 'E2E Encrypted' : 'Encryption Off'}
+                      </div>
+                      <div style={{ fontSize: '11px', color: encryptEnabled ? '#4338ca' : '#94a3b8' }}>
+                        {encryptEnabled
+                          ? 'Only you & counterparty can read the terms'
+                          : isFreighter
+                          ? 'Enable to encrypt terms with your wallet key'
+                          : 'Requires Freighter wallet'}
+                      </div>
+                    </div>
+                  </div>
+                  <label
+                    htmlFor="encrypt-toggle"
+                    style={{ cursor: isFreighter ? 'pointer' : 'not-allowed', flexShrink: 0 }}
+                  >
+                    <input
+                      type="checkbox"
+                      id="encrypt-toggle"
+                      checked={encryptEnabled}
+                      disabled={!isFreighter || submitting}
+                      onChange={(e) => setEncryptEnabled(e.target.checked)}
+                      style={{ display: 'none' }}
+                    />
+                    <div
+                      aria-checked={encryptEnabled}
+                      role="switch"
+                      style={{
+                        width: '40px',
+                        height: '22px',
+                        borderRadius: '100px',
+                        background: encryptEnabled ? '#4f46e5' : '#cbd5e1',
+                        position: 'relative',
+                        transition: 'background 0.2s',
+                        opacity: !isFreighter ? 0.45 : 1,
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '3px',
+                          left: encryptEnabled ? '21px' : '3px',
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '50%',
+                          background: '#ffffff',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                          transition: 'left 0.2s',
+                        }}
+                      />
+                    </div>
+                  </label>
+                </div>
+                {previewHash && !encryptEnabled && (
                   <div
                     style={{
                       marginTop: '8px',
@@ -588,6 +767,28 @@ export default function CreateCommitmentWizard({
                       }}
                     >
                       0x{previewHash}
+                    </span>
+                  </div>
+                )}
+                {encryptEnabled && values.terms && values.terms.trim().length > 0 && (
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      background: '#eef2ff',
+                      border: '1px solid #a5b4fc',
+                      borderRadius: '8px',
+                      padding: '8px 12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontSize: '11.5px',
+                      color: '#3730a3',
+                    }}
+                  >
+                    <Lock size={13} color="#4f46e5" />
+                    <span style={{ fontWeight: '600' }}>On-chain hash:</span>
+                    <span style={{ fontWeight: '600', color: '#6366f1', fontStyle: 'italic' }}>
+                      SHA-256(ciphertext) — computed after signing
                     </span>
                   </div>
                 )}
@@ -722,6 +923,17 @@ export default function CreateCommitmentWizard({
             </div>
           </div>
         </div>
+      )}
+
+      {/* EncryptionConsentModal portal — rendered outside the wizard card */}
+      {showEncryptModal && connectedAddress && values.counterparty && (
+        <EncryptionConsentModal
+          onConfirm={handleEncryptModalConfirm}
+          onCancel={handleEncryptModalCancel}
+          issuerAddress={connectedAddress}
+          counterpartyAddress={values.counterparty}
+          isFreighter={isFreighter}
+        />
       )}
     </div>
   );

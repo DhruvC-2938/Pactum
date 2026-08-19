@@ -7,33 +7,132 @@ import CreateCommitmentWizard from './components/CreateCommitmentWizard';
 import ReputationDashboard from './components/ReputationDashboard';
 import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
+import DecryptTermsModal from './components/DecryptTermsModal';
 import { useCommitments } from './hooks/useCommitments';
+import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
-import { Menu, X, User } from 'lucide-react';
+import { Menu, X, User, Lock } from 'lucide-react';
 
-function renderCommitmentItem(commitment: Commitment) {
+interface CommitmentItemProps {
+  commitment: Commitment;
+  connectedAddress: string | null;
+  provider: 'freighter' | 'albedo' | null;
+}
+
+function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentItemProps) {
+  const [showDecryptModal, setShowDecryptModal] = useState(false);
+  const [ciphertext, setCiphertext] = useState<string | null>(null);
+  const [loadingCiphertext, setLoadingCiphertext] = useState(false);
+
+  const handleDecryptClick = async () => {
+    if (ciphertext) {
+      setShowDecryptModal(true);
+      return;
+    }
+    setLoadingCiphertext(true);
+    try {
+      const res = await fetchEncryptedTerms(String(commitment.id));
+      setCiphertext(res.ciphertext);
+      setShowDecryptModal(true);
+    } catch (err) {
+      console.error('[CommitmentItem] Failed to fetch ciphertext:', err);
+    } finally {
+      setLoadingCiphertext(false);
+    }
+  };
+
   return (
-    <div className="commitment-item" key={commitment.id}>
-      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
-        {commitment.issuer.charAt(0)}
-      </div>
-      <div className="commitment-info">
-        <div className="commitment-id">Commitment #{commitment.id}</div>
-        <div className="commitment-parties">
-          {commitment.issuer} &rarr; {commitment.counterparty}
+    <>
+      <div className="commitment-item" key={commitment.id}>
+        <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
+          {commitment.issuer.charAt(0)}
         </div>
-        <div className="commitment-due">
-          {new Date(commitment.due_at * 1000).toLocaleDateString()}
+        <div className="commitment-info">
+          <div className="commitment-id" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Commitment #{commitment.id}
+            {commitment.encrypted && (
+              <span
+                title="Terms are end-to-end encrypted"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  color: '#4f46e5',
+                  background: '#eef2ff',
+                  padding: '1px 6px',
+                  borderRadius: '100px',
+                  border: '1px solid #a5b4fc',
+                }}
+              >
+                <Lock size={9} /> E2E Encrypted
+              </span>
+            )}
+          </div>
+          <div className="commitment-parties">
+            {commitment.issuer} &rarr; {commitment.counterparty}
+          </div>
+          <div className="commitment-due">
+            {new Date(commitment.due_at * 1000).toLocaleDateString()}
+          </div>
+        </div>
+        <div className="commitment-status" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+          <span className={`badge ${commitment.status.toLowerCase()}`}>
+            <span className="badge-dot"></span>
+            {commitment.status}
+          </span>
+          {commitment.encrypted && (
+            <button
+              type="button"
+              id={`decrypt-btn-${commitment.id}`}
+              onClick={handleDecryptClick}
+              disabled={loadingCiphertext}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: '#4f46e5',
+                background: '#eef2ff',
+                border: '1px solid #a5b4fc',
+                borderRadius: '6px',
+                padding: '3px 8px',
+                cursor: loadingCiphertext ? 'wait' : 'pointer',
+              }}
+            >
+              <Lock size={10} />
+              {loadingCiphertext ? 'Loading…' : 'Decrypt Terms'}
+            </button>
+          )}
         </div>
       </div>
-      <div className="commitment-status">
-        <span className={`badge ${commitment.status.toLowerCase()}`}>
-          <span className="badge-dot"></span>
-          {commitment.status}
-        </span>
-      </div>
-    </div>
+
+      {showDecryptModal && ciphertext && connectedAddress && (
+        <DecryptTermsModal
+          commitmentId={commitment.id}
+          ciphertext={ciphertext}
+          issuerAddress={commitment.issuer}
+          counterpartyAddress={commitment.counterparty}
+          viewerAddress={connectedAddress}
+          isFreighter={provider === 'freighter'}
+          onClose={() => setShowDecryptModal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function renderCommitmentItem(commitment: Commitment, connectedAddress: string | null, provider: 'freighter' | 'albedo' | null) {
+  return (
+    <CommitmentItem
+      key={commitment.id}
+      commitment={commitment}
+      connectedAddress={connectedAddress}
+      provider={provider}
+    />
   );
 }
 
@@ -826,7 +925,7 @@ export default function App() {
                   Failed to load commitments from the backend.
                 </div>
               )}
-              {commitmentsQuery.data?.map(renderCommitmentItem)}
+              {commitmentsQuery.data?.map((c) => renderCommitmentItem(c, wallet.address, wallet.provider))}
             </div>
           </section>
 
