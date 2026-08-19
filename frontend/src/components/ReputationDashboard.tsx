@@ -337,8 +337,10 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             Quick Presets:
           </span>
           {PRESETS.map((preset) => (
-            <button
+            <PresetButton
               key={preset.address}
+              preset={preset}
+              isActive={activeAddress === preset.address}
               onClick={() => triggerAddressChange(preset.address)}
               style={{
                 fontSize: '12px',

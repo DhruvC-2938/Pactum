@@ -7,14 +7,13 @@ test.describe('Commitment Flow', () => {
       (window as any).freighter = {
         isConnected: () => Promise.resolve(true),
         isAllowed: () => Promise.resolve(true),
-        getUserInfo: () => Promise.resolve({ publicKey: 'GCV7G...TEST' }),
+        getUserInfo: () => Promise.resolve({ publicKey: 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY' }),
         signTransaction: (tx: string) => Promise.resolve({ status: 'SUCCESS', signedTx: tx }),
       };
     });
   });
 
   test('User can view landing page, connect mock wallet, and submit a commitment', async ({ page }) => {
-    // 1. User can view the landing page.
     await page.goto('/');
     await expect(page.locator('.lp-hero-title')).toContainText('On-chain registry');
 
@@ -24,7 +23,7 @@ test.describe('Commitment Flow', () => {
     // Verify Dashboard is active
     await expect(page.locator('#topbar-title')).toHaveText('Dashboard');
 
-    // 3. User can navigate to the Create Commitment form.
+    // Navigate to Create Commitment wizard
     await page.click('#nav-create');
 
     // Verify Create Commitment page is active
