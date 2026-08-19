@@ -1,9 +1,12 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query';
 
 import type { CommitmentFilters } from '@/lib/api'
 import { fetchCommitments } from '@/lib/api'
 import { syncStore } from '@/lib/crdt/store'
 import { commitmentKeys } from '@/lib/queryKeys'
+import type { CommitmentFilters } from '@/lib/api';
+import { fetchCommitments } from '@/lib/api';
+import { commitmentKeys } from '@/lib/queryKeys';
 
 export function useCommitments(filters: CommitmentFilters = {}) {
   return useQuery({
@@ -16,4 +19,6 @@ export function useCommitments(filters: CommitmentFilters = {}) {
       return cached.length > 0 ? cached : undefined
     },
   })
+}
+  });
 }
