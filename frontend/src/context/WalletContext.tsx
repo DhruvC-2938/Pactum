@@ -1,3 +1,25 @@
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+
+import {
+  type WalletAdapter,
+  type AdapterStatus,
+  type AdapterMetadata,
+  FreighterAdapter,
+  AlbedoAdapter,
+} from '../lib/wallet-adapters/adapter-interface';
+
+export type { WalletAdapter, AdapterStatus, AdapterMetadata };
+
+const allAdapters: WalletAdapter[] = [FreighterAdapter, AlbedoAdapter];
+
+export interface WalletConnectAdapter {
+  adapter: WalletAdapter;
+  status: AdapterStatus;
+  connect: () => Promise<string | null>;
+  disconnect: () => Promise<void>;
+  isAvailable: () => boolean;
+  metadata: AdapterMetadata;
+}
 import React, {
   createContext,
   useContext,
@@ -23,14 +45,18 @@ export interface WalletContextType {
   isInstalled: boolean;
   isConnecting: boolean;
   error: string | null;
+  connectWallet: (adapterId: string) => Promise<void>;
   errorCode: WalletErrorCode | null;
   connectWallet: (provider?: WalletProviderName) => Promise<void>;
   disconnectWallet: () => void;
   clearError: () => void;
+  availableAdapters: WalletConnectAdapter[];
+  selectedAdapter: WalletConnectAdapter | null;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
+const LOCAL_STORAGE_KEY = 'pactum_connected_wallet';
 const LOCAL_STORAGE_KEY = 'pactum_wallet_state';
 
 interface PersistedWalletState {
@@ -79,6 +105,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isInstalled, setIsInstalled] = useState<boolean>(true);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableAdapters, setAvailableAdapters] = useState<WalletConnectAdapter[]>([]);
+  const [selectedAdapter, setSelectedAdapter] = useState<WalletConnectAdapter | null>(null);
   const [errorCode, setErrorCode] = useState<WalletErrorCode | null>(null);
 
   const applyError = useCallback((err: unknown) => {
@@ -119,6 +147,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (!installed) return;
 
       try {
+        const wasConnected = localStorage.getItem(LOCAL_STORAGE_KEY) === 'true';
+        if (wasConnected) {
+          const addrResult = await getAddressFromSelectedAdapter();
+          if (isMounted && addrResult?.address && !addrResult.error) {
+            setAddress(addrResult.address);
+          }
         const connected = await isFreighterConnected();
         if (!connected) return;
 
@@ -139,6 +173,54 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     };
   }, []);
 
+  const getAddressFromSelectedAdapter = async (): Promise<{ address: string | null; error?: string }> => {
+    if (!selectedAdapter) return { address: null };
+    try {
+      const address = await selectedAdapter.connect();
+      return { address, error: undefined };
+    } catch (err: any) {
+      return { address: null, error: err?.message || 'Failed to get address' };
+    }
+  };
+
+  const refreshAvailableAdapters = async () => {
+    const adapters: WalletConnectAdapter[] = [];
+
+    for (const adapter of allAdapters) {
+      let isAvail = false;
+      try {
+        isAvail = await adapter.isAvailable();
+      } catch {
+        isAvail = false;
+      }
+      adapters.push({
+        adapter,
+        status: isAvail ? 'available' : 'unavailable',
+        connect: () => adapter.connect(),
+        disconnect: () => adapter.disconnect(),
+        isAvailable: () => adapter.isAvailable(),
+        metadata: adapter.metadata,
+      });
+    }
+
+    setAvailableAdapters(adapters);
+  };
+
+  useEffect(() => {
+    refreshAvailableAdapters();
+  }, []);
+
+  const connectWallet = async (adapterId: string) => {
+    const adapter = allAdapters.find((a) => a.id === adapterId);
+    if (!adapter) return;
+
+    setIsConnecting(true);
+    setError(null);
+
+    try {
+      const isAvail = await adapter.isAvailable();
+      if (!isAvail) {
+        setError(`${adapter.name} is not available`);
   const connectWallet = useCallback(
     async (walletProvider: WalletProviderName = 'freighter') => {
       setIsConnecting(true);
@@ -165,6 +247,39 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     [applyError],
   );
 
+      setSelectedAdapter({
+        adapter,
+        status: 'connecting',
+        connect: adapter.connect,
+        disconnect: adapter.disconnect,
+        isAvailable: adapter.isAvailable,
+        metadata: adapter.metadata,
+      });
+
+      const address = await adapter.connect();
+      setAddress(address);
+      setIsInstalled(true);
+      localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
+    } catch (err: any) {
+      console.error('[WalletContext] Connection error:', err);
+      setError(err?.message || 'Failed to connect wallet');
+    } finally {
+      setIsConnecting(false);
+      // Refresh adapters after connection attempt
+      refreshAvailableAdapters();
+    }
+  };
+
+  const disconnectWallet = () => {
+    setAddress(null);
+    setIsInstalled(false);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    setSelectedAdapter(null);
+  };
+
+  const clearError = () => {
+    setError(null);
+  };
   const disconnectWallet = useCallback(() => {
     setAddress(null);
     setProvider(null);
@@ -184,6 +299,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         connectWallet,
         disconnectWallet,
         clearError,
+        availableAdapters,
+        selectedAdapter,
       }}
     >
       {children}
