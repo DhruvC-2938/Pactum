@@ -162,6 +162,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "counters"
+                      },
+                      "val": {
+                        "u64": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "created_at"
                       },
                       "val": {
@@ -190,30 +198,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "late_milestones"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "milestone_count"
-                      },
-                      "val": {
-                        "u32": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "milestones_attested"
-                      },
-                      "val": {
-                        "u32": 0
                       }
                     },
                     {
@@ -254,14 +238,6 @@
                       },
                       "val": {
                         "bytes": "0909090909090909090909090909090909090909090909090909090909090909"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "vote_threshold"
-                      },
-                      "val": {
-                        "u32": 0
                       }
                     }
                   ]

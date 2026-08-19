@@ -5,7 +5,7 @@ use crate::commitments::{
 };
 use crate::errors::Error;
 use crate::events;
-use soroban_sdk::{panic_with_error, Address, Env};
+use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
 /// Raises a dispute on an attested commitment within the dispute window.
 ///
@@ -24,6 +24,25 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
 
     // 2. Require authorization from the caller.
     caller.require_auth();
+
+    // 2b. Require the dispute stake transfer from caller to contract.
+    //     The token address must be configured via set_dispute_token.
+    let dispute_token: soroban_sdk::Address = env
+        .storage()
+        .instance()
+        .get(&crate::commitments::DataKey::DisputeToken)
+        .unwrap_or_else(|| panic_with_error!(env, Error::DisputeTokenNotSet));
+    let token_client = TokenClient::new(env, &dispute_token);
+    token_client.transfer(
+        &caller,
+        &env.current_contract_address(),
+        &crate::commitments::DISPUTE_STAKE_AMOUNT,
+    );
+
+    env.storage().persistent().set(
+        &crate::commitments::DataKey::DisputeStake(id),
+        &crate::commitments::DISPUTE_STAKE_AMOUNT,
+    );
 
     // 3. Load commitment from persistent storage (with legacy record migration).
     let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
@@ -238,6 +257,34 @@ fn finalize_resolution(
 
     // 4. Update trust history (increment with final outcome).
     crate::trust_score::update_trust_history(env, commitment.issuer.clone(), final_outcome, true);
+
+    // 4b. Release the escrowed dispute stake to the winning party.
+    //     Winning party = issuer if outcome is Fulfilled, counterparty otherwise.
+    if let Some(dispute_token) = env
+        .storage()
+        .instance()
+        .get::<crate::commitments::DataKey, soroban_sdk::Address>(
+            &crate::commitments::DataKey::DisputeToken,
+        )
+    {
+        if let Some(stake_amount) = env
+            .storage()
+            .persistent()
+            .get::<crate::commitments::DataKey, i128>(&crate::commitments::DataKey::DisputeStake(
+                id,
+            ))
+        {
+            let winner = match final_outcome {
+                CommitmentStatus::Fulfilled => commitment.issuer.clone(),
+                _ => commitment.counterparty.clone(),
+            };
+            let token_client = TokenClient::new(env, &dispute_token);
+            token_client.transfer(&env.current_contract_address(), &winner, &stake_amount);
+            env.storage()
+                .persistent()
+                .remove(&crate::commitments::DataKey::DisputeStake(id));
+        }
+    }
 
     // 5. Emit dispute_resolved event.
     events::dispute_resolved(env, id, final_outcome);
