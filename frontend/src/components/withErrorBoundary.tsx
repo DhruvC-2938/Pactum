@@ -15,7 +15,7 @@ export function withErrorBoundary<P extends object>(
   )
 
   ComponentWithErrorBoundary.displayName = `WithErrorBoundary(${
-    WrappedComponent.displayName || WrappedComponent.name || "Component"
+    WrappedComponent.displayName ?? "Component"
   })`
 
   return ComponentWithErrorBoundary

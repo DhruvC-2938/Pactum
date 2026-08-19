@@ -13,7 +13,7 @@ export const ErrorFallback: FC<ErrorFallbackProps> = ({
   resetErrorBoundary,
 }) => {
   const [showDetails, setShowDetails] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle")
 
   const handleReload = () => {
     window.location.reload()
@@ -30,17 +30,45 @@ export const ErrorFallback: FC<ErrorFallbackProps> = ({
       `Stack:\n${error?.stack || "No stack trace available"}`,
       errorInfo?.componentStack ? `Component Stack:\n${errorInfo.componentStack}` : "",
       `Time: ${new Date().toISOString()}`,
-      `URL: ${window.location.href}`,
+      `URL: ${typeof window !== "undefined" ? window.location.href : ""}`,
     ]
       .filter(Boolean)
       .join("\n\n")
 
-    try {
-      await navigator.clipboard.writeText(errorText)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Fallback if clipboard API fails
+    let success = false
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(errorText)
+        success = true
+      } catch {
+        success = false
+      }
+    }
+
+    // Fallback using temporary textarea if navigator.clipboard failed or is unavailable
+    if (!success && typeof document !== "undefined") {
+      try {
+        const textArea = document.createElement("textarea")
+        textArea.value = errorText
+        textArea.style.position = "fixed"
+        textArea.style.opacity = "0"
+        textArea.style.left = "-9999px"
+        document.body.appendChild(textArea)
+        textArea.focus()
+        textArea.select()
+        success = document.execCommand("copy")
+        document.body.removeChild(textArea)
+      } catch {
+        success = false
+      }
+    }
+
+    if (success) {
+      setCopyStatus("copied")
+      setTimeout(() => setCopyStatus("idle"), 2000)
+    } else {
+      setCopyStatus("failed")
+      setTimeout(() => setCopyStatus("idle"), 2000)
     }
   }
 
@@ -120,10 +148,15 @@ export const ErrorFallback: FC<ErrorFallbackProps> = ({
                     onClick={handleCopyError}
                     className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {copied ? (
+                    {copyStatus === "copied" ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-500" />
                         <span className="text-emerald-500">Copied</span>
+                      </>
+                    ) : copyStatus === "failed" ? (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-destructive" />
+                        <span className="text-destructive">Copy failed</span>
                       </>
                     ) : (
                       <>

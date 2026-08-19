@@ -43,16 +43,24 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     // Report to tracking tools & console
     reportError(error, errorInfo)
 
-    // Call optional custom error handler
-    this.props.onError?.(error, errorInfo)
+    // Call optional custom error handler in a safe block
+    try {
+      this.props.onError?.(error, errorInfo)
+    } catch (callbackError) {
+      reportError(callbackError, { context: "ErrorBoundary.onError callback failed" })
+    }
   }
 
   componentDidUpdate(prevProps: ErrorBoundaryProps): void {
     const { hasError } = this.state
     const { resetKeys } = this.props
 
-    if (hasError && resetKeys && prevProps.resetKeys) {
-      const hasKeyChanged = resetKeys.some((key, idx) => key !== prevProps.resetKeys?.[idx])
+    if (hasError) {
+      const currentKeys = resetKeys ?? []
+      const previousKeys = prevProps.resetKeys ?? []
+      const hasKeyChanged =
+        currentKeys.length !== previousKeys.length ||
+        currentKeys.some((key, idx) => !Object.is(key, previousKeys[idx]))
       if (hasKeyChanged) {
         this.resetErrorBoundary()
       }
@@ -60,7 +68,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   resetErrorBoundary = (): void => {
-    this.props.onReset?.()
+    try {
+      this.props.onReset?.()
+    } catch (callbackError) {
+      reportError(callbackError, { context: "ErrorBoundary.onReset callback failed" })
+    }
     this.setState(initialState)
   }
 
