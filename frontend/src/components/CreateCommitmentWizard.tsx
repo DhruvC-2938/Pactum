@@ -273,12 +273,13 @@ export default function CreateCommitmentWizard({
         dueAt: dueAtSeconds,
       });
 
-      // Submit Soroban transaction to Stellar Testnet via Freighter
+      // Submit Soroban transaction to Stellar Testnet via the connected wallet
       const result = await submitCreateCommitment({
         issuerAddress: connectedAddress,
         counterpartyAddress: data.counterparty,
         termsHashHex,
         dueAtSeconds,
+        walletProvider: provider ?? 'freighter',
         onStatusUpdate: (msg: string) => setStatusMessage(msg),
       });
 

@@ -45,7 +45,9 @@ function loadPersistedState(): PersistedWalletState | null {
     const parsed = JSON.parse(raw) as PersistedWalletState;
     if (
       !parsed ||
-      (parsed.provider !== 'freighter' && parsed.provider !== 'albedo') ||
+      (parsed.provider !== 'freighter' &&
+        parsed.provider !== 'albedo' &&
+        parsed.provider !== 'ledger') ||
       !parsed.address
     ) {
       return null;
@@ -96,7 +98,9 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setErrorCode(null);
   }, []);
 
-  // Auto-connect check on mount: restore persisted session (public key only, no signatures)
+  // Auto-connect check on mount: restore persisted session (public key only, no signatures).
+  // Ledger/hardware sessions are never auto-restored since they require a fresh
+  // device connection prompt each time.
   useEffect(() => {
     let isMounted = true;
 
@@ -110,6 +114,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           setAddress(persisted.address);
           setProvider('albedo');
         }
+        return;
+      }
+
+      if (persisted.provider === 'ledger') {
+        // Hardware wallets require an explicit reconnect (USB/BLE prompt).
         return;
       }
 

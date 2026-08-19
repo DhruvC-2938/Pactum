@@ -49,13 +49,14 @@ import { useCommitments } from './hooks/useCommitments';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
+import type { WalletProvider } from './lib/wallet';
 import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
 
 interface CommitmentItemProps {
   commitment: Commitment;
   connectedAddress: string | null;
-  provider: 'freighter' | 'albedo' | null;
+  provider: WalletProvider | null;
 }
 
 function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentItemProps) {
@@ -163,7 +164,7 @@ function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentIt
   );
 }
 
-function renderCommitmentItem(commitment: Commitment, connectedAddress: string | null, provider: 'freighter' | 'albedo' | null) {
+function renderCommitmentItem(commitment: Commitment, connectedAddress: string | null, provider: WalletProvider | null) {
   return (
     <CommitmentItem
       key={commitment.id}

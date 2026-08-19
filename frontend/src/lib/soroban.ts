@@ -13,6 +13,8 @@ import {
 } from '@stellar/stellar-sdk';
 import type { Reputation } from './api';
 import { signTransaction } from '@stellar/freighter-api';
+import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
+import type { WalletProvider } from './wallet';
 
 export const DEFAULT_SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 export const DEFAULT_CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
@@ -27,6 +29,7 @@ export interface CreateCommitmentParams {
   contractId?: string;
   networkPassphrase?: string;
   onStatusUpdate?: (statusMessage: string) => void;
+  walletProvider?: WalletProvider;
 }
 
 export interface CreateCommitmentResult {
@@ -137,6 +140,7 @@ export async function submitCreateCommitment({
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
   networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
   onStatusUpdate,
+  walletProvider = 'freighter',
 }: CreateCommitmentParams): Promise<CreateCommitmentResult> {
   // 1. Parameter Validation
   if (!issuerAddress || !issuerAddress.startsWith('G')) {
@@ -219,25 +223,31 @@ export async function submitCreateCommitment({
 
   const unsignedXdr = preparedTx.toXDR();
 
-  // 5. Prompt Freighter for Signature
-  onStatusUpdate?.('Awaiting signature in Freighter wallet...');
-  const signResult = await signTransaction(unsignedXdr, {
-    networkPassphrase,
-    address: issuerAddress,
-  });
-
+  // 5. Prompt the connected wallet for a signature
   let signedXdr = '';
-  if (typeof signResult === 'string') {
-    signedXdr = signResult;
-  } else if (signResult && typeof signResult === 'object') {
-    if ((signResult as any).error) {
-      throw new Error(`Freighter signing rejected: ${(signResult as any).error}`);
+
+  if (walletProvider === 'ledger') {
+    onStatusUpdate?.('Awaiting signature on Ledger device (confirm on-screen)...');
+    signedXdr = await signTransactionWithLedger(unsignedXdr, networkPassphrase);
+  } else {
+    onStatusUpdate?.('Awaiting signature in Freighter wallet...');
+    const signResult = await signTransaction(unsignedXdr, {
+      networkPassphrase,
+      address: issuerAddress,
+    });
+
+    if (typeof signResult === 'string') {
+      signedXdr = signResult;
+    } else if (signResult && typeof signResult === 'object') {
+      if ((signResult as any).error) {
+        throw new Error(`Freighter signing rejected: ${(signResult as any).error}`);
+      }
+      signedXdr = (signResult as any).signedTxXdr || (signResult as any).signedXdr || '';
     }
-    signedXdr = (signResult as any).signedTxXdr || (signResult as any).signedXdr || '';
   }
 
   if (!signedXdr) {
-    throw new Error('Transaction signing was cancelled or denied in Freighter.');
+    throw new Error('Transaction signing was cancelled or denied.');
   }
 
   // 6. Submit Signed Transaction Envelope to RPC
