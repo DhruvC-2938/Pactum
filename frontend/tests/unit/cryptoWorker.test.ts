@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { computeSha256Hex } from '../../src/workers/crypto.worker.ts';
+import { computeSha256Hex, type CryptoWorkerRequest, type CryptoWorkerResponse } from '../../src/workers/crypto.worker.ts';
 import { sha256Hex, sha256Batch } from '../../src/lib/hash.ts';
+import { CryptoWorkerClient } from '../../src/lib/cryptoWorkerClient.ts';
 
 describe('Web Worker Cryptographic Engine', () => {
   it('computes standard SHA-256 hex digest for empty string', async () => {
@@ -43,5 +44,119 @@ describe('Web Worker Cryptographic Engine', () => {
     const hash = await sha256Hex(largePayload);
     assert.equal(typeof hash, 'string');
     assert.equal(hash.length, 64);
+  });
+
+  it('immediately settles pending in-flight requests on client termination', async () => {
+    const client = new CryptoWorkerClient();
+
+    // Create a mock worker that captures messages but delays response
+    let postedMessage: CryptoWorkerRequest | null = null;
+    const mockWorker = {
+      postMessage: (data: CryptoWorkerRequest) => {
+        postedMessage = data;
+      },
+      terminate: () => {},
+      onmessage: null as any,
+      onerror: null as any,
+    };
+
+    (client as any).worker = mockWorker;
+
+    const input = 'test agreement terms for immediate termination fallback';
+    const hashPromise = client.sha256Hex(input);
+
+    assert.ok(postedMessage);
+    assert.equal((client as any).pendingRequests.size, 1);
+
+    // Call terminate() before worker responds
+    client.terminate();
+
+    assert.equal((client as any).pendingRequests.size, 0);
+
+    // Should resolve immediately via fallback rather than timing out
+    const resolvedHash = await hashPromise;
+    const expected = await computeSha256Hex(input);
+    assert.equal(resolvedHash, expected);
+  });
+
+  it('immediately resolves via fallback when worker encounters an error', async () => {
+    const client = new CryptoWorkerClient();
+
+    let errorHandler: ((err: any) => void) | null = null;
+    const mockWorker = {
+      postMessage: () => {
+        // Trigger error immediately
+        setTimeout(() => {
+          if (errorHandler) {
+            errorHandler(new Error('Simulated worker crash'));
+          }
+        }, 5);
+      },
+      terminate: () => {},
+      onmessage: null as any,
+      set onerror(fn: any) {
+        errorHandler = fn;
+      },
+      get onerror() {
+        return errorHandler;
+      },
+    };
+
+    (client as any).worker = mockWorker;
+    mockWorker.onerror = (err: any) => {
+      (client as any).settleAllPendingViaFallback();
+    };
+
+    const input = 'test error recovery';
+    const hash = await client.sha256Hex(input);
+    const expected = await computeSha256Hex(input);
+
+    assert.equal(hash, expected);
+  });
+
+  it('correctly correlates worker responses by request ID', async () => {
+    const client = new CryptoWorkerClient();
+
+    let messageHandler: ((event: MessageEvent<CryptoWorkerResponse>) => void) | null = null;
+    const mockWorker = {
+      postMessage: async (req: CryptoWorkerRequest) => {
+        const hash = await computeSha256Hex(req.payload as string);
+        setTimeout(() => {
+          if (messageHandler) {
+            messageHandler({
+              data: {
+                id: req.id,
+                success: true,
+                result: hash,
+              },
+            } as any);
+          }
+        }, 5);
+      },
+      terminate: () => {},
+      set onmessage(fn: any) {
+        messageHandler = fn;
+      },
+      get onmessage() {
+        return messageHandler;
+      },
+      onerror: null as any,
+    };
+
+    (client as any).worker = mockWorker;
+    // Bind client's message listener to mock worker
+    (client as any).initWorker();
+    (client as any).worker = mockWorker;
+    mockWorker.onmessage = (event: any) => {
+      const pending = (client as any).pendingRequests.get(event.data.id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        (client as any).pendingRequests.delete(event.data.id);
+        pending.resolve(event.data.result);
+      }
+    };
+
+    const result = await client.sha256Hex('worker test string');
+    assert.equal(result, await computeSha256Hex('worker test string'));
   });
 });

@@ -1,15 +1,15 @@
 import type { CryptoWorkerRequest, CryptoWorkerResponse } from '../workers/crypto.worker.ts';
 
-class CryptoWorkerClient {
+interface PendingRequest<T> {
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+  timer: ReturnType<typeof setTimeout>;
+  fallback: () => void;
+}
+
+export class CryptoWorkerClient {
   private worker: Worker | null = null;
-  private pendingRequests = new Map<
-    string,
-    {
-      resolve: (value: any) => void;
-      reject: (reason?: any) => void;
-      timer: ReturnType<typeof setTimeout>;
-    }
-  >();
+  private pendingRequests = new Map<string, PendingRequest<any>>();
   private requestCounter = 0;
   private isWorkerSupported = typeof window !== 'undefined' && typeof window.Worker !== 'undefined';
 
@@ -41,7 +41,9 @@ class CryptoWorkerClient {
       };
 
       this.worker.onerror = (err) => {
-        console.warn('Crypto Web Worker error, falling back to main-thread execution', err);
+        console.warn('Crypto Web Worker error, settling in-flight requests via fallback', err);
+        // Settle all active pending requests immediately via fallback
+        this.settleAllPendingViaFallback();
       };
     } catch (e) {
       console.warn('Could not initialize Crypto Web Worker, falling back to main thread', e);
@@ -49,10 +51,22 @@ class CryptoWorkerClient {
     }
   }
 
+  private settleAllPendingViaFallback() {
+    for (const [id, pending] of Array.from(this.pendingRequests.entries())) {
+      clearTimeout(pending.timer);
+      this.pendingRequests.delete(id);
+      try {
+        pending.fallback();
+      } catch (err) {
+        pending.reject(err);
+      }
+    }
+  }
+
   /**
    * Fallback implementation executed on main thread if Web Worker is unavailable.
    */
-  private async fallbackSha256(input: string): Promise<string> {
+  public async fallbackSha256(input: string): Promise<string> {
     const data = new TextEncoder().encode(input);
     const digest = await crypto.subtle.digest('SHA-256', data);
     return Array.from(new Uint8Array(digest))
@@ -76,15 +90,18 @@ class CryptoWorkerClient {
     };
 
     return new Promise<string>((resolve, reject) => {
+      const fallback = () => {
+        this.fallbackSha256(input).then(resolve).catch(reject);
+      };
+
       const timer = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          // Fallback on timeout
-          this.fallbackSha256(input).then(resolve).catch(reject);
+          fallback();
         }
       }, 5000);
 
-      this.pendingRequests.set(id, { resolve, reject, timer });
+      this.pendingRequests.set(id, { resolve, reject, timer, fallback });
       this.worker!.postMessage(request);
     });
   }
@@ -105,23 +122,31 @@ class CryptoWorkerClient {
     };
 
     return new Promise<string[]>((resolve, reject) => {
+      const fallback = () => {
+        Promise.all(inputs.map((i) => this.fallbackSha256(i))).then(resolve).catch(reject);
+      };
+
       const timer = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          Promise.all(inputs.map((i) => this.fallbackSha256(i))).then(resolve).catch(reject);
+          fallback();
         }
       }, 10000);
 
-      this.pendingRequests.set(id, { resolve, reject, timer });
+      this.pendingRequests.set(id, { resolve, reject, timer, fallback });
       this.worker!.postMessage(request);
     });
   }
 
+  /**
+   * Terminate the active worker and immediately settle all in-flight requests.
+   */
   public terminate() {
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
     }
+    this.settleAllPendingViaFallback();
   }
 }
 
