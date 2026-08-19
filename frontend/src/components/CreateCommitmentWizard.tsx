@@ -104,7 +104,7 @@ export default function CreateCommitmentWizard({
   onSubmit,
   onSuccess,
 }: CreateCommitmentWizardProps) {
-  const { address: connectedAddress, isConnected, connectWallet } = useWallet();
+  const { address: connectedAddress, isConnected, connectWallet, provider: walletProvider } = useWallet();
   const { validateCommitmentWithWasm } = useWasmValidation();
 
   // Dynamic, governance-controlled validation rules (downloaded as a JSON AST,
@@ -232,12 +232,13 @@ export default function CreateCommitmentWizard({
         dueAt: dueAtSeconds,
       });
 
-      // Submit Soroban transaction to Stellar Testnet via Freighter
+      // Submit Soroban transaction to Stellar Testnet via the connected wallet
       const result = await submitCreateCommitment({
         issuerAddress: connectedAddress,
         counterpartyAddress: data.counterparty,
         termsHashHex,
         dueAtSeconds,
+        walletProvider: walletProvider ?? 'freighter',
         onStatusUpdate: (msg: string) => setStatusMessage(msg),
       });
 
