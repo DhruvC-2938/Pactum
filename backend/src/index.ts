@@ -49,7 +49,7 @@ client.collectDefaultMetrics({ register });
 // Sets HSTS, X-Content-Type-Options, X-Frame-Options, and related headers on
 // every response to harden the API against common web vulnerabilities.
 // ---------------------------------------------------------------------------
-app.use((_req: Request, res: Response, next: NextFunction): void => {
+app.use((req: Request, res: Response, next: NextFunction): void => {
   // Strict-Transport-Security: enforce HTTPS for 1 year, include subdomains
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   // Prevent MIME-type sniffing
