@@ -25,6 +25,39 @@ export interface CommitmentFilters {
   limit?: number;
 }
 
+export interface ScoreData {
+  score: number;
+  fulfilledCount: number;
+  lateCount: number;
+  breachedCount: number;
+  epoch: number;
+  sourceLedgerSeq: number;
+}
+
+export interface PactumStateProof {
+  version: string;
+  networkPassphrase: string;
+  ledgerSeq: number;
+  ledgerHeaderHash: string;
+  stateRootHash: string;
+  contractId: string;
+  stellarAddress: string;
+  scoreData: ScoreData;
+  leafHash: string;
+  merkleProof: Array<{ sibling: string; isRight: boolean }>;
+  headerProof: {
+    previousLedgerHash: string;
+    txSetResultHash: string;
+    bucketListHash: string;
+    ledgerVersion: number;
+  };
+}
+
+interface StateProofResponse {
+  success: true;
+  proof: PactumStateProof;
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -39,6 +72,22 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function fetchReputation(address: string, signal?: AbortSignal): Promise<Reputation> {
   return request<Reputation>(`/reputation/${encodeURIComponent(address)}`, { signal });
+}
+
+export async function fetchReputationProof(
+  address: string,
+  signal?: AbortSignal,
+): Promise<PactumStateProof> {
+  const response = await request<StateProofResponse>(
+    `/api/v1/proofs/trust-score/${encodeURIComponent(address)}`,
+    { signal },
+  );
+
+  if (!response.success || !response.proof) {
+    throw new Error('State proof response is missing its proof payload');
+  }
+
+  return response.proof;
 }
 
 export function fetchCommitments(

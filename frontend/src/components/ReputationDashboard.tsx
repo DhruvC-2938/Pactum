@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import UserProfile from './UserProfile';
-import { fetchCommitments, fetchReputation } from '../lib/api';
+import { fetchCommitments } from '../lib/api';
 import type { Commitment, Reputation } from '../lib/api';
+import { fetchVerifiedReputation, type ReputationIntegrity } from '../lib/verifiedReputation';
 
 export interface ReputationDashboardProps {
   initialAddress?: string;
@@ -41,6 +42,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [reputation, setReputation] = useState<Reputation | null>(null);
+  const [reputationIntegrity, setReputationIntegrity] = useState<ReputationIntegrity | null>(null);
+  const [securityWarning, setSecurityWarning] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
@@ -67,6 +70,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     setActiveAddress(addr);
     setSearchQuery(addr);
     setReputation(null);
+    setReputationIntegrity(null);
+    setSecurityWarning(null);
     setCommitments([]);
     setPage(1);
     setHasMore(true);
@@ -122,13 +127,19 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       setIsLoading(true);
       setFetchError(null);
       try {
-        const [repData] = await Promise.all([
-          fetchReputation(activeAddress, signal),
-          loadCommitments(1, false, signal),
-        ]);
+        const verifiedResult = await fetchVerifiedReputation(activeAddress, signal);
 
         if (!signal.aborted) {
-          setReputation(repData);
+          setReputation(verifiedResult.reputation);
+          setReputationIntegrity(verifiedResult.integrity);
+          setSecurityWarning(verifiedResult.warning ?? null);
+
+          if (verifiedResult.integrity === 'verified') {
+            await loadCommitments(1, false, signal);
+          } else {
+            setCommitments([]);
+            setHasMore(false);
+          }
         }
       } catch (error: any) {
         if (error.name !== 'AbortError') {
@@ -185,6 +196,43 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
   return (
     <div style={{ maxWidth: '1080px', margin: '0 auto', color: '#1e293b' }}>
+      {securityWarning && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          style={{
+            background: '#450a0a',
+            color: '#fee2e2',
+            border: '2px solid #ef4444',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            fontSize: '14px',
+            fontWeight: '700',
+            lineHeight: 1.5,
+          }}
+        >
+          {securityWarning}
+        </div>
+      )}
+
+      {reputationIntegrity && !securityWarning && (
+        <div
+          role="status"
+          style={{
+            background: '#ecfdf5',
+            color: '#065f46',
+            border: '1px solid #6ee7b7',
+            borderRadius: '12px',
+            padding: '10px 14px',
+            marginBottom: '20px',
+            fontSize: '13px',
+            fontWeight: '700',
+          }}
+        >
+          Cryptographic proof verified against the latest Soroban ledger.
+        </div>
+      )}
       {/* ── Search Bar Section ── */}
       <div
         style={{
