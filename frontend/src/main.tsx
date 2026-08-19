@@ -5,12 +5,15 @@ import './index.css';
 import App from './App.tsx';
 import { queryClient } from './lib/queryClient';
 import { WalletProvider } from './context/WalletContext';
+import { ThemeProvider } from './context/ThemeContext';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
-        <App />
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
       </WalletProvider>
     </QueryClientProvider>
   </StrictMode>,

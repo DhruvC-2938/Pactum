@@ -1,22 +1,18 @@
-import { useState, useEffect } from 'react';
 
-import './App.css';
-import LandingPage from './components/LandingPage';
-import DocsPage from './components/DocsPage';
-import CreateCommitmentWizard from './components/CreateCommitmentWizard';
-import ReputationDashboard from './components/ReputationDashboard';
-import FreighterInstallModal from './components/FreighterInstallModal';
-import WalletConnectButton from './components/WalletConnectButton';
-import { useCommitments } from './hooks/useCommitments';
-import type { Commitment, CommitmentStatus } from './lib/api';
-import { useWallet } from './context/WalletContext';
-import { Menu, X, User } from 'lucide-react';
-import { wsClient } from './lib/wsClient';
-import { useStore } from './store/useStore';
+import { useState, useEffect } from 'react'
 
-function CommitmentItem({ commitment }: { commitment: Commitment }) {
-  const realtime = useStore(state => state.getRealtimeCommitment(commitment.id));
-  const status = realtime?.status || commitment.status;
+import './App.css'
+import LandingPage from './components/LandingPage'
+import DocsPage from './components/DocsPage'
+import CreateCommitmentWizard from './components/CreateCommitmentWizard'
+import ReputationDashboard from './components/ReputationDashboard'
+import FreighterInstallModal from './components/FreighterInstallModal'
+import WalletConnectModal from './components/WalletConnectModal'
+import { useCommitments } from './hooks/useCommitments'
+import { useSyncCache } from './hooks/useSyncCache'
+import type { Commitment, CommitmentStatus } from './lib/api'
+import { useWallet } from './context/WalletContext'
+import { Wallet, CheckCircle2 } from 'lucide-react'
 
   return (
     <div className="commitment-item" key={commitment.id}>
@@ -28,9 +24,7 @@ function CommitmentItem({ commitment }: { commitment: Commitment }) {
         <div className="commitment-parties">
           {commitment.issuer} &rarr; {commitment.counterparty}
         </div>
-        <div className="commitment-due">
-          {new Date(commitment.due_at * 1000).toLocaleDateString()}
-        </div>
+        <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
       </div>
       <div className="commitment-status">
         <span className={`badge ${status.toLowerCase()}`}>
@@ -39,6 +33,144 @@ function CommitmentItem({ commitment }: { commitment: Commitment }) {
         </span>
       </div>
     </div>
+  )
+import { useState, useEffect } from 'react';
+
+import './App.css';
+import LandingPage from './components/LandingPage';
+import DocsPage from './components/DocsPage';
+import CreateCommitmentWizard from './components/CreateCommitmentWizard';
+import ReputationDashboard from './components/ReputationDashboard';
+import FreighterInstallModal from './components/FreighterInstallModal';
+import WalletConnectButton from './components/WalletConnectButton';
+import DecryptTermsModal from './components/DecryptTermsModal';
+import { useCommitments } from './hooks/useCommitments';
+import { fetchEncryptedTerms } from './lib/api';
+import type { Commitment, CommitmentStatus } from './lib/api';
+import { useWallet } from './context/WalletContext';
+import type { WalletProvider } from './lib/wallet';
+import { ThemeSelector } from './context/ThemeContext';
+import { Menu, X, User, Lock } from 'lucide-react';
+
+interface CommitmentItemProps {
+  commitment: Commitment;
+  connectedAddress: string | null;
+  provider: WalletProvider | null;
+}
+
+function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentItemProps) {
+  const [showDecryptModal, setShowDecryptModal] = useState(false);
+  const [ciphertext, setCiphertext] = useState<string | null>(null);
+  const [loadingCiphertext, setLoadingCiphertext] = useState(false);
+
+  const handleDecryptClick = async () => {
+    if (ciphertext) {
+      setShowDecryptModal(true);
+      return;
+    }
+    setLoadingCiphertext(true);
+    try {
+      const res = await fetchEncryptedTerms(String(commitment.id));
+      setCiphertext(res.ciphertext);
+      setShowDecryptModal(true);
+    } catch (err) {
+      console.error('[CommitmentItem] Failed to fetch ciphertext:', err);
+    } finally {
+      setLoadingCiphertext(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="commitment-item" key={commitment.id}>
+        <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
+          {commitment.issuer.charAt(0)}
+        </div>
+        <div className="commitment-info">
+          <div className="commitment-id" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            Commitment #{commitment.id}
+            {commitment.encrypted && (
+              <span
+                title="Terms are end-to-end encrypted"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  color: '#4f46e5',
+                  background: '#eef2ff',
+                  padding: '1px 6px',
+                  borderRadius: '100px',
+                  border: '1px solid #a5b4fc',
+                }}
+              >
+                <Lock size={9} /> E2E Encrypted
+              </span>
+            )}
+          </div>
+          <div className="commitment-parties">
+            {commitment.issuer} &rarr; {commitment.counterparty}
+          </div>
+          <div className="commitment-due">
+            {new Date(commitment.due_at * 1000).toLocaleDateString()}
+          </div>
+        </div>
+        <div className="commitment-status" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+          <span className={`badge ${commitment.status.toLowerCase()}`}>
+            <span className="badge-dot"></span>
+            {commitment.status}
+          </span>
+          {commitment.encrypted && (
+            <button
+              type="button"
+              id={`decrypt-btn-${commitment.id}`}
+              onClick={handleDecryptClick}
+              disabled={loadingCiphertext}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: '#4f46e5',
+                background: '#eef2ff',
+                border: '1px solid #a5b4fc',
+                borderRadius: '6px',
+                padding: '3px 8px',
+                cursor: loadingCiphertext ? 'wait' : 'pointer',
+              }}
+            >
+              <Lock size={10} />
+              {loadingCiphertext ? 'Loading…' : 'Decrypt Terms'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showDecryptModal && ciphertext && connectedAddress && (
+        <DecryptTermsModal
+          commitmentId={commitment.id}
+          ciphertext={ciphertext}
+          issuerAddress={commitment.issuer}
+          counterpartyAddress={commitment.counterparty}
+          viewerAddress={connectedAddress}
+          isFreighter={provider === 'freighter'}
+          onClose={() => setShowDecryptModal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function renderCommitmentItem(commitment: Commitment, connectedAddress: string | null, provider: WalletProvider | null) {
+  return (
+    <CommitmentItem
+      key={commitment.id}
+      commitment={commitment}
+      connectedAddress={connectedAddress}
+      provider={provider}
+    />
   );
 }
 
@@ -50,6 +182,9 @@ function InlineWalletError() {
 }
 
 export default function App() {
+
+  useSyncCache();
+
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
   const [reputationAddress, setReputationAddress] = useState(
@@ -127,6 +262,7 @@ export default function App() {
       <div className="app-shell">
         {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
         <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
+          <ThemeSelector />
           <div
             className="sidebar-logo"
             onClick={() => {
@@ -837,7 +973,7 @@ export default function App() {
                   Failed to load commitments from the backend.
                 </div>
               )}
-              {commitmentsQuery.data?.map(c => <CommitmentItem key={c.id} commitment={c} />)}
+              {commitmentsQuery.data?.map((c) => renderCommitmentItem(c, wallet.address, wallet.provider))}
             </div>
           </section>
 
