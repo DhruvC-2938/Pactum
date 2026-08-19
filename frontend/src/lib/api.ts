@@ -48,3 +48,7 @@ export function fetchCommitments(filters: CommitmentFilters = {}): Promise<Commi
   const query = params.toString()
   return request<Commitment[]>(`/commitments${query ? `?${query}` : ''}`)
 }
+
+export function fetchCommitmentById(id: number | string): Promise<Commitment> {
+  return request<Commitment>(`/commitments/${encodeURIComponent(String(id))}`)
+}

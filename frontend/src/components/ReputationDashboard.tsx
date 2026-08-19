@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import UserProfile from './UserProfile';
+import { usePredictivePrefetch } from '@/hooks/usePredictivePrefetch';
+import { fetchReputation, fetchCommitmentById } from '@/lib/api';
+import { reputationKeys, commitmentKeys } from '@/lib/queryKeys';
 
 export interface CommitmentItem {
   id: number;
@@ -17,6 +20,120 @@ export interface ReputationDashboardProps {
   onNavigateAddress?: (address: string) => void;
   onLaunchCreate?: () => void;
 }
+
+const PresetButton: React.FC<{
+  preset: { label: string; address: string };
+  isActive: boolean;
+  onClick: () => void;
+}> = ({ preset, isActive, onClick }) => {
+  const { ref, handlers } = usePredictivePrefetch<HTMLButtonElement>({
+    queryKey: reputationKeys.detail(preset.address),
+    queryFn: () => fetchReputation(preset.address),
+  });
+
+  return (
+    <button
+      ref={ref}
+      onClick={onClick}
+      onPointerEnter={handlers.onPointerEnter}
+      onPointerLeave={handlers.onPointerLeave}
+      onPointerMove={handlers.onPointerMove}
+      onFocus={handlers.onFocus}
+      onTouchStart={handlers.onTouchStart}
+      style={{
+        fontSize: '12px',
+        fontFamily: 'monospace',
+        padding: '6px 14px',
+        borderRadius: '100px',
+        border: isActive ? '1.5px solid #6366f1' : '1px solid #e2e8f0',
+        background: isActive ? '#e0e7ff' : '#f8fafc',
+        color: isActive ? '#3730a3' : '#475569',
+        fontWeight: isActive ? '700' : '500',
+        cursor: 'pointer',
+        transition: 'all 0.16s ease',
+        boxShadow: isActive ? '0 2px 8px rgba(99,102,241,0.18)' : 'none'
+      }}
+    >
+      {preset.label}
+    </button>
+  );
+};
+
+const CommitmentRow: React.FC<{
+  c: CommitmentItem;
+  activeAddress: string;
+  formatDate: (ts: number) => string;
+}> = ({ c, activeAddress, formatDate }) => {
+  const isIssuer = c.issuer === activeAddress;
+  const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
+
+  const { ref, handlers } = usePredictivePrefetch<HTMLTableRowElement>({
+    queryKey: commitmentKeys.detail(c.id),
+    queryFn: () => fetchCommitmentById(c.id),
+  });
+
+  return (
+    <tr
+      ref={ref}
+      onPointerEnter={handlers.onPointerEnter}
+      onPointerLeave={handlers.onPointerLeave}
+      onPointerMove={handlers.onPointerMove}
+      onFocus={handlers.onFocus}
+      onTouchStart={handlers.onTouchStart}
+      style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}
+    >
+      <td style={{ padding: '18px 24px', fontWeight: '800', color: '#0f172a' }}>#{c.id}</td>
+      <td style={{ padding: '18px 24px' }}>
+        <span style={{
+          padding: '4px 10px',
+          borderRadius: '6px',
+          fontSize: '11px',
+          fontWeight: '800',
+          background: isIssuer ? '#e0e7ff' : '#f1f5f9',
+          color: isIssuer ? '#3730a3' : '#475569',
+          border: isIssuer ? '1px solid #c7d2fe' : '1px solid #e2e8f0'
+        }}>
+          {isIssuer ? 'Issuer' : 'Counterparty'}
+        </span>
+      </td>
+      <td style={{ padding: '18px 24px' }}>
+        <UserProfile address={counterpartyAddr} avatarSize={24} showDomain={false} />
+      </td>
+      <td style={{ padding: '18px 24px', color: '#64748b', fontSize: '12px' }} title={c.terms_hash}>
+        {c.terms_hash.substring(0, 14)}...
+      </td>
+      <td style={{ padding: '18px 24px', color: '#0f172a', fontFamily: 'sans-serif', fontWeight: '600' }}>
+        {formatDate(c.due_at)}
+      </td>
+      <td style={{ padding: '18px 24px', fontFamily: 'sans-serif' }}>
+        {c.status === 'Fulfilled' && (
+          <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }}></span>
+            Fulfilled
+          </span>
+        )}
+        {c.status === 'Late' && (
+          <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }}></span>
+            Late
+          </span>
+        )}
+        {c.status === 'Breached' && (
+          <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#ffe4e6', color: '#be123c', border: '1px solid #fecdd3', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }}></span>
+            Breached
+          </span>
+        )}
+        {c.status === 'Pending' && (
+          <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94a3b8' }}></span>
+            Pending
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+};
 
 const DEMO_COMMITMENTS: CommitmentItem[] = [
   {
@@ -220,25 +337,12 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
           <span style={{ fontSize: '11px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quick Presets:</span>
           {PRESETS.map((preset) => (
-            <button
+            <PresetButton
               key={preset.address}
+              preset={preset}
+              isActive={activeAddress === preset.address}
               onClick={() => triggerAddressChange(preset.address)}
-              style={{
-                fontSize: '12px',
-                fontFamily: 'monospace',
-                padding: '6px 14px',
-                borderRadius: '100px',
-                border: activeAddress === preset.address ? '1.5px solid #6366f1' : '1px solid #e2e8f0',
-                background: activeAddress === preset.address ? '#e0e7ff' : '#f8fafc',
-                color: activeAddress === preset.address ? '#3730a3' : '#475569',
-                fontWeight: activeAddress === preset.address ? '700' : '500',
-                cursor: 'pointer',
-                transition: 'all 0.16s ease',
-                boxShadow: activeAddress === preset.address ? '0 2px 8px rgba(99,102,241,0.18)' : 'none'
-              }}
-            >
-              {preset.label}
-            </button>
+            />
           ))}
         </div>
       </div>
@@ -502,64 +606,14 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                   </tr>
                 </thead>
                 <tbody style={{ fontFamily: 'monospace' }}>
-                  {paginatedCommitments.map((c) => {
-                    const isIssuer = c.issuer === activeAddress;
-                    const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
-
-                    return (
-                      <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
-                        <td style={{ padding: '18px 24px', fontWeight: '800', color: '#0f172a' }}>#{c.id}</td>
-                        <td style={{ padding: '18px 24px' }}>
-                          <span style={{
-                            padding: '4px 10px',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: '800',
-                            background: isIssuer ? '#e0e7ff' : '#f1f5f9',
-                            color: isIssuer ? '#3730a3' : '#475569',
-                            border: isIssuer ? '1px solid #c7d2fe' : '1px solid #e2e8f0'
-                          }}>
-                            {isIssuer ? 'Issuer' : 'Counterparty'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '18px 24px' }}>
-                          <UserProfile address={counterpartyAddr} avatarSize={24} showDomain={false} />
-                        </td>
-                        <td style={{ padding: '18px 24px', color: '#64748b', fontSize: '12px' }} title={c.terms_hash}>
-                          {c.terms_hash.substring(0, 14)}...
-                        </td>
-                        <td style={{ padding: '18px 24px', color: '#0f172a', fontFamily: 'sans-serif', fontWeight: '600' }}>
-                          {formatDate(c.due_at)}
-                        </td>
-                        <td style={{ padding: '18px 24px', fontFamily: 'sans-serif' }}>
-                          {c.status === 'Fulfilled' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e' }}></span>
-                              Fulfilled
-                            </span>
-                          )}
-                          {c.status === 'Late' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b' }}></span>
-                              Late
-                            </span>
-                          )}
-                          {c.status === 'Breached' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#ffe4e6', color: '#be123c', border: '1px solid #fecdd3', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444' }}></span>
-                              Breached
-                            </span>
-                          )}
-                          {c.status === 'Pending' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94a3b8' }}></span>
-                              Pending
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {paginatedCommitments.map((c) => (
+                    <CommitmentRow
+                      key={c.id}
+                      c={c}
+                      activeAddress={activeAddress}
+                      formatDate={formatDate}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
