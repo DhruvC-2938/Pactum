@@ -1,11 +1,26 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Predictive UI Prefetching', () => {
-  test('Prefetches query when hovering preset address buttons', async ({ page }) => {
-    let prefetchRequested = false
+  test.beforeEach(async ({ page }) => {
+    // Mock Freighter API
+    await page.addInitScript(() => {
+      (window as any).freighter = {
+        isConnected: () => Promise.resolve(true),
+        isAllowed: () => Promise.resolve(true),
+        getUserInfo: () => Promise.resolve({ publicKey: 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY' }),
+        signTransaction: (tx: string) => Promise.resolve({ status: 'SUCCESS', signedTx: tx }),
+      };
+    });
+  });
+
+  test('Prefetches query when approaching and hovering preset address buttons', async ({ page }) => {
+    let prefetchCalled = false
 
     await page.route('**/reputation/**', async (route) => {
-      prefetchRequested = true
+      if (route.request().resourceType() === 'document') {
+        return route.continue()
+      }
+      prefetchCalled = true
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -19,19 +34,15 @@ test.describe('Predictive UI Prefetching', () => {
       })
     })
 
-    await page.goto('/')
-    await page.click('#hero-launch-btn')
-    await page.click('#nav-reputation')
+    await page.goto('/reputation/GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C')
 
-    // Find and hover over the preset button
     const presetBtn = page.getByRole('button', { name: /Counterparty \(GB4U\.\.\.\)/i })
     await expect(presetBtn).toBeVisible()
 
     await presetBtn.hover()
+    await page.waitForTimeout(300)
 
-    // Give a brief window for intent trigger and request dispatch
-    await page.waitForTimeout(150)
-    expect(prefetchRequested).toBe(true)
+    expect(prefetchCalled).toBe(true)
   })
 
   test('Respects Save-Data header and disables prefetching on metered connections', async ({ page }) => {
@@ -45,6 +56,9 @@ test.describe('Predictive UI Prefetching', () => {
     })
 
     await page.route('**/reputation/**', async (route) => {
+      if (route.request().resourceType() === 'document') {
+        return route.continue()
+      }
       prefetchRequested = true
       await route.fulfill({
         status: 200,
@@ -53,17 +67,14 @@ test.describe('Predictive UI Prefetching', () => {
       })
     })
 
-    await page.goto('/')
-    await page.click('#hero-launch-btn')
-    await page.click('#nav-reputation')
+    await page.goto('/reputation/GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C')
 
     const presetBtn = page.getByRole('button', { name: /Counterparty \(GB4U\.\.\.\)/i })
     await expect(presetBtn).toBeVisible()
 
     await presetBtn.hover()
-    await page.waitForTimeout(150)
+    await page.waitForTimeout(300)
 
-    // With saveData = true, prefetch should not trigger
     expect(prefetchRequested).toBe(false)
   })
 })

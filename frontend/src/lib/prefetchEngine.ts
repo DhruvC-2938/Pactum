@@ -25,9 +25,9 @@ export interface PrefetchOptions<TData = unknown> {
 }
 
 /**
- * Global cache of active/recent prefetches to prevent redundant requests.
+ * In-flight cache of active prefetches to deduplicate concurrent requests.
  */
-const prefetchedKeys = new Set<string>()
+const activePrefetchKeys = new Set<string>()
 
 /**
  * Deterministically serializes a QueryKey into a cache string.
@@ -91,7 +91,7 @@ export async function executePrefetch<TData = unknown>({
   }
 
   const keyString = serializeQueryKey(queryKey)
-  if (prefetchedKeys.has(keyString)) {
+  if (activePrefetchKeys.has(keyString)) {
     return false
   }
 
@@ -104,7 +104,7 @@ export async function executePrefetch<TData = unknown>({
     }
   }
 
-  prefetchedKeys.add(keyString)
+  activePrefetchKeys.add(keyString)
 
   try {
     await queryClient.prefetchQuery({
@@ -115,9 +115,9 @@ export async function executePrefetch<TData = unknown>({
     })
     return true
   } catch {
-    // Allow retrying on future interactions if prefetch failed
-    prefetchedKeys.delete(keyString)
     return false
+  } finally {
+    activePrefetchKeys.delete(keyString)
   }
 }
 
@@ -160,7 +160,8 @@ export function calculateHoverIntent(
     latest.y <= targetRect.bottom
 
   if (isInside) {
-    return { hasIntent: true, velocity }
+    // Inside target: only signal intent if moving with sufficient velocity
+    return { hasIntent: velocity >= velocityThreshold, velocity }
   }
 
   // Vector towards center of the bounding box

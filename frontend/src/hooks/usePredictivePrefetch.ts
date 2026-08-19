@@ -92,16 +92,49 @@ export function usePredictivePrefetch<TElement extends HTMLElement = HTMLElement
     }
   }, [enabled, triggers, intersectionRootMargin, intersectionThreshold, bypassSaveData, triggerPrefetch])
 
-  // Cleanup timer on unmount
+  // 2. Global pointer movement tracking before entry for velocity & trajectory gating
   useEffect(() => {
-    return () => {
-      if (intentTimerRef.current) {
-        clearTimeout(intentTimerRef.current)
+    if (!enabled || !triggers.includes('intent')) return
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const now = performance.now()
+      const currentPos: CursorPosition = { x: e.clientX, y: e.clientY, timestamp: now }
+
+      const history = cursorHistoryRef.current
+      history.push(currentPos)
+
+      while (history.length > 0 && now - history[0].timestamp > 200) {
+        history.shift()
+      }
+
+      const node = elementRef.current
+      if (!node) return
+
+      const rect = node.getBoundingClientRect()
+      const { hasIntent } = calculateHoverIntent(history, rect, velocityThreshold)
+
+      if (hasIntent) {
+        if (!intentTimerRef.current) {
+          intentTimerRef.current = setTimeout(() => {
+            void triggerPrefetch()
+            intentTimerRef.current = null
+          }, intentDelayMs)
+        }
       }
     }
-  }, [])
 
-  // Event handlers for hover-intent, focus, and pointer events
+    window.addEventListener('pointermove', handlePointerMove, { passive: true })
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      if (intentTimerRef.current) {
+        clearTimeout(intentTimerRef.current)
+        intentTimerRef.current = null
+      }
+    }
+  }, [enabled, triggers, velocityThreshold, intentDelayMs, triggerPrefetch])
+
+  // Event handlers for local events
   const onPointerMove = useCallback(
     (e: React.PointerEvent<TElement>) => {
       if (!enabled || !triggers.includes('intent')) return
@@ -112,7 +145,6 @@ export function usePredictivePrefetch<TElement extends HTMLElement = HTMLElement
       const history = cursorHistoryRef.current
       history.push(currentPos)
 
-      // Keep only recent positions within last 200ms
       while (history.length > 0 && now - history[0].timestamp > 200) {
         history.shift()
       }
@@ -140,22 +172,15 @@ export function usePredictivePrefetch<TElement extends HTMLElement = HTMLElement
 
     if (triggers.includes('hover')) {
       void triggerPrefetch()
-    } else if (triggers.includes('intent')) {
-      if (!intentTimerRef.current) {
-        intentTimerRef.current = setTimeout(() => {
-          void triggerPrefetch()
-          intentTimerRef.current = null
-        }, intentDelayMs)
-      }
     }
-  }, [enabled, triggers, intentDelayMs, triggerPrefetch])
+    // Intent trigger requires trajectory/velocity confirmation handled by pointer listeners
+  }, [enabled, triggers, triggerPrefetch])
 
   const onPointerLeave = useCallback(() => {
     if (intentTimerRef.current) {
       clearTimeout(intentTimerRef.current)
       intentTimerRef.current = null
     }
-    cursorHistoryRef.current = []
   }, [])
 
   const onFocus = useCallback(() => {
