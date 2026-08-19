@@ -9,6 +9,7 @@ import ReputationDashboard from './components/ReputationDashboard'
 import FreighterInstallModal from './components/FreighterInstallModal'
 import WalletConnectModal from './components/WalletConnectModal'
 import { useCommitments } from './hooks/useCommitments'
+import { useSyncCache } from './hooks/useSyncCache'
 import type { Commitment, CommitmentStatus } from './lib/api'
 import { useWallet } from './context/WalletContext'
 import { Wallet, CheckCircle2 } from 'lucide-react'
@@ -96,6 +97,8 @@ function InlineWalletError() {
 }
 
 export default function App() {
+
+  useSyncCache();
 
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
