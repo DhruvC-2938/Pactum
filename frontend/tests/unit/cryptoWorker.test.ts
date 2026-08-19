@@ -104,6 +104,10 @@ describe('Web Worker Cryptographic Engine', () => {
 
     (client as any).worker = mockWorker;
     mockWorker.onerror = (err: any) => {
+      if ((client as any).worker) {
+        (client as any).worker.terminate();
+        (client as any).worker = null;
+      }
       (client as any).settleAllPendingViaFallback();
     };
 
@@ -112,6 +116,11 @@ describe('Web Worker Cryptographic Engine', () => {
     const expected = await computeSha256Hex(input);
 
     assert.equal(hash, expected);
+    assert.equal((client as any).worker, null);
+
+    // Subsequent calls safely use fallback directly without trying to post to dead worker
+    const nextHash = await client.sha256Hex('subsequent test after error');
+    assert.equal(nextHash, await computeSha256Hex('subsequent test after error'));
   });
 
   it('correctly correlates worker responses by request ID', async () => {

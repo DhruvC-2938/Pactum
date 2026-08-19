@@ -41,7 +41,11 @@ export class CryptoWorkerClient {
       };
 
       this.worker.onerror = (err) => {
-        console.warn('Crypto Web Worker error, settling in-flight requests via fallback', err);
+        console.warn('Crypto Web Worker error, stopping worker and settling in-flight requests via fallback', err);
+        if (this.worker) {
+          this.worker.terminate();
+          this.worker = null;
+        }
         // Settle all active pending requests immediately via fallback
         this.settleAllPendingViaFallback();
       };
