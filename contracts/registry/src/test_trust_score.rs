@@ -85,6 +85,17 @@ fn setup_with_arbitrator() -> (
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
     client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+
+    // Configure the dispute token required by the registry's `dispute` function
+    // (error #40 = DisputeTokenNotSet without this).
+    let token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    client.set_dispute_token(&arbitrator, &token);
+    // Mint to counterparty (the party raising disputes in these tests).
+    soroban_sdk::token::StellarAssetClient::new(&env, &token)
+        .mint(&counterparty, &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10));
+
     (env, client, issuer, counterparty, arbitrator)
 }
 
