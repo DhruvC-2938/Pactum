@@ -614,15 +614,18 @@ pub fn create(
     // 1. Require authorization from the issuer.
     issuer.require_auth();
 
-    // 2. Validate due_at is in the future relative to the current ledger timestamp.
+    // 2. Validate parameters using shared validation rules.
     let now = env.ledger().timestamp();
-    if due_at <= now {
-        soroban_sdk::panic_with_error!(env, crate::errors::Error::DueAtInPast);
-    }
-
-    // 3. Validate the milestone count.
-    if milestone_count == 0 || milestone_count > MAX_MILESTONES {
-        soroban_sdk::panic_with_error!(env, crate::errors::Error::InvalidMilestoneCount);
+    if let Err(err) = pactum_validation::validate_commitment_creation(due_at, now, milestone_count)
+    {
+        match err {
+            pactum_validation::ValidationError::DueAtInPast => {
+                soroban_sdk::panic_with_error!(env, crate::errors::Error::DueAtInPast);
+            }
+            pactum_validation::ValidationError::InvalidMilestoneCount => {
+                soroban_sdk::panic_with_error!(env, crate::errors::Error::InvalidMilestoneCount);
+            }
+        }
     }
 
     // 4. Validate the attestor voting panel: a threshold is only meaningful

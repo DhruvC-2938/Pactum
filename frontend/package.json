@@ -8,7 +8,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build:wasm": "node -e \"const fs=require('fs'); const p='../contracts/validation/Cargo.toml'; fs.writeFileSync(p, fs.readFileSync(p,'utf8').replace('crate-type = [\\\"rlib\\\"]', 'crate-type = [\\\"cdylib\\\", \\\"rlib\\\"]'));\" && npx wasm-pack build ../contracts/validation --target web --out-dir ../../frontend/src/wasm/pactum-validation -- --features wasm && node -e \"const fs=require('fs'); const p='../contracts/validation/Cargo.toml'; fs.writeFileSync(p, fs.readFileSync(p,'utf8').replace('crate-type = [\\\"cdylib\\\", \\\"rlib\\\"]', 'crate-type = [\\\"rlib\\\"]'));\"",
+    "build": "npm run build:wasm && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "test:unit": "node --test \"tests/unit/*.test.ts\"",

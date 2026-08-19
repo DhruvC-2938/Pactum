@@ -9,6 +9,7 @@ import { decodeRegistryContractError } from '../lib/errors';
 import { createAstResolver, composeResolvers } from '../lib/ast';
 import { useValidationRules } from '../hooks/useValidationRules';
 import { useWallet } from '../context/WalletContext';
+import { useWasmValidation } from '../hooks/useWasmValidation';
 import {
   submitCreateCommitment,
   fundTestnetAccount,
@@ -104,6 +105,7 @@ export default function CreateCommitmentWizard({
   onSuccess,
 }: CreateCommitmentWizardProps) {
   const { address: connectedAddress, isConnected, connectWallet } = useWallet();
+  const { validateCommitmentWithWasm } = useWasmValidation();
 
   // Dynamic, governance-controlled validation rules (downloaded as a JSON AST,
   // compiled once) layered on top of the static Zod schema.
@@ -206,11 +208,23 @@ export default function CreateCommitmentWizard({
     setSubmitting(true);
     clearErrorToasts();
     setTxResult(null);
-    setStatusMessage('Preparing commitment data...');
+    setStatusMessage('Validating commitment with WASM contract rules...');
 
     try {
-      const termsHashHex = await sha256Hex(data.terms);
       const dueAtSeconds = Math.floor(new Date(data.dueAt).getTime() / 1000);
+      const nowSeconds = Math.floor(Date.now() / 1000);
+
+      // Pre-flight WASM Web Worker validation before transaction simulation & wallet submission
+      const wasmResult = await validateCommitmentWithWasm(dueAtSeconds, nowSeconds, 1);
+      if (!wasmResult.isValid) {
+        showErrorToast(wasmResult.error || 'Contract validation failed in WASM Web Worker.');
+        setSubmitting(false);
+        setStatusMessage(null);
+        return;
+      }
+
+      setStatusMessage('Preparing commitment data...');
+      const termsHashHex = await sha256Hex(data.terms);
 
       onSubmit?.({
         counterparty: data.counterparty,
