@@ -1,3 +1,30 @@
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import UserProfile from './UserProfile';
+import {
+  ShieldCheck,
+  Clock,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Activity,
+  Layers,
+  Sparkles
+} from 'lucide-react';
+
+export interface CommitmentItem {
+  id: number;
+  issuer: string;
+  counterparty: string;
+  terms_hash: string;
+  due_at: number;
+  status: 'Fulfilled' | 'Late' | 'Breached' | 'Pending' | 'Disputed';
+  created_at: number;
+  attested_at: number | null;
+  description?: string;
+  notes?: string[];
+  isExpanded?: boolean;
+}
 import React, { useState, useEffect, useRef } from 'react';
 import UserProfile from './UserProfile';
 import { fetchCommitments } from '../lib/api';
@@ -8,8 +35,122 @@ export interface ReputationDashboardProps {
   initialAddress?: string;
   onNavigateAddress?: (address: string) => void;
   onLaunchCreate?: () => void;
+  commitments?: CommitmentItem[];
 }
 
+const BASE_ADDRESS_1 = 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C';
+const BASE_ADDRESS_2 = 'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX';
+const BASE_ADDRESS_3 = 'GCJUKUMADK5PKZF7MCQBBNLRH2AIZQPK5JXBZWBZM7S4CGAJKUMA6V4';
+const BASE_ADDRESS_4 = 'GD7H8K9L0M1N2P3Q4R5S6T7U8V9W0X1Y2Z3A4B5C6D7E8F9G0H1I2J3K4L';
+const POWER_USER_ADDRESS = 'GPOWERUSERVIRTUALIZEDLISTTEST999999999999999999999999999999';
+
+// Base demo commitments with dynamic text lengths
+const DEMO_COMMITMENTS: CommitmentItem[] = [
+  {
+    id: 1,
+    issuer: BASE_ADDRESS_1,
+    counterparty: BASE_ADDRESS_2,
+    terms_hash: 'a3f9c1d2e4b5678901234567890abcdef1234567890abcdef1234567890ab',
+    due_at: Math.floor(Date.now() / 1000) - 86400 * 5,
+    status: 'Fulfilled',
+    created_at: Math.floor(Date.now() / 1000) - 86400 * 20,
+    attested_at: Math.floor(Date.now() / 1000) - 86400 * 4,
+    description: 'Deliver 500 validated oracle data points across Stellar Soroban testnet validators on time and verify deterministic quorum proofs.',
+    notes: ['Milestone 1 completed 10 days prior', 'Security audit signoff attached', 'Final cryptographic checksum: 0x99a4c1'],
+  },
+  {
+    id: 2,
+    issuer: BASE_ADDRESS_1,
+    counterparty: BASE_ADDRESS_3,
+    terms_hash: 'b7e2d1c3f5a6789012345678901abcdef234567890abcdef234567890abc',
+    due_at: Math.floor(Date.now() / 1000) - 86400 * 10,
+    status: 'Breached',
+    created_at: Math.floor(Date.now() / 1000) - 86400 * 30,
+    attested_at: Math.floor(Date.now() / 1000) - 86400 * 8,
+    description: 'Provide 99.99% uptime on cross-border liquidity pool balancer during high volatility window.',
+    notes: ['Node downtime detected at ledger sequence 48102', 'Dispute period elapsed without counter-proof'],
+  },
+  {
+    id: 3,
+    issuer: BASE_ADDRESS_2,
+    counterparty: BASE_ADDRESS_1,
+    terms_hash: 'c8f3e2d4a6b7890123456789012abcdef345678901abcdef345678901abcd',
+    due_at: Math.floor(Date.now() / 1000) - 86400 * 2,
+    status: 'Fulfilled',
+    created_at: Math.floor(Date.now() / 1000) - 86400 * 15,
+    attested_at: Math.floor(Date.now() / 1000) - 86400 * 1,
+    description: 'Settle multi-sig escrow release within 48 hours of asset bridge lock notification.',
+    notes: ['Transaction hash confirmed on Soroban RPC'],
+  },
+  {
+    id: 4,
+    issuer: BASE_ADDRESS_3,
+    counterparty: BASE_ADDRESS_2,
+    terms_hash: 'd9a4f3e5b7c8901234567890123abcdef456789012abcdef456789012abcde',
+    due_at: Math.floor(Date.now() / 1000) + 86400 * 8,
+    status: 'Pending',
+    created_at: Math.floor(Date.now() / 1000) - 86400 * 2,
+    attested_at: null,
+    description: 'Monthly protocol maintenance commitment covering Soroban smart contract upgrades and state snapshot archiving.',
+  },
+  {
+    id: 5,
+    issuer: BASE_ADDRESS_1,
+    counterparty: BASE_ADDRESS_4,
+    terms_hash: 'e0b5f4e6c8d9012345678901234abcdef56789012abcdef56789012abcdef',
+    due_at: Math.floor(Date.now() / 1000) - 86400 * 1,
+    status: 'Late',
+    created_at: Math.floor(Date.now() / 1000) - 86400 * 12,
+    attested_at: Math.floor(Date.now() / 1000),
+    description: 'Submit end-of-cycle risk assessment report to governance council.',
+    notes: ['Delayed by 24 hours due to upstream indexer latency', 'Penalties waived after mutual consent'],
+  }
+];
+
+// Generator for power users with hundreds or thousands of commitments
+function generateLargeDataset(count: number, targetAddress: string): CommitmentItem[] {
+  const statuses: CommitmentItem['status'][] = ['Fulfilled', 'Late', 'Breached', 'Pending', 'Disputed'];
+  const counterparties = [BASE_ADDRESS_1, BASE_ADDRESS_2, BASE_ADDRESS_3, BASE_ADDRESS_4];
+  const sampleDescriptions = [
+    'Deliver 500 validated oracle data points across Stellar Soroban testnet validators on time.',
+    'Provide 99.99% uptime on cross-border liquidity pool balancer during high volatility window with continuous telemetry monitoring.',
+    'Short term liquidity deposit.',
+    'Multi-party cryptographic settlement and dispute mediation protocol execution with variable delay conditions and secondary attestations required by counterparty.',
+    'Execute algorithmic token swap on DEX aggregator.',
+    'Provide 24/7 technical on-call response for bridge relayer architecture including emergency pause key rotation and key recovery protocol verification.',
+  ];
+
+  const now = Math.floor(Date.now() / 1000);
+  const items: CommitmentItem[] = [];
+
+  for (let i = 1; i <= count; i++) {
+    const isIssuer = i % 2 === 0;
+    const status = statuses[i % statuses.length];
+    const cp = counterparties[i % counterparties.length];
+    const desc = sampleDescriptions[i % sampleDescriptions.length];
+
+    items.push({
+      id: 1000 + i,
+      issuer: isIssuer ? targetAddress : cp,
+      counterparty: isIssuer ? cp : targetAddress,
+      terms_hash: `hash_${i.toString().padStart(6, '0')}_${(i * 31337).toString(16).padEnd(32, '0')}`,
+      due_at: now - (count - i) * 3600,
+      status,
+      created_at: now - (count - i) * 7200,
+      attested_at: status !== 'Pending' ? now - (count - i) * 1800 : null,
+      description: `[#${1000 + i}] ${desc}`,
+      notes: i % 3 === 0 ? [`Audit trail verified for batch ${i}`, `Ledger index #${50000 + i}`] : undefined,
+    });
+  }
+
+  return items;
+}
+
+const PRESETS = [
+  { label: 'Issuer Demo (GAJK...)', address: BASE_ADDRESS_1 },
+  { label: 'Counterparty (GB4U...)', address: BASE_ADDRESS_2 },
+  { label: 'Power User (500 Items)', address: POWER_USER_ADDRESS },
+  { label: 'Empty Account (GNEW...)', address: 'GNEWADDRESSWITHNOCOMMITMENTSHISTORY123456789012345678' }
 const PRESETS = [
   {
     label: 'Issuer Demo (GAJK...)',
@@ -26,9 +167,10 @@ const PRESETS = [
 ];
 
 export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
-  initialAddress = 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
+  initialAddress = BASE_ADDRESS_1,
   onNavigateAddress,
   onLaunchCreate,
+  commitments: externalCommitments
 }) => {
   const [searchQuery, setSearchQuery] = useState(initialAddress);
   const [activeAddress, setActiveAddress] = useState(initialAddress);
@@ -51,6 +193,31 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
   const itemsPerPage = 50;
 
+  // Dynamic commitment items state (allows dynamic expansion, async note updates, etc.)
+  const [commitmentsState, setCommitmentsState] = useState<CommitmentItem[]>(() => {
+    if (externalCommitments) return externalCommitments;
+    return DEMO_COMMITMENTS;
+  });
+
+  // Expanded items state by item ID
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  // Dynamic measurement cache: stores measured heights by commitment item ID
+  const dynamicSizeCacheRef = useRef<Map<number, number>>(new Map());
+  const lastCacheSizeRef = useRef(0);
+  const [cachedCount, setCachedCount] = useState(0);
+
+  // Container viewport ref for virtualizer
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  // Sync external commitments if provided
+  useEffect(() => {
+    if (externalCommitments) {
+      setCommitmentsState(externalCommitments);
+    }
+  }, [externalCommitments]);
+
+  // Handle address changes and generate power-user data if requested
   useEffect(() => {
     if (initialAddress && initialAddress !== activeAddress) {
       setSearchQuery(initialAddress);
@@ -58,6 +225,43 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     }
   }, [initialAddress, activeAddress]);
 
+  const triggerAddressChange = useCallback((addr: string) => {
+    setIsLoading(true);
+    setActiveAddress(addr);
+    setSearchQuery(addr);
+
+    // If power user address preset is selected, populate power user dataset
+    if (addr === POWER_USER_ADDRESS) {
+      const generated = generateLargeDataset(500, POWER_USER_ADDRESS);
+      setCommitmentsState(generated);
+      dynamicSizeCacheRef.current.clear();
+      lastCacheSizeRef.current = 0;
+      setCachedCount(0);
+    } else if (!externalCommitments) {
+      // Revert to demo commitments
+      setCommitmentsState(DEMO_COMMITMENTS);
+    }
+
+    if (onNavigateAddress) {
+      onNavigateAddress(addr);
+    }
+    setTimeout(() => {
+      setIsLoading(false);
+    }, 150);
+  }, [externalCommitments, onNavigateAddress]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    triggerAddressChange(searchQuery.trim());
+  };
+
+  // Filter commitments based on active address and status
+  const addressCommitments = useMemo(() => {
+    return commitmentsState.filter(
+      (c) => c.issuer === activeAddress || c.counterparty === activeAddress
+    );
+  }, [commitmentsState, activeAddress]);
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -101,6 +305,103 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const loadMore = React.useCallback(async () => {
     if (isLoading || isFetchingRef.current || !hasMore) return;
 
+  const fulfillmentRate = totalCount > 0 ? Math.round((fulfilledCount / totalCount) * 100) : 0;
+  const strokeDashoffset = 226 - (226 * fulfillmentRate) / 100;
+
+  const filteredCommitments = useMemo(() => {
+    return addressCommitments.filter((c) => {
+      if (statusFilter === 'All') return true;
+      return c.status === statusFilter;
+    });
+  }, [addressCommitments, statusFilter]);
+
+  /**
+   * Deterministic dynamic size estimator:
+   * Uses cached measurement if available; otherwise computes an accurate baseline
+   * based on card attributes, description character length, and expanded state.
+   */
+  const estimateItemSize = useCallback((index: number) => {
+    const item = filteredCommitments[index];
+    if (!item) return 120;
+
+    const cached = dynamicSizeCacheRef.current.get(item.id);
+    if (cached !== undefined && cached > 0) {
+      return cached;
+    }
+
+    // Dynamic heuristic baseline
+    let estimate = 110;
+    if (item.description) {
+      // Estimate extra height based on text wrapping (~60 chars per line at 13.5px font)
+      const lines = Math.ceil(item.description.length / 60);
+      estimate += Math.max(0, (lines - 1) * 20);
+    }
+    if (expandedIds.has(item.id)) {
+      estimate += 120; // Extra expanded details drawer
+    }
+    return estimate;
+  }, [filteredCommitments, expandedIds]);
+
+  /**
+   * Scroll anchoring is delegated to the virtualizer: TanStack Virtual's
+   * measurement cache automatically compensates the scroll offset whenever an
+   * item located ABOVE the current viewport changes its measured height, so no
+   * manual scrollTop arithmetic is required (and no state is set from refs,
+   * which would trigger an infinite render loop).
+   */
+
+  // TanStack Virtualizer Configuration
+  const rowVirtualizer = useVirtualizer({
+    count: filteredCommitments.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: estimateItemSize,
+    getItemKey: (index: number) => filteredCommitments[index]?.id ?? index,
+    overscan: 5,
+    measureElement: (element) => {
+      if (!element) return 0;
+      return element.getBoundingClientRect().height;
+    }
+  });
+
+  // Sync the metrics bar with the measurement cache only when its size changes
+  useEffect(() => {
+    const size = dynamicSizeCacheRef.current.size;
+    if (size !== lastCacheSizeRef.current) {
+      lastCacheSizeRef.current = size;
+      setCachedCount(size);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Toggle card expanded details (triggers dynamic resize)
+  const toggleExpand = useCallback((id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  // Trigger an asynchronous height update on an item to verify scroll stability
+  const triggerAsyncUpdate = useCallback((id: number) => {
+    setCommitmentsState((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const asyncNote = `[Async Update @ ${new Date().toLocaleTimeString()}]: Verified Soroban quorum signature 0x${Math.random().toString(16).slice(2, 10)}. Transaction confirmed with 0 ms slippage.`;
+          const currentNotes = item.notes || [];
+          return {
+            ...item,
+            notes: [...currentNotes, asyncNote]
+          };
+        }
+        return item;
+      })
+    );
+  }, []);
     isFetchingRef.current = true;
     setIsFetchingMore(true);
     setFetchError(null);
@@ -183,6 +484,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     });
   };
 
+  const virtualItems = rowVirtualizer.getVirtualItems();
   const totalCount = reputation?.total ?? 0;
   const fulfilledCount = reputation?.fulfilled ?? 0;
   const lateCount = reputation?.late ?? 0;
@@ -315,6 +617,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         </form>
 
         {/* Quick Preset Pills */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quick Presets:</span>
         <div
           style={{
             display: 'flex',
@@ -545,6 +849,9 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           ))}
         </div>
       ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px', marginBottom: '24px' }}>
+
+          {/* Total Commitments Card */}
         <div
           style={{
             display: 'grid',
@@ -594,7 +901,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             </div>
           </div>
 
-          {/* Fulfilled Card (Pastel Mint) */}
+          {/* Fulfilled Card */}
           <div
             onMouseEnter={() => setHoveredCard('fulfilled')}
             onMouseLeave={() => setHoveredCard(null)}
@@ -657,7 +964,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             </div>
           </div>
 
-          {/* Late Card (Pastel Honey) */}
+          {/* Late Card */}
           <div
             onMouseEnter={() => setHoveredCard('late')}
             onMouseLeave={() => setHoveredCard(null)}
@@ -720,7 +1027,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             </div>
           </div>
 
-          {/* Breached Card (Pastel Coral) */}
+          {/* Breached Card */}
           <div
             onMouseEnter={() => setHoveredCard('breached')}
             onMouseLeave={() => setHoveredCard(null)}
@@ -785,6 +1092,37 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         </div>
       )}
 
+      {/* ── Deterministic DOM Virtualized Commitment Histories ── */}
+      <div style={{
+        background: '#ffffff',
+        border: '1.5px solid #e2e8f0',
+        borderRadius: '24px',
+        overflow: 'hidden',
+        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.04)',
+        marginBottom: '32px'
+      }}>
+        {/* Header with Title and Filter Tabs */}
+        <div style={{ padding: '22px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>Associated Commitments</h3>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: '800',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: '#e0e7ff',
+                color: '#4338ca',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}>
+                <Layers size={12} />
+                Virtualized
+              </span>
+            </div>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '3px 0 0 0' }}>
+              Deterministic DOM virtualization for unlimited commitment histories
       {/* ── Associated Commitments Table ── */}
       <div
         style={{
@@ -833,6 +1171,11 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           </div>
 
           {/* Filter Tabs */}
+          <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            {['All', 'Fulfilled', 'Late', 'Breached', 'Pending', 'Disputed'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setStatusFilter(tab)}
           <div
             style={{
               display: 'flex',
@@ -869,6 +1212,36 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           </div>
         </div>
 
+        {/* Live Virtualization Metrics Bar */}
+        <div style={{
+          padding: '10px 28px',
+          background: '#f8fafc',
+          borderBottom: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          fontSize: '12px',
+          color: '#64748b'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <span>
+              Total in History: <strong style={{ color: '#0f172a' }}>{filteredCommitments.length}</strong>
+            </span>
+            <span style={{ color: '#cbd5e1' }}>•</span>
+            <span id="virtual-dom-count">
+              Active in DOM (Viewport + Overscan): <strong style={{ color: '#16a34a' }}>{virtualItems.length} nodes</strong>
+            </span>
+            <span style={{ color: '#cbd5e1' }}>•</span>
+            <span>
+              Dynamic Size Cache: <strong style={{ color: '#6366f1' }}>{cachedCount} measured</strong>
+            </span>
+          </div>
+        </div>
+
+        {/* Empty State Requirement */}
+        {filteredCommitments.length === 0 ? (
         {/* Empty State Requirement: "No commitments found for this address" */}
         {commitments.length === 0 && !isLoading ? (
           <div style={{ padding: '72px 24px', textAlign: 'center' }}>
@@ -894,6 +1267,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             >
               No commitments found for this address
             </h4>
+            <p style={{ fontSize: '13.5px', color: '#64748b', maxWidth: '400px', margin: '0 auto 22px auto' }}>
+              This account currently has no registered commitment activity matching this filter on Pactum Stellar Testnet.
             <p
               style={{
                 fontSize: '13.5px',
@@ -925,6 +1300,105 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             )}
           </div>
         ) : (
+          /* ── Virtualized Scroll Container ── */
+          <div
+            ref={parentRef}
+            id="virtualized-commitments-viewport"
+            style={{
+              height: '560px',
+              overflowY: 'auto',
+              position: 'relative',
+              contain: 'strict',
+              padding: '0 12px'
+            }}
+          >
+            <div
+              style={{
+                height: `${rowVirtualizer.getTotalSize()}px`,
+                width: '100%',
+                position: 'relative'
+              }}
+            >
+              {virtualItems.map((virtualRow) => {
+                const c = filteredCommitments[virtualRow.index];
+                if (!c) return null;
+
+                const isIssuer = c.issuer === activeAddress;
+                const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
+                const isExpanded = expandedIds.has(c.id);
+
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={(node) => {
+                      if (node) {
+                        rowVirtualizer.measureElement(node);
+                        const measured = node.getBoundingClientRect().height;
+                        if (measured > 0) {
+                          dynamicSizeCacheRef.current.set(c.id, measured);
+                        }
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                      padding: '8px 0'
+                    }}
+                  >
+                    {/* ── Virtualized Dynamic Commitment Card ── */}
+                    <div
+                      className="commitment-card-item"
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '16px',
+                        padding: '18px 20px',
+                        transition: 'box-shadow 0.18s ease, border-color 0.18s ease',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#cbd5e1';
+                        e.currentTarget.style.boxShadow = '0 6px 18px rgba(0,0,0,0.06)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#e2e8f0';
+                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.02)';
+                      }}
+                    >
+                      {/* Top Row: ID, Role, Counterparty, Status, and Controls */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a', fontFamily: 'monospace' }}>
+                            #{c.id}
+                          </span>
+
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: '800',
+                            background: isIssuer ? '#e0e7ff' : '#f1f5f9',
+                            color: isIssuer ? '#3730a3' : '#475569',
+                            border: isIssuer ? '1px solid #c7d2fe' : '1px solid #e2e8f0'
+                          }}>
+                            {isIssuer ? 'Issuer' : 'Counterparty'}
+                          </span>
+
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: '600' }}>vs</span>
+                            <UserProfile address={counterpartyAddr} avatarSize={24} showDomain={false} />
+                          </div>
+                        </div>
+
+                        {/* Status Badge & Expand Action */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {c.status === 'Fulfilled' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <ShieldCheck size={14} color="#16a34a" />
           <div>
             <div style={{ overflowX: 'auto' }}>
               <table
@@ -1037,6 +1511,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                             </span>
                           )}
                           {c.status === 'Late' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <Clock size={14} color="#f59e0b" />
                             <span
                               style={{
                                 padding: '4px 12px',
@@ -1063,6 +1539,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                             </span>
                           )}
                           {c.status === 'Breached' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#ffe4e6', color: '#be123c', border: '1px solid #fecdd3', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <AlertTriangle size={14} color="#ef4444" />
                             <span
                               style={{
                                 padding: '4px 12px',
@@ -1089,6 +1567,138 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                             </span>
                           )}
                           {c.status === 'Pending' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <Activity size={14} color="#94a3b8" />
+                              Pending
+                            </span>
+                          )}
+                          {c.status === 'Disputed' && (
+                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <AlertTriangle size={14} color="#a855f7" />
+                              Disputed
+                            </span>
+                          )}
+
+                          <button
+                            onClick={() => toggleExpand(c.id)}
+                            style={{
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '8px',
+                              padding: '5px 8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11.5px',
+                              fontWeight: '700',
+                              color: '#475569',
+                              cursor: 'pointer'
+                            }}
+                            title={isExpanded ? 'Collapse card details' : 'Expand card details'}
+                          >
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            <span>{isExpanded ? 'Less' : 'Details'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Middle: Dynamic Description Text */}
+                      {c.description && (
+                        <div style={{ marginTop: '12px', fontSize: '13.5px', color: '#334155', lineHeight: '1.5', fontWeight: '500' }}>
+                          {c.description}
+                        </div>
+                      )}
+
+                      {/* Bottom Info: Due Date, Terms Hash, and Async Trigger */}
+                      <div style={{
+                        marginTop: '12px',
+                        paddingTop: '10px',
+                        borderTop: '1px solid #f8fafc',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '10px',
+                        fontSize: '12px',
+                        color: '#64748b'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                          <span>
+                            Due: <strong style={{ color: '#0f172a' }}>{formatDate(c.due_at)}</strong>
+                          </span>
+                          <span>•</span>
+                          <span title={c.terms_hash} style={{ fontFamily: 'monospace' }}>
+                            Terms: {c.terms_hash.substring(0, 16)}...
+                          </span>
+                          {c.attested_at && (
+                            <>
+                              <span>•</span>
+                              <span>Attested: {formatDate(c.attested_at)}</span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Test action to simulate async height shift and prove scroll position stability */}
+                        <button
+                          onClick={() => triggerAsyncUpdate(c.id)}
+                          style={{
+                            background: 'transparent',
+                            border: '1px dashed #cbd5e1',
+                            borderRadius: '6px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            color: '#6366f1',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="Simulates asynchronous height changes above viewport to verify scroll anchoring"
+                        >
+                          <Sparkles size={11} />
+                          Async Update Height
+                        </button>
+                      </div>
+
+                      {/* Expanded Dynamic Details Drawer */}
+                      {isExpanded && (
+                        <div style={{
+                          marginTop: '14px',
+                          padding: '14px',
+                          background: '#f8fafc',
+                          borderRadius: '12px',
+                          border: '1px solid #e2e8f0',
+                          animation: 'fadeIn 0.15s ease'
+                        }}>
+                          <div style={{ fontSize: '11.5px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                            Cryptographic Terms & Audit Log
+                          </div>
+                          <div style={{ fontFamily: 'monospace', fontSize: '11.5px', color: '#64748b', wordBreak: 'break-all', marginBottom: '8px' }}>
+                            Full SHA-256 Terms Hash: {c.terms_hash}
+                          </div>
+
+                          {c.notes && c.notes.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                              {c.notes.map((note, nIdx) => (
+                                <div key={nIdx} style={{ fontSize: '12px', color: '#334155', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                  <span style={{ color: '#6366f1' }}>•</span>
+                                  <span>{note}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                              No additional asynchronous notes registered for this commitment.
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+                );
+              })}
                             <span
                               style={{
                                 padding: '4px 12px',
