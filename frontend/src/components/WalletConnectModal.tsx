@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useWallet } from '../context/WalletContext';
-import { Wallet, X, Check, Copy, Shield, LogOut, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Wallet, X, Check, Copy, Shield, LogOut, AlertTriangle, ExternalLink, Usb } from 'lucide-react';
 import { truncateAddress, FREIGHTER_HOMEPAGE } from '../lib/wallet';
 
 export interface WalletConnectModalProps {
@@ -48,11 +48,11 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleConnect = async (wallet: 'freighter' | 'albedo') => {
+  const handleConnect = async (wallet: 'freighter' | 'albedo' | 'ledger') => {
     await connectWallet(wallet);
   };
 
-  const providerLabel = provider === 'albedo' ? 'Albedo' : 'Freighter';
+  const providerLabel = provider === 'albedo' ? 'Albedo' : provider === 'ledger' ? 'Ledger' : 'Freighter';
 
   return (
     <div
@@ -357,6 +357,53 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
                 </div>
                 <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '1px' }}>
                   Web-based Stellar wallet (no extension)
+                </div>
+              </div>
+            </div>
+
+            <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#334155' }}>
+              {isConnecting ? '...' : 'Connect →'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleConnect('ledger')}
+            disabled={isConnecting}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 16px',
+              background: '#ffffff',
+              border: '1.5px solid #e2e8f0',
+              borderRadius: '14px',
+              cursor: isConnecting ? 'wait' : 'pointer',
+              transition: 'all 0.15s ease',
+              textAlign: 'left',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #000000 0%, #334155 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Usb size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                  Ledger Nano
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '1px' }}>
+                  Hardware wallet via WebUSB/WebBluetooth — no extension
                 </div>
               </div>
             </div>

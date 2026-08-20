@@ -889,6 +889,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pactum-validation"
+version = "0.1.0"
+dependencies = [
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1016,6 +1023,7 @@ dependencies = [
 name = "registry"
 version = "0.1.0"
 dependencies = [
+ "pactum-validation",
  "soroban-sdk",
 ]
 
