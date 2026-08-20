@@ -30,24 +30,27 @@ test.describe('Commitment Flow', () => {
     // Verify Create Commitment page is active
     await expect(page.locator('.section-title').filter({ hasText: 'Create Commitment' })).toBeVisible();
 
-    // 4. User can fill out the Create Commitment form.
-    await page.fill('#create-issuer', 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY');
-    await page.fill('#create-counterparty', 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY');
-    await page.fill('#create-terms', 'Deliver 500 widgets by end of Q3');
-    
-    // Set a future date
+    // 4. User can fill out the multi-step Create Commitment wizard.
+    // Step 1: Counterparty
+    await page.fill('#wizard-counterparty', 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY');
+    await page.click('button:has-text("Continue")');
+
+    // Step 2: Terms & Conditions
+    await expect(page.locator('#wizard-terms')).toBeVisible();
+    await page.fill('#wizard-terms', 'Deliver 500 widgets by end of Q3');
+    await page.click('button:has-text("Continue")');
+
+    // Step 3: Deadline & Review
+    await expect(page.locator('#wizard-dueat')).toBeVisible();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + 7);
     const dateString = futureDate.toISOString().slice(0, 16); // format: YYYY-MM-DDTHH:mm
-    await page.fill('#create-dueat', dateString);
+    await page.fill('#wizard-dueat', dateString);
 
     // 5. User can submit the form.
-    await page.click('#btn-create');
+    await page.locator('#page-create .wizard button:has-text("Create Commitment")').click();
     
-    // Since the actual contract interaction isn't fully wired or would be blocked without a real node/mock,
-    // we just verify the button exists and was clickable. 
-    // In a fully mocked environment, you'd wait for a success toast.
-    // For now, ensuring the click succeeds is sufficient for the E2E framework test setup.
-    await expect(page.locator('#btn-create')).toBeVisible();
+    // Verify the commitment payload was prepared (terms hashed + due date converted)
+    await expect(page.locator('.inline-alert').filter({ hasText: 'Commitment payload prepared' })).toBeVisible();
   });
 });
