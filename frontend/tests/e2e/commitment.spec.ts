@@ -29,6 +29,18 @@ test.describe('Commitment Flow', () => {
     // Verify Create Commitment page is active
     await expect(page.locator('.section-title').filter({ hasText: 'Create Commitment' })).toBeVisible();
 
+    // 4. User can fill out the multi-step Create Commitment wizard.
+    // Step 1: Counterparty
+    await page.fill('#wizard-counterparty', 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY');
+    await page.click('button:has-text("Continue")');
+
+    // Step 2: Terms & Conditions
+    await expect(page.locator('#wizard-terms')).toBeVisible();
+    await page.fill('#wizard-terms', 'Deliver 500 widgets by end of Q3');
+    await page.click('button:has-text("Continue")');
+
+    // Step 3: Deadline & Review
+    await expect(page.locator('#wizard-dueat')).toBeVisible();
     // 4. Step 1 — Counterparty
     await page.fill('#wizard-counterparty', 'GCV7G73HBBHMFHNK4I2U2XNIMV2A7H2LZ5SJZV2QBN56N74676YDFGXY');
     await page.getByRole('button', { name: 'Continue' }).click();
@@ -43,6 +55,10 @@ test.describe('Commitment Flow', () => {
     const dateString = futureDate.toISOString().slice(0, 16); // format: YYYY-MM-DDTHH:mm
     await page.fill('#wizard-dueat', dateString);
 
+    // 5. User can submit the form.
+    await page.locator('#page-create .wizard button:has-text("Create Commitment")').click();
+    
+    // Verify the commitment payload was prepared (terms hashed + due date converted)
     await page.locator('.wizard').getByRole('button', { name: 'Create Commitment' }).click();
 
     // The wizard confirms the payload was prepared (terms hashed, due date converted to Unix time).

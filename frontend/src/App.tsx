@@ -183,7 +183,11 @@ function InlineWalletError() {
 
 export default function App() {
 
-  useSyncCache();
+  const wallet = useWallet();
+  // WebRTC peer sync needs a wallet that can sign an arbitrary message to attest its
+  // session key (SEP-53 `signMessage`) — today that's Freighter only, same gating the
+  // encryption flow already uses.
+  useSyncCache(wallet.provider === 'freighter' ? wallet.address : null);
 
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
@@ -193,7 +197,6 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
-  const wallet = useWallet();
 
   const handleNavigateReputation = (addr: string) => {
     setReputationAddress(addr);

@@ -199,6 +199,10 @@ jobs:
       - name: Cache npm dependencies
         uses: actions/cache@v4
         with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-frontend-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-frontend-
           path: |
             ~/.npm
             ~/.cache/ms-playwright
@@ -214,6 +218,7 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      - name: Run frontend production build
       - name: Run frontend unit tests
         working-directory: frontend
         run: npm test
@@ -226,6 +231,9 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
+      - name: Run Playwright end-to-end tests
+        working-directory: frontend
+        run: npx playwright test --reporter=list
       - name: Run frontend e2e tests
         working-directory: frontend
         run: npm run test:e2e

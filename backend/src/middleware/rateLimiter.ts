@@ -80,10 +80,10 @@ function createRateLimiter(options: RateLimiterOptions): RequestHandler {
     sweep(now);
 
     const key = keyGenerator(req);
-    let timestamps = store.get(key) ?? [];
+    let timestamps = store.get(key) || [];
 
     // Prune timestamps outside the current sliding window.
-    timestamps = timestamps.filter((ts) => ts > windowStart);
+    timestamps = timestamps.filter((ts: number) => ts > windowStart);
 
     if (timestamps.length >= max) {
       // The oldest in-window hit frees a slot the moment it exits the window;
