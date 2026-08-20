@@ -4,11 +4,19 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.tsx'
 import { queryClient } from './lib/queryClient'
+import { WalletProvider } from './contexts/WalletContext'
 
+// WalletProvider and QueryClientProvider wrap the whole tree here, in the host, exactly once —
+// not per-remote — since the host owns the single WalletContext and QueryClient instances that
+// dashboard/wizard remotes consume over Module Federation (see vite.config.ts `exposes` and
+// docs/module-federation.md). A remote wrapping itself in its own instance of either provider
+// would defeat the singleton sharing this architecture depends on.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <WalletProvider>
+        <App />
+      </WalletProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

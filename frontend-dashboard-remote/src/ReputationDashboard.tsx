@@ -1,4 +1,15 @@
 import React, { useState, useEffect } from 'react';
+// Consumed from the host over Module Federation, not a local relative import: the host owns and
+// exposes the single WalletContext module instance so every remote reads the exact same Provider
+// state instead of bundling (and silently desyncing from) its own copy. See
+// docs/module-federation.md.
+import { useWallet } from 'host/WalletContext';
+// A plain npm import, unlike WalletContext above — @tanstack/react-query is marked as a `shared`
+// singleton in vite.config.ts, so Module Federation dedupes it at runtime instead of this remote
+// bundling its own copy. That match matters for more than bundle size: useQueryClient() reads
+// off a React Context created by that package, so a duplicated copy would create a *second*,
+// un-Provided context and silently fail to see the host's QueryClientProvider.
+import { useQueryClient } from '@tanstack/react-query';
 
 export interface CommitmentItem {
   id: number;
@@ -90,6 +101,24 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const itemsPerPage = 3;
 
+  // Read from the host's federated WalletContext, not a local copy — see the import comment
+  // above. Also used by the e2e suite to prove this remote shares the exact same Provider
+  // instance as the host, by comparing this id to window.__PACTUM_WALLET_PROVIDER_MODULE_ID__.
+  const wallet = useWallet();
+  // Retrieved via React Context (useQueryClient), not the direct `host/queryClient` import used
+  // elsewhere — this specifically proves @tanstack/react-query's Context-sharing path works, as
+  // a real remote's `useQuery`/`useMutation` calls would depend on.
+  const contextQueryClient = useQueryClient();
+  useEffect(() => {
+    // VITE_E2E_DIAGNOSTICS, not DEV: needs to be readable from a real production build served
+    // via `vite preview` too. See frontend/src/contexts/WalletContext.tsx for the full rationale.
+    if (import.meta.env.VITE_E2E_DIAGNOSTICS === 'true') {
+      const w = window as unknown as Record<string, unknown>;
+      w.__PACTUM_DASHBOARD_SEEN_WALLET_MODULE_ID__ = wallet.contextModuleId;
+      w.__PACTUM_DASHBOARD_SEEN_QUERY_CLIENT__ = contextQueryClient;
+    }
+  }, [wallet.contextModuleId, contextQueryClient]);
+
   useEffect(() => {
     if (initialAddress && initialAddress !== activeAddress) {
       setSearchQuery(initialAddress);
@@ -162,6 +191,15 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
   return (
     <div style={{ maxWidth: '1080px', margin: '0 auto', color: '#1e293b' }}>
+
+      {/* Wallet status, read from the host's shared WalletContext singleton (see useWallet import above). */}
+      <div
+        id="dashboard-remote-wallet-status"
+        data-connected={wallet.isConnected}
+        style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px', fontFamily: 'monospace' }}
+      >
+        {wallet.isConnected ? `Wallet: ${wallet.address}` : 'Wallet: not connected'}
+      </div>
 
       {/* ── Search Bar Section ── */}
       <div style={{

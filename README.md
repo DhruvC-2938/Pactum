@@ -59,12 +59,17 @@ Pactum is a lightweight registry, not a payment or custody system. It doesn't ho
 
 ```
 pactum/
-├── contracts/registry/     # Soroban smart contract (Rust)
-├── backend/                # REST API + on-chain event indexer (TypeScript)
-├── sdk/js/                 # Lightweight JS/TS SDK for dApp integration
-├── docs/                   # Architecture, contract & API reference, integration guide
-└── examples/                # Minimal integration demo
+├── contracts/registry/          # Soroban smart contract (Rust)
+├── backend/                     # REST API + on-chain event indexer (TypeScript)
+├── sdk/js/                      # Lightweight JS/TS SDK for dApp integration
+├── frontend/                    # Host web app (Module Federation container)
+├── frontend-dashboard-remote/   # Reputation Dashboard, an independently deployed remote module
+├── frontend-wizard-remote/      # Create Commitment Wizard, an independently deployed remote module
+├── docs/                        # Architecture, contract & API reference, integration guide
+└── examples/                     # Minimal integration demo
 ```
+
+See [`docs/module-federation.md`](./docs/module-federation.md) for how the frontend's host/remote micro-frontend split works.
 
 See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 

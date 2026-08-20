@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+// Both consumed from the host over Module Federation, not local relative imports — the host owns
+// and exposes the single WalletContext and QueryClient module instances so every remote reads
+// and writes the exact same Provider state and cache. See docs/module-federation.md.
+import { useWallet } from 'host/WalletContext'
+import { queryClient } from 'host/queryClient'
 
 import { sha256Hex } from '@/lib/hash'
 import { stellarAddressSchema } from '@/lib/stellar'
@@ -54,6 +59,17 @@ export default function CreateCommitmentWizard({ onSubmit }: CreateCommitmentWiz
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState<CreateCommitmentPayload | null>(null)
 
+  // Used by the e2e suite to prove this remote shares the exact same WalletContext Provider
+  // instance as the host, by comparing this id to window.__PACTUM_WALLET_PROVIDER_MODULE_ID__.
+  const wallet = useWallet()
+  useEffect(() => {
+    // VITE_E2E_DIAGNOSTICS, not DEV: needs to be readable from a real production build served
+    // via `vite preview` too. See frontend/src/contexts/WalletContext.tsx for the full rationale.
+    if (import.meta.env.VITE_E2E_DIAGNOSTICS === 'true') {
+      ;(window as unknown as Record<string, unknown>).__PACTUM_WIZARD_SEEN_WALLET_MODULE_ID__ = wallet.contextModuleId
+    }
+  }, [wallet.contextModuleId])
+
   const {
     register,
     handleSubmit,
@@ -92,6 +108,11 @@ export default function CreateCommitmentWizard({ onSubmit }: CreateCommitmentWiz
       }
       setSubmitted(payload)
       onSubmit(payload)
+      // Invalidate the shared `commitments` cache (see @/frontend/src/lib/queryKeys.ts) on the
+      // host's QueryClient — this remote never fetched into it directly, so a subsequent refetch
+      // succeeding here (rather than acting on an empty, separately-instantiated cache) is a
+      // functional proof that this is the same QueryClient the host and dashboard remote read.
+      await queryClient.invalidateQueries({ queryKey: ['commitments'] })
     } finally {
       setSubmitting(false)
     }
@@ -101,6 +122,15 @@ export default function CreateCommitmentWizard({ onSubmit }: CreateCommitmentWiz
 
   return (
     <div className="wizard">
+      {/* Wallet status, read from the host's shared WalletContext singleton (see useWallet import above). */}
+      <div
+        id="wizard-remote-wallet-status"
+        data-connected={wallet.isConnected}
+        style={{ fontSize: '12px', color: 'var(--text-secondary, #64748b)', marginBottom: '10px', fontFamily: 'monospace' }}
+      >
+        {wallet.isConnected ? `Issuing as: ${wallet.address}` : 'Wallet: not connected'}
+      </div>
+
       <ol className="wizard-steps">
         {STEPS.map((s, index) => {
           const state = index === step ? 'active' : index < step ? 'done' : ''

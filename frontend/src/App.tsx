@@ -1,13 +1,21 @@
 
-import { useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 
 import './App.css'
 import LandingPage from './components/LandingPage'
 import DocsPage from './components/DocsPage'
-import CreateCommitmentWizard from './components/CreateCommitmentWizard'
-import ReputationDashboard from './components/ReputationDashboard'
+import RemoteErrorBoundary from './components/RemoteErrorBoundary'
 import { useCommitments } from './hooks/useCommitments'
 import type { Commitment, CommitmentStatus } from './lib/api'
+
+// Loaded at runtime from independently compiled/deployed remotes over Module Federation, not
+// bundled into the host — see vite.config.ts `remotes` and docs/module-federation.md.
+const CreateCommitmentWizard = lazy(() => import('wizard/CreateCommitmentWizard'))
+const ReputationDashboard = lazy(() => import('dashboard/ReputationDashboard'))
+
+function RemoteFallback({ label }: { label: string }) {
+  return <div className="inline-alert info">Loading {label}…</div>
+}
 
 function renderCommitmentItem(commitment: Commitment) {
   return (
@@ -483,7 +491,11 @@ export default function App() {
         </div>
       </div>
 
-      <CreateCommitmentWizard onSubmit={(payload) => console.log('commitment payload', payload)} />
+      <RemoteErrorBoundary remoteName="wizard">
+        <Suspense fallback={<RemoteFallback label="Create Commitment wizard" />}>
+          <CreateCommitmentWizard onSubmit={(payload) => console.log('commitment payload', payload)} />
+        </Suspense>
+      </RemoteErrorBoundary>
     </section>
 
 
@@ -753,11 +765,15 @@ export default function App() {
          PAGE: Reputation Lookup
          ────────────────────────────────────────────── */}
     <section className={`page ${activePage === 'reputation' ? 'active' : ''}`} id="page-reputation">
-      <ReputationDashboard
-        initialAddress={reputationAddress}
-        onNavigateAddress={(addr) => navigateToReputation(addr)}
-        onLaunchCreate={() => setActivePage('create')}
-      />
+      <RemoteErrorBoundary remoteName="dashboard">
+        <Suspense fallback={<RemoteFallback label="Reputation Dashboard" />}>
+          <ReputationDashboard
+            initialAddress={reputationAddress}
+            onNavigateAddress={(addr) => navigateToReputation(addr)}
+            onLaunchCreate={() => setActivePage('create')}
+          />
+        </Suspense>
+      </RemoteErrorBoundary>
     </section>
 
 
