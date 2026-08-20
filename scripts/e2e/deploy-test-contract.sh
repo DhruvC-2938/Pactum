@@ -54,8 +54,7 @@ IDENTITIES=(issuer counterparty arbitrator resolver)
 echo "== Configuring local network =="
 $CLI network add "$NETWORK" \
   --rpc-url "$RPC_URL" \
-  --network-passphrase "$NETWORK_PASSPHRASE" \
-  --allow-http || true
+  --network-passphrase "$NETWORK_PASSPHRASE" || true
 
 echo "== Generating + funding test identities =="
 for id in "${IDENTITIES[@]}"; do
