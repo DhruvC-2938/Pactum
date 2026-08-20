@@ -18,6 +18,8 @@ import { SorobanClient } from './soroban/client';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
 
+import { WebSocketService } from './ws/WebSocketService';
+
 dotenv.config();
 const app = express();
 const port = process.env.PORT || 3000;
@@ -190,16 +192,19 @@ if (process.env.INDEXER_ENABLED !== 'off') {
 }
 
 let server: ReturnType<typeof app.listen>;
+let wsService: WebSocketService | undefined;
 
 async function init() {
   server = app.listen(port, () => {
     logger.info(`Server running on port ${port}`, { port, metricsPort });
+    wsService = new WebSocketService(server);
   });
 }
 
 init();
 
 export const stop = async () => {
+  wsService?.close();
   server?.close();
 };
 export default app;

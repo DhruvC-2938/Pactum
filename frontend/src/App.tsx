@@ -14,7 +14,6 @@ import type { Commitment, CommitmentStatus } from './lib/api'
 import { useWallet } from './context/WalletContext'
 import { Wallet, CheckCircle2 } from 'lucide-react'
 
-function renderCommitmentItem(commitment: Commitment) {
   return (
     <div className="commitment-item" key={commitment.id}>
       <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
@@ -28,9 +27,9 @@ function renderCommitmentItem(commitment: Commitment) {
         <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
       </div>
       <div className="commitment-status">
-        <span className={`badge ${commitment.status.toLowerCase()}`}>
+        <span className={`badge ${status.toLowerCase()}`}>
           <span className="badge-dot"></span>
-          {commitment.status}
+          {status}
         </span>
       </div>
     </div>
@@ -229,7 +228,13 @@ export default function App() {
 
     handleUrlChange();
     window.addEventListener('popstate', handleUrlChange);
-    return () => window.removeEventListener('popstate', handleUrlChange);
+    
+    wsClient.connect();
+    
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      wsClient.disconnect();
+    };
   }, []);
 
   if (activePage === 'landing') {
