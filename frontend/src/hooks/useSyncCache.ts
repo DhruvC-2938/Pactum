@@ -26,9 +26,17 @@ function isFullCommitmentListKey(queryKey: readonly unknown[]): boolean {
  * - Refetches canonical state when the device comes back online so the cache
  *   reconciles with the backend.
  *
- * Mount once at the application root.
+ * Mount once at the application root. Pass the connected wallet address to
+ * additionally open a WebRTC peer-sync mesh (one wallet popup to attest the
+ * session key); omit it to keep offline-first behavior without peer sync.
  */
-export function useSyncCache(): void {
+export function useSyncCache(address?: string | null): void {
+  useEffect(() => {
+    if (!address) return
+    syncStore.connectPeerSync(address)
+    return () => syncStore.disconnectPeerSync()
+  }, [address])
+
   useEffect(() => {
     let disposed = false
     let suppressQueryEcho = false
