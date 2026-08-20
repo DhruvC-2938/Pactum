@@ -166,23 +166,14 @@ export function createReputationRouter(cache: ReputationCache, sorobanClient?: S
       // the window carries the most recent snapshot at or before it forward.
       const result = await queryTimescale(
         `SELECT
-           to_char(series.day, 'YYYY-MM-DD') AS date,
-           COALESCE(snapshot.fulfilled, 0) AS fulfilled,
-           COALESCE(snapshot.late, 0) AS late,
-           COALESCE(snapshot.breached, 0) AS breached
-         FROM generate_series(
-           CURRENT_DATE - $1::interval,
-           CURRENT_DATE,
-           '1 day'::interval
-         ) AS series(day)
-         LEFT JOIN LATERAL (
-           SELECT fulfilled, late, breached
-           FROM reputation_snapshots
-           WHERE address = $2 AND date <= series.day
-           ORDER BY date DESC
-           LIMIT 1
-         ) snapshot ON true
-         ORDER BY series.day ASC`,
+           to_char(bucket, 'YYYY-MM-DD') AS date,
+           COALESCE(fulfilled_count, 0) AS fulfilled,
+           COALESCE(late_count, 0) AS late,
+           COALESCE(breached_count, 0) AS breached
+         FROM reputation_snapshots_daily
+         WHERE address = $2
+           AND bucket >= CURRENT_DATE - $1::interval
+         ORDER BY bucket ASC`,
         [`${days - 1} days`, address],
       );
       res.json(result.rows);

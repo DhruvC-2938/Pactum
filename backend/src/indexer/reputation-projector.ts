@@ -25,7 +25,7 @@ export class ReputationCacheProjector {
 
   async ledgerCommitted(ledger: LedgerSnapshot): Promise<void> {
     await Promise.all(
-      affectedReputationAddresses(ledger).map((address) => this.cache.refresh(address)),
+      affectedReputationAddresses(ledger).map((address) => this.cache.invalidate(address)),
     );
   }
 }
