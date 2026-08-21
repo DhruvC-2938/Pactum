@@ -43,14 +43,28 @@ fn setup_voting(
         .address();
     client.set_staking_token(&arbitrator, &token);
 
+    // Also configure the same token as the dispute token: dispute() requires
+    // a token transfer (DISPUTE_STAKE_AMOUNT) from the caller, and panics with
+    // error #40 (DisputeTokenNotSet) if none is configured.
+    client.set_dispute_token(&arbitrator, &token);
+
     let issuer = Address::generate(env);
     let counterparty = Address::generate(env);
+
+    // Mint dispute tokens to both parties and each attestor, since any party
+    // to a commitment can raise a dispute in these tests.
+    let dispute_asset = StellarAssetClient::new(env, &token);
+    let dispute_fund = crate::commitments::DISPUTE_STAKE_AMOUNT * 10;
+    dispute_asset.mint(&issuer, &dispute_fund);
+    dispute_asset.mint(&counterparty, &dispute_fund);
 
     let mut attestors = Vec::new(env);
     for _ in 0..5 {
         let attestor = Address::generate(env);
         StellarAssetClient::new(env, &token).mint(&attestor, &(STAKE * 2));
         client.stake_attestor(&attestor, &STAKE);
+        // Also mint dispute tokens: panel members can be disputers.
+        dispute_asset.mint(&attestor, &dispute_fund);
         attestors.push_back(attestor);
     }
 

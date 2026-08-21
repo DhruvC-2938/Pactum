@@ -31,3 +31,5 @@ evm/typechain-types/
 
 # Soroban test snapshots
 test_snapshots/
+
+.env.e2e

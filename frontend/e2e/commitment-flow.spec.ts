@@ -4,6 +4,14 @@ const MOCK_ADDRESS = 'GASV7ZZOPNYYFEPJ6N3GX4VINJELUQQDRX6UWWOO43F55CV6OBQUEGVK';
 const COUNTERPARTY = 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB';
 const SHORT_ADDRESS = 'GASV7Z...EGVK';
 
+// A fixed future date goes stale the moment it's in the past; compute one relative to "now"
+// instead, matching contract-errors.spec.ts's own pattern.
+function futureDueDate(): string {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date.toISOString().slice(0, 16);
+}
+
 /**
  * Simulates the Freighter browser extension content script (postMessage protocol).
  * Must be self-contained: Playwright serializes init scripts via toString().
@@ -201,7 +209,7 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   // Continue past; it submits via "Create Commitment", scoped to #page-create the same way as
   // the encrypted-commitment test (the sidebar nav item shares that accessible name).
   await expect(page.getByLabel('Due Date')).toBeVisible();
-  await page.getByLabel('Due Date').fill('2026-12-31T12:00');
+  await page.getByLabel('Due Date').fill(futureDueDate());
   await page.locator('#page-create').getByRole('button', { name: 'Create Commitment' }).click();
 
   // Verify success
@@ -329,7 +337,7 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 3: Due date
-  await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
+  await page.locator('#wizard-dueat').fill(futureDueDate());
   // Scoped to #page-create: the unscoped locator also matches the sidebar's #nav-create button,
   // which carries the same accessible name.
   await page.locator('#page-create').getByRole('button', { name: 'Create Commitment' }).click();
