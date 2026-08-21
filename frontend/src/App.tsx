@@ -1,40 +1,3 @@
-
-import { useState, useEffect } from 'react'
-
-import './App.css'
-import LandingPage from './components/LandingPage'
-import DocsPage from './components/DocsPage'
-import CreateCommitmentWizard from './components/CreateCommitmentWizard'
-import ReputationDashboard from './components/ReputationDashboard'
-import FreighterInstallModal from './components/FreighterInstallModal'
-import WalletConnectModal from './components/WalletConnectModal'
-import { useCommitments } from './hooks/useCommitments'
-import { useSyncCache } from './hooks/useSyncCache'
-import type { Commitment, CommitmentStatus } from './lib/api'
-import { useWallet } from './context/WalletContext'
-import { Wallet, CheckCircle2 } from 'lucide-react'
-
-function renderCommitmentItem(commitment: Commitment) {
-  return (
-    <div className="commitment-item" key={commitment.id}>
-      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
-        {commitment.issuer.charAt(0)}
-      </div>
-      <div className="commitment-info">
-        <div className="commitment-id">Commitment #{commitment.id}</div>
-        <div className="commitment-parties">
-          {commitment.issuer} &rarr; {commitment.counterparty}
-        </div>
-        <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
-      </div>
-      <div className="commitment-status">
-        <span className={`badge ${commitment.status.toLowerCase()}`}>
-          <span className="badge-dot"></span>
-          {commitment.status}
-        </span>
-      </div>
-    </div>
-  )
 import { useState, useEffect } from 'react';
 
 import './App.css';
@@ -49,6 +12,7 @@ import { useCommitments } from './hooks/useCommitments';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
+import { useSyncCache } from './hooks/useSyncCache';
 import type { WalletProvider } from './lib/wallet';
 import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
@@ -88,7 +52,10 @@ function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentIt
           {commitment.issuer.charAt(0)}
         </div>
         <div className="commitment-info">
-          <div className="commitment-id" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div
+            className="commitment-id"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
             Commitment #{commitment.id}
             {commitment.encrypted && (
               <span
@@ -117,7 +84,10 @@ function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentIt
             {new Date(commitment.due_at * 1000).toLocaleDateString()}
           </div>
         </div>
-        <div className="commitment-status" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+        <div
+          className="commitment-status"
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}
+        >
           <span className={`badge ${commitment.status.toLowerCase()}`}>
             <span className="badge-dot"></span>
             {commitment.status}
@@ -164,7 +134,11 @@ function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentIt
   );
 }
 
-function renderCommitmentItem(commitment: Commitment, connectedAddress: string | null, provider: WalletProvider | null) {
+function renderCommitmentItem(
+  commitment: Commitment,
+  connectedAddress: string | null,
+  provider: WalletProvider | null,
+) {
   return (
     <CommitmentItem
       key={commitment.id}
@@ -183,7 +157,6 @@ function InlineWalletError() {
 }
 
 export default function App() {
-
   useSyncCache();
 
   const [activePage, setActivePage] = useState('landing');
@@ -968,7 +941,9 @@ export default function App() {
                   Failed to load commitments from the backend.
                 </div>
               )}
-              {commitmentsQuery.data?.map((c) => renderCommitmentItem(c, wallet.address, wallet.provider))}
+              {commitmentsQuery.data?.map((c) =>
+                renderCommitmentItem(c, wallet.address, wallet.provider),
+              )}
             </div>
           </section>
 
