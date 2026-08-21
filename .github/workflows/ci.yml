@@ -221,6 +221,18 @@ jobs:
         # playwright.config.ts (testDir: ./e2e) runs both a chromium and a firefox project.
         run: npx playwright install --with-deps chromium firefox
 
+      # playwright.config.ts's webServer also builds+previews the dashboard/wizard Module
+      # Federation remotes (see docs/module-federation.md) since the host now lazy-loads them
+      # instead of bundling them directly -- each is an independent npm project needing its own
+      # install.
+      - name: Install dashboard remote dependencies
+        working-directory: frontend-dashboard-remote
+        run: npm ci
+
+      - name: Install wizard remote dependencies
+        working-directory: frontend-wizard-remote
+        run: npm ci
+
       - name: Run frontend e2e tests
         working-directory: frontend
         run: npm run test:e2e
