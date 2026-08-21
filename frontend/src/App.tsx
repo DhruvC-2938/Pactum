@@ -1,39 +1,4 @@
 
-import { useState, useEffect } from 'react'
-
-import './App.css'
-import LandingPage from './components/LandingPage'
-import DocsPage from './components/DocsPage'
-import CreateCommitmentWizard from './components/CreateCommitmentWizard'
-import ReputationDashboard from './components/ReputationDashboard'
-import FreighterInstallModal from './components/FreighterInstallModal'
-import WalletConnectModal from './components/WalletConnectModal'
-import { useCommitments } from './hooks/useCommitments'
-import { useSyncCache } from './hooks/useSyncCache'
-import type { Commitment, CommitmentStatus } from './lib/api'
-import { useWallet } from './context/WalletContext'
-import { Wallet, CheckCircle2 } from 'lucide-react'
-
-  return (
-    <div className="commitment-item" key={commitment.id}>
-      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
-        {commitment.issuer.charAt(0)}
-      </div>
-      <div className="commitment-info">
-        <div className="commitment-id">Commitment #{commitment.id}</div>
-        <div className="commitment-parties">
-          {commitment.issuer} &rarr; {commitment.counterparty}
-        </div>
-        <div className="commitment-due">{new Date(commitment.due_at * 1000).toLocaleDateString()}</div>
-      </div>
-      <div className="commitment-status">
-        <span className={`badge ${status.toLowerCase()}`}>
-          <span className="badge-dot"></span>
-          {status}
-        </span>
-      </div>
-    </div>
-  )
 import { useState, useEffect } from 'react';
 
 import './App.css';
@@ -45,9 +10,11 @@ import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import DecryptTermsModal from './components/DecryptTermsModal';
 import { useCommitments } from './hooks/useCommitments';
+import { useSyncCache } from './hooks/useSyncCache';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
+import { wsClient } from './lib/wsClient';
 import type { WalletProvider } from './lib/wallet';
 import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';

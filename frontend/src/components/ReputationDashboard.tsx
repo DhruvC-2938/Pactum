@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import UserProfile from './UserProfile';
+import { fetchCommitments } from '../lib/api';
+import type { Reputation } from '../lib/api';
+import { fetchVerifiedReputation, type ReputationIntegrity } from '../lib/verifiedReputation';
 import {
-  ShieldCheck,
-  Clock,
   AlertTriangle,
   ChevronDown,
   ChevronUp,
   Activity,
   Layers,
-  Sparkles
+  Sparkles,
 } from 'lucide-react';
 
 export interface CommitmentItem {
@@ -25,11 +26,6 @@ export interface CommitmentItem {
   notes?: string[];
   isExpanded?: boolean;
 }
-import React, { useState, useEffect, useRef } from 'react';
-import UserProfile from './UserProfile';
-import { fetchCommitments } from '../lib/api';
-import type { Commitment, Reputation } from '../lib/api';
-import { fetchVerifiedReputation, type ReputationIntegrity } from '../lib/verifiedReputation';
 
 export interface ReputationDashboardProps {
   initialAddress?: string;
@@ -147,11 +143,6 @@ function generateLargeDataset(count: number, targetAddress: string): CommitmentI
 }
 
 const PRESETS = [
-  { label: 'Issuer Demo (GAJK...)', address: BASE_ADDRESS_1 },
-  { label: 'Counterparty (GB4U...)', address: BASE_ADDRESS_2 },
-  { label: 'Power User (500 Items)', address: POWER_USER_ADDRESS },
-  { label: 'Empty Account (GNEW...)', address: 'GNEWADDRESSWITHNOCOMMITMENTSHISTORY123456789012345678' }
-const PRESETS = [
   {
     label: 'Issuer Demo (GAJK...)',
     address: 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
@@ -166,170 +157,6 @@ const PRESETS = [
   },
 ];
 
-const DashboardCommitmentRow: React.FC<{ commitment: Commitment; activeAddress: string; formatDate: (ts: number) => string }> = ({ commitment, activeAddress, formatDate }) => {
-  const realtime = useStore(state => state.getRealtimeCommitment(commitment.id));
-  const c = { ...commitment, ...realtime };
-  const isIssuer = c.issuer === activeAddress;
-  const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
-
-  return (
-    <tr
-      style={{
-        borderBottom: '1px solid #f1f5f9',
-        transition: 'background 0.15s ease',
-      }}
-    >
-      <td style={{ padding: '18px 24px', fontWeight: '800', color: '#0f172a' }}>
-        #{c.id}
-      </td>
-      <td style={{ padding: '18px 24px' }}>
-        <span
-          style={{
-            padding: '4px 10px',
-            borderRadius: '6px',
-            fontSize: '11px',
-            fontWeight: '800',
-            background: isIssuer ? '#e0e7ff' : '#f1f5f9',
-            color: isIssuer ? '#3730a3' : '#475569',
-            border: isIssuer ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
-          }}
-        >
-          {isIssuer ? 'Issuer' : 'Counterparty'}
-        </span>
-      </td>
-      <td style={{ padding: '18px 24px' }}>
-        <UserProfile
-          address={counterpartyAddr}
-          avatarSize={24}
-          showDomain={false}
-        />
-      </td>
-      <td
-        style={{ padding: '18px 24px', color: '#64748b', fontSize: '12px' }}
-        title={c.terms_hash}
-      >
-        {c.terms_hash.substring(0, 14)}...
-      </td>
-      <td
-        style={{
-          padding: '18px 24px',
-          color: '#0f172a',
-          fontFamily: 'sans-serif',
-          fontWeight: '600',
-        }}
-      >
-        {formatDate(c.due_at)}
-      </td>
-      <td style={{ padding: '18px 24px', fontFamily: 'sans-serif' }}>
-        {c.status === 'Fulfilled' && (
-          <span
-            style={{
-              padding: '4px 12px',
-              borderRadius: '100px',
-              fontSize: '12px',
-              fontWeight: '800',
-              background: '#dcfce7',
-              color: '#15803d',
-              border: '1px solid #bbf7d0',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: '#22c55e',
-              }}
-            ></span>
-            Fulfilled
-          </span>
-        )}
-        {c.status === 'Late' && (
-          <span
-            style={{
-              padding: '4px 12px',
-              borderRadius: '100px',
-              fontSize: '12px',
-              fontWeight: '800',
-              background: '#fef3c7',
-              color: '#b45309',
-              border: '1px solid #fde68a',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: '#f59e0b',
-              }}
-            ></span>
-            Late
-          </span>
-        )}
-        {c.status === 'Breached' && (
-          <span
-            style={{
-              padding: '4px 12px',
-              borderRadius: '100px',
-              fontSize: '12px',
-              fontWeight: '800',
-              background: '#ffe4e6',
-              color: '#be123c',
-              border: '1px solid #fecdd3',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: '#ef4444',
-              }}
-            ></span>
-            Breached
-          </span>
-        )}
-        {c.status === 'Pending' && (
-          <span
-            style={{
-              padding: '4px 12px',
-              borderRadius: '100px',
-              fontSize: '12px',
-              fontWeight: '800',
-              background: '#f1f5f9',
-              color: '#475569',
-              border: '1px solid #e2e8f0',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <span
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: '#94a3b8',
-              }}
-            ></span>
-            Pending
-          </span>
-        )}
-      </td>
-    </tr>
-  );
-};
-
 export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   initialAddress = BASE_ADDRESS_1,
   onNavigateAddress,
@@ -343,7 +170,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
 
   // Pagination & Data State
-  const [commitments, setCommitments] = useState<Commitment[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -390,49 +216,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   }, [initialAddress, activeAddress]);
 
   const triggerAddressChange = useCallback((addr: string) => {
-    setIsLoading(true);
-    setActiveAddress(addr);
-    setSearchQuery(addr);
-
-    // If power user address preset is selected, populate power user dataset
-    if (addr === POWER_USER_ADDRESS) {
-      const generated = generateLargeDataset(500, POWER_USER_ADDRESS);
-      setCommitmentsState(generated);
-      dynamicSizeCacheRef.current.clear();
-      lastCacheSizeRef.current = 0;
-      setCachedCount(0);
-    } else if (!externalCommitments) {
-      // Revert to demo commitments
-      setCommitmentsState(DEMO_COMMITMENTS);
-    }
-
-    if (onNavigateAddress) {
-      onNavigateAddress(addr);
-    }
-    setTimeout(() => {
-      setIsLoading(false);
-    }, 150);
-  }, [externalCommitments, onNavigateAddress]);
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-    triggerAddressChange(searchQuery.trim());
-  };
-
-  // Filter commitments based on active address and status
-  const addressCommitments = useMemo(() => {
-    return commitmentsState.filter(
-      (c) => c.issuer === activeAddress || c.counterparty === activeAddress
-    );
-  }, [commitmentsState, activeAddress]);
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-    triggerAddressChange(searchQuery.trim());
-  };
-
-  const triggerAddressChange = (addr: string) => {
     abortRef.current?.abort();
     setIsLoading(true);
     setActiveAddress(addr);
@@ -440,12 +223,29 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     setReputation(null);
     setReputationIntegrity(null);
     setSecurityWarning(null);
-    setCommitments([]);
+    setCommitmentsState([]);
     setPage(1);
     setHasMore(true);
+
+    if (addr === POWER_USER_ADDRESS) {
+      const generated = generateLargeDataset(500, POWER_USER_ADDRESS);
+      setCommitmentsState(generated);
+      dynamicSizeCacheRef.current.clear();
+      lastCacheSizeRef.current = 0;
+      setCachedCount(0);
+    } else if (!externalCommitments) {
+      setCommitmentsState(DEMO_COMMITMENTS);
+    }
+
     if (onNavigateAddress) {
       onNavigateAddress(addr);
     }
+  }, [externalCommitments, onNavigateAddress]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    triggerAddressChange(searchQuery.trim());
   };
 
   const loadCommitments = React.useCallback(
@@ -459,7 +259,17 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       const data = await fetchCommitments(filters, signal);
 
       if (signal?.aborted) return;
-      setCommitments((prev) => (isAppend ? [...prev, ...data] : data));
+      const mapped: CommitmentItem[] = data.map((c) => ({
+        id: c.id,
+        issuer: c.issuer,
+        counterparty: c.counterparty,
+        terms_hash: c.terms_hash,
+        due_at: c.due_at,
+        status: c.status as CommitmentItem['status'],
+        created_at: (c as any).created_at ?? Math.floor(Date.now() / 1000),
+        attested_at: null,
+      }));
+      setCommitmentsState((prev) => (isAppend ? [...prev, ...mapped] : mapped));
       setHasMore(data.length === itemsPerPage);
       return data;
     },
@@ -468,104 +278,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
   const loadMore = React.useCallback(async () => {
     if (isLoading || isFetchingRef.current || !hasMore) return;
-
-  const fulfillmentRate = totalCount > 0 ? Math.round((fulfilledCount / totalCount) * 100) : 0;
-  const strokeDashoffset = 226 - (226 * fulfillmentRate) / 100;
-
-  const filteredCommitments = useMemo(() => {
-    return addressCommitments.filter((c) => {
-      if (statusFilter === 'All') return true;
-      return c.status === statusFilter;
-    });
-  }, [addressCommitments, statusFilter]);
-
-  /**
-   * Deterministic dynamic size estimator:
-   * Uses cached measurement if available; otherwise computes an accurate baseline
-   * based on card attributes, description character length, and expanded state.
-   */
-  const estimateItemSize = useCallback((index: number) => {
-    const item = filteredCommitments[index];
-    if (!item) return 120;
-
-    const cached = dynamicSizeCacheRef.current.get(item.id);
-    if (cached !== undefined && cached > 0) {
-      return cached;
-    }
-
-    // Dynamic heuristic baseline
-    let estimate = 110;
-    if (item.description) {
-      // Estimate extra height based on text wrapping (~60 chars per line at 13.5px font)
-      const lines = Math.ceil(item.description.length / 60);
-      estimate += Math.max(0, (lines - 1) * 20);
-    }
-    if (expandedIds.has(item.id)) {
-      estimate += 120; // Extra expanded details drawer
-    }
-    return estimate;
-  }, [filteredCommitments, expandedIds]);
-
-  /**
-   * Scroll anchoring is delegated to the virtualizer: TanStack Virtual's
-   * measurement cache automatically compensates the scroll offset whenever an
-   * item located ABOVE the current viewport changes its measured height, so no
-   * manual scrollTop arithmetic is required (and no state is set from refs,
-   * which would trigger an infinite render loop).
-   */
-
-  // TanStack Virtualizer Configuration
-  const rowVirtualizer = useVirtualizer({
-    count: filteredCommitments.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: estimateItemSize,
-    getItemKey: (index: number) => filteredCommitments[index]?.id ?? index,
-    overscan: 5,
-    measureElement: (element) => {
-      if (!element) return 0;
-      return element.getBoundingClientRect().height;
-    }
-  });
-
-  // Sync the metrics bar with the measurement cache only when its size changes
-  useEffect(() => {
-    const size = dynamicSizeCacheRef.current.size;
-    if (size !== lastCacheSizeRef.current) {
-      lastCacheSizeRef.current = size;
-      setCachedCount(size);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Toggle card expanded details (triggers dynamic resize)
-  const toggleExpand = useCallback((id: number) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
-
-  // Trigger an asynchronous height update on an item to verify scroll stability
-  const triggerAsyncUpdate = useCallback((id: number) => {
-    setCommitmentsState((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const asyncNote = `[Async Update @ ${new Date().toLocaleTimeString()}]: Verified Soroban quorum signature 0x${Math.random().toString(16).slice(2, 10)}. Transaction confirmed with 0 ms slippage.`;
-          const currentNotes = item.notes || [];
-          return {
-            ...item,
-            notes: [...currentNotes, asyncNote]
-          };
-        }
-        return item;
-      })
-    );
-  }, []);
     isFetchingRef.current = true;
     setIsFetchingMore(true);
     setFetchError(null);
@@ -581,7 +293,91 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       setIsFetchingMore(false);
       isFetchingRef.current = false;
     }
-  }, [page, hasMore, loadCommitments]);
+  }, [isLoading, hasMore, page, loadCommitments]);
+
+  const addressCommitments = useMemo(() => {
+    return commitmentsState.filter(
+      (c) => c.issuer === activeAddress || c.counterparty === activeAddress,
+    );
+  }, [commitmentsState, activeAddress]);
+
+  const filteredCommitments = useMemo(() => {
+    return addressCommitments.filter((c) => {
+      if (statusFilter === 'All') return true;
+      return c.status === statusFilter;
+    });
+  }, [addressCommitments, statusFilter]);
+
+  const estimateItemSize = useCallback(
+    (index: number) => {
+      const item = filteredCommitments[index];
+      if (!item) return 120;
+
+      const cached = dynamicSizeCacheRef.current.get(item.id);
+      if (cached !== undefined && cached > 0) {
+        return cached;
+      }
+
+      let estimate = 110;
+      if (item.description) {
+        const lines = Math.ceil(item.description.length / 60);
+        estimate += Math.max(0, (lines - 1) * 20);
+      }
+      if (expandedIds.has(item.id)) {
+        estimate += 120;
+      }
+      return estimate;
+    },
+    [filteredCommitments, expandedIds],
+  );
+
+  const rowVirtualizer = useVirtualizer({
+    count: filteredCommitments.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: estimateItemSize,
+    getItemKey: (index: number) => filteredCommitments[index]?.id ?? index,
+    overscan: 5,
+    measureElement: (element) => {
+      if (!element) return 0;
+      return element.getBoundingClientRect().height;
+    },
+  });
+
+  useEffect(() => {
+    const size = dynamicSizeCacheRef.current.size;
+    if (size !== lastCacheSizeRef.current) {
+      lastCacheSizeRef.current = size;
+      setCachedCount(size);
+    }
+  }, []);
+
+  const toggleExpand = useCallback((id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const triggerAsyncUpdate = useCallback((id: number) => {
+    setCommitmentsState((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const asyncNote = `[Async Update @ ${new Date().toLocaleTimeString()}]: Verified Soroban quorum signature 0x${Math.random().toString(16).slice(2, 10)}. Transaction confirmed with 0 ms slippage.`;
+          const currentNotes = item.notes || [];
+          return {
+            ...item,
+            notes: [...currentNotes, asyncNote],
+          };
+        }
+        return item;
+      }),
+    );
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -602,7 +398,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           if (verifiedResult.integrity === 'verified') {
             await loadCommitments(1, false, signal);
           } else {
-            setCommitments([]);
+            setCommitmentsState([]);
             setHasMore(false);
           }
         }
@@ -781,8 +577,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         </form>
 
         {/* Quick Preset Pills */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #f1f5f9', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '11px', fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quick Presets:</span>
         <div
           style={{
             display: 'flex',
@@ -805,10 +599,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             Quick Presets:
           </span>
           {PRESETS.map((preset) => (
-            <PresetButton
+            <button
               key={preset.address}
-              preset={preset}
-              isActive={activeAddress === preset.address}
               onClick={() => triggerAddressChange(preset.address)}
               style={{
                 fontSize: '12px',
@@ -1013,9 +805,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           ))}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px', marginBottom: '24px' }}>
-
-          {/* Total Commitments Card */}
         <div
           style={{
             display: 'grid',
@@ -1257,37 +1046,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       )}
 
       {/* ── Deterministic DOM Virtualized Commitment Histories ── */}
-      <div style={{
-        background: '#ffffff',
-        border: '1.5px solid #e2e8f0',
-        borderRadius: '24px',
-        overflow: 'hidden',
-        boxShadow: '0 4px 20px -2px rgba(0,0,0,0.04)',
-        marginBottom: '32px'
-      }}>
-        {/* Header with Title and Filter Tabs */}
-        <div style={{ padding: '22px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>Associated Commitments</h3>
-              <span style={{
-                fontSize: '11px',
-                fontWeight: '800',
-                padding: '2px 8px',
-                borderRadius: '6px',
-                background: '#e0e7ff',
-                color: '#4338ca',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}>
-                <Layers size={12} />
-                Virtualized
-              </span>
-            </div>
-            <p style={{ fontSize: '13px', color: '#64748b', margin: '3px 0 0 0' }}>
-              Deterministic DOM virtualization for unlimited commitment histories
-      {/* ── Associated Commitments Table ── */}
+      {/* ── Associated Commitments ── */}
       <div
         style={{
           background: 'rgba(255, 255, 255, 0.6)',
@@ -1297,6 +1056,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           borderRadius: '24px',
           overflow: 'hidden',
           boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
+          marginBottom: '32px',
         }}
       >
         {fetchError && (
@@ -1326,20 +1086,33 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           }}
         >
           <div>
-            <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-              Associated Commitments
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                Associated Commitments
+              </h3>
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: '800',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  background: '#e0e7ff',
+                  color: '#4338ca',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Layers size={12} />
+                Virtualized
+              </span>
+            </div>
             <p style={{ fontSize: '13px', color: '#64748b', margin: '3px 0 0 0' }}>
               Activity history as issuer or counterparty
             </p>
           </div>
 
           {/* Filter Tabs */}
-          <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-            {['All', 'Fulfilled', 'Late', 'Breached', 'Pending', 'Disputed'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setStatusFilter(tab)}
           <div
             style={{
               display: 'flex',
@@ -1350,7 +1123,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
               border: '1px solid #e2e8f0',
             }}
           >
-            {['All', 'Fulfilled', 'Late', 'Breached', 'Pending'].map((tab) => (
+            {['All', 'Fulfilled', 'Late', 'Breached', 'Pending', 'Disputed'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => {
@@ -1404,10 +1177,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
           </div>
         </div>
 
-        {/* Empty State Requirement */}
-        {filteredCommitments.length === 0 ? (
         {/* Empty State Requirement: "No commitments found for this address" */}
-        {commitments.length === 0 && !isLoading ? (
+        {filteredCommitments.length === 0 && !isLoading ? (
           <div style={{ padding: '72px 24px', textAlign: 'center' }}>
             <div
               style={{
@@ -1431,8 +1202,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             >
               No commitments found for this address
             </h4>
-            <p style={{ fontSize: '13.5px', color: '#64748b', maxWidth: '400px', margin: '0 auto 22px auto' }}>
-              This account currently has no registered commitment activity matching this filter on Pactum Stellar Testnet.
             <p
               style={{
                 fontSize: '13.5px',
@@ -1561,94 +1330,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                         {/* Status Badge & Expand Action */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           {c.status === 'Fulfilled' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <ShieldCheck size={14} color="#16a34a" />
-          <div>
-            <div style={{ overflowX: 'auto' }}>
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse: 'collapse',
-                  textAlign: 'left',
-                  fontSize: '13px',
-                }}
-              >
-                <thead>
-                  <tr
-                    style={{
-                      background: 'transparent',
-                      borderBottom: '1px solid rgba(0,0,0,0.05)',
-                      color: '#86868b',
-                      fontWeight: '700',
-                      fontSize: '11px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    <th style={{ padding: '16px 24px' }}>ID</th>
-                    <th style={{ padding: '16px 24px' }}>Role</th>
-                    <th style={{ padding: '16px 24px' }}>Counterparty</th>
-                    <th style={{ padding: '16px 24px' }}>Terms Hash</th>
-                    <th style={{ padding: '16px 24px' }}>Due Date</th>
-                    <th style={{ padding: '16px 24px' }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody style={{ fontFamily: 'monospace' }}>
-                  {commitments.map((c) => {
-                    const isIssuer = c.issuer === activeAddress;
-                    const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
-
-                    return (
-                      <tr
-                        key={c.id}
-                        style={{
-                          borderBottom: '1px solid #f1f5f9',
-                          transition: 'background 0.15s ease',
-                        }}
-                      >
-                        <td style={{ padding: '18px 24px', fontWeight: '800', color: '#0f172a' }}>
-                          #{c.id}
-                        </td>
-                        <td style={{ padding: '18px 24px' }}>
-                          <span
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              fontWeight: '800',
-                              background: isIssuer ? '#e0e7ff' : '#f1f5f9',
-                              color: isIssuer ? '#3730a3' : '#475569',
-                              border: isIssuer ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
-                            }}
-                          >
-                            {isIssuer ? 'Issuer' : 'Counterparty'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '18px 24px' }}>
-                          <UserProfile
-                            address={counterpartyAddr}
-                            avatarSize={24}
-                            showDomain={false}
-                          />
-                        </td>
-                        <td
-                          style={{ padding: '18px 24px', color: '#64748b', fontSize: '12px' }}
-                          title={c.terms_hash}
-                        >
-                          {c.terms_hash.substring(0, 14)}...
-                        </td>
-                        <td
-                          style={{
-                            padding: '18px 24px',
-                            color: '#0f172a',
-                            fontFamily: 'sans-serif',
-                            fontWeight: '600',
-                          }}
-                        >
-                          {formatDate(c.due_at)}
-                        </td>
-                        <td style={{ padding: '18px 24px', fontFamily: 'sans-serif' }}>
-                          {c.status === 'Fulfilled' && (
                             <span
                               style={{
                                 padding: '4px 12px',
@@ -1675,8 +1356,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                             </span>
                           )}
                           {c.status === 'Late' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <Clock size={14} color="#f59e0b" />
                             <span
                               style={{
                                 padding: '4px 12px',
@@ -1703,8 +1382,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                             </span>
                           )}
                           {c.status === 'Breached' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#ffe4e6', color: '#be123c', border: '1px solid #fecdd3', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <AlertTriangle size={14} color="#ef4444" />
                             <span
                               style={{
                                 padding: '4px 12px',
@@ -1863,52 +1540,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                   </div>
                 );
               })}
-                            <span
-                              style={{
-                                padding: '4px 12px',
-                                borderRadius: '100px',
-                                fontSize: '12px',
-                                fontWeight: '800',
-                                background: '#f1f5f9',
-                                color: '#475569',
-                                border: '1px solid #e2e8f0',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                              }}
-                            >
-                              <span
-                                style={{
-                                  width: '6px',
-                                  height: '6px',
-                                  borderRadius: '50%',
-                                  background: '#94a3b8',
-                                }}
-                              ></span>
-                              Pending
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div ref={bottomRef} style={{ height: '20px' }}>
-              {isFetchingMore && (
-                <div
-                  style={{
-                    textAlign: 'center',
-                    padding: '16px',
-                    fontSize: '13px',
-                    color: '#64748b',
-                    fontWeight: '500',
-                  }}
-                >
-                  Loading more commitments...
-                </div>
-              )}
             </div>
           </div>
         )}

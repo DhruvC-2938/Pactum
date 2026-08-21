@@ -90,7 +90,7 @@ function channelToPeerLink(channel: RTCDataChannel): PeerLink {
 
   return {
     send(bytes) {
-      if (channel.readyState === 'open') channel.send(bytes)
+      if (channel.readyState === 'open') channel.send(bytes as any)
     },
     onMessage(handler) {
       messageHandlers.add(handler)

@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import type { CommitmentStatus } from '@/lib/api';
+import { useSyncExternalStore } from 'react';
+import type { CommitmentStatus } from '../lib/api';
 
 export type CommitmentOutcomeName = 'fulfilled' | 'late' | 'breached';
 
@@ -12,12 +12,12 @@ export interface ContractEvent {
   outcome?: CommitmentOutcomeName;
 }
 
-interface RealtimeCommitmentState {
+export interface RealtimeCommitmentState {
   status?: CommitmentStatus;
   outcome?: CommitmentStatus | null;
 }
 
-interface StoreState {
+export interface StoreState {
   // commitmentId -> RealtimeCommitmentState
   realtimeCommitments: Record<string, RealtimeCommitmentState>;
   // track last processed sequence to deduplicate events
@@ -36,18 +36,29 @@ const mapOutcomeToStatus = (outcome?: CommitmentOutcomeName): CommitmentStatus |
   }
 };
 
-export const useStore = create<StoreState>((set, get) => ({
+let state: StoreState;
+const listeners = new Set<() => void>();
+
+function setState(updater: (prev: StoreState) => Partial<StoreState>) {
+  state = { ...state, ...updater(state) };
+  listeners.forEach((l) => l());
+}
+
+function getState(): StoreState {
+  return state;
+}
+
+state = {
   realtimeCommitments: {},
   lastProcessedSequence: 0,
   
-  applyEvent: (event) => set((state) => {
-    if (event.sequence && event.sequence <= state.lastProcessedSequence) {
-      // Deduplicate old events or repeat events
-      return state;
+  applyEvent: (event) => setState((prev) => {
+    if (event.sequence && event.sequence <= prev.lastProcessedSequence) {
+      return prev;
     }
     
     const commitmentIdStr = event.commitmentId.toString();
-    const current = state.realtimeCommitments[commitmentIdStr] || {};
+    const current = prev.realtimeCommitments[commitmentIdStr] || {};
     
     let nextStatus = current.status;
     let nextOutcome = current.outcome;
@@ -62,23 +73,35 @@ export const useStore = create<StoreState>((set, get) => ({
         nextOutcome = nextStatus;
         break;
       case 'disputed':
-        nextStatus = 'Pending'; // 'Disputed' isn't explicitly in CommitmentStatus enum based on current UI, wait, api.ts says 'Pending' | 'Fulfilled' | 'Late' | 'Breached'
-        // Actually, status could be something else if disputed, but we'll leave it
+        nextStatus = 'Pending';
         break;
     }
     
     return {
       realtimeCommitments: {
-        ...state.realtimeCommitments,
+        ...prev.realtimeCommitments,
         [commitmentIdStr]: {
           ...current,
           status: nextStatus,
           outcome: nextOutcome,
         }
       },
-      lastProcessedSequence: event.sequence ? Math.max(state.lastProcessedSequence, event.sequence) : state.lastProcessedSequence,
+      lastProcessedSequence: event.sequence ? Math.max(prev.lastProcessedSequence, event.sequence) : prev.lastProcessedSequence,
     };
   }),
 
-  getRealtimeCommitment: (id) => get().realtimeCommitments[id.toString()],
-}));
+  getRealtimeCommitment: (id) => state.realtimeCommitments[id.toString()],
+};
+
+export function useStore<T = StoreState>(selector: (s: StoreState) => T = (s) => s as unknown as T): T {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      listeners.add(onStoreChange);
+      return () => listeners.delete(onStoreChange);
+    },
+    () => selector(state),
+    () => selector(state),
+  );
+}
+
+useStore.getState = getState;
