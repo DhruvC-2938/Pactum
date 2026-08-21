@@ -457,6 +457,16 @@ fn setup_test_with_arbitrator() -> (
     let (env, client, issuer, counterparty, resolver) = setup_test();
     let arbitrator = Address::generate(&env);
     client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    let token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    client.set_dispute_token(&arbitrator, &token);
+    soroban_sdk::token::StellarAssetClient::new(&env, &token)
+        .mint(&issuer, &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10));
+    soroban_sdk::token::StellarAssetClient::new(&env, &token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
     (env, client, issuer, counterparty, resolver)
 }
 
@@ -478,6 +488,18 @@ fn setup_test_with_arbitrators(
         arbitrators.push_back(Address::generate(&env));
     }
     client.initialize(&arbitrators);
+    if let Some(arb) = arbitrators.first() {
+        let token = env
+            .register_stellar_asset_contract_v2(arb.clone())
+            .address();
+        client.set_dispute_token(&arb, &token);
+        soroban_sdk::token::StellarAssetClient::new(&env, &token)
+            .mint(&issuer, &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10));
+        soroban_sdk::token::StellarAssetClient::new(&env, &token).mint(
+            &counterparty,
+            &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+        );
+    }
     (env, client, arbitrators, issuer, counterparty, resolver)
 }
 
@@ -649,6 +671,15 @@ fn test_dispute_fails_if_caller_not_issuer_or_counterparty() {
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
     let stranger = Address::generate(&env);
+    let token: Address = env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .get(&crate::commitments::DataKey::DisputeToken)
+            .unwrap()
+    });
+    soroban_sdk::token::StellarAssetClient::new(&env, &token)
+        .mint(&stranger, &crate::commitments::DISPUTE_STAKE_AMOUNT);
+
     let res = client.try_dispute(&stranger, &id);
     assert_eq!(res, Err(Ok(Error::Unauthorized.into())));
 }
@@ -1450,6 +1481,12 @@ fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
     let attacker_client = AttackerGateClient::new(&env, &attacker_id);
 
     client.initialize(&soroban_sdk::vec![&env, attacker_id.clone()]);
+    let token = env
+        .register_stellar_asset_contract_v2(attacker_id.clone())
+        .address();
+    client.set_dispute_token(&attacker_id, &token);
+    soroban_sdk::token::StellarAssetClient::new(&env, &token)
+        .mint(&counterparty, &crate::commitments::DISPUTE_STAKE_AMOUNT);
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let id = client.create_commitment(
@@ -2598,4 +2635,153 @@ fn gas_benchmark_create_and_attest() {
         "attest: instructions={} write_bytes={} mem_bytes={} total_fee={}",
         attest_res.instructions, attest_res.write_bytes, attest_res.mem_bytes, attest_fee.total
     );
+}
+
+// -----------------------------------------------------------------------------
+// Dispute slashing / stake escrow (Issue #15)
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_dispute_requires_stake_transfer() {
+    use soroban_sdk::token::{StellarAssetClient, TokenClient};
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(RegistryContract, ());
+    let client = RegistryContractClient::new(&env, &contract_id);
+    let issuer = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let resolver = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+
+    // Register a Stellar asset and configure it as the dispute token.
+    let token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    client.set_dispute_token(&arbitrator, &token);
+
+    // Mint dispute stake to the issuer (who will raise the dispute).
+    StellarAssetClient::new(&env, &token).mint(&issuer, &crate::commitments::DISPUTE_STAKE_AMOUNT);
+
+    // Create and attest a commitment.
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &2000,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
+    env.ledger().with_mut(|l| l.timestamp = 1500);
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+
+    // Raise a dispute — this should transfer the stake to the contract.
+    env.ledger().with_mut(|l| l.timestamp = 1600);
+    client.dispute(&issuer, &id);
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(
+        token_client.balance(&client.address),
+        crate::commitments::DISPUTE_STAKE_AMOUNT
+    );
+    assert_eq!(token_client.balance(&issuer), 0);
+}
+
+#[test]
+fn test_dispute_stake_released_to_winner_on_resolution() {
+    use soroban_sdk::token::{StellarAssetClient, TokenClient};
+
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(RegistryContract, ());
+    let client = RegistryContractClient::new(&env, &contract_id);
+    let issuer = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let resolver = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+
+    let token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    client.set_dispute_token(&arbitrator, &token);
+
+    // Mint tokens to counterparty (who will dispute).
+    StellarAssetClient::new(&env, &token)
+        .mint(&counterparty, &crate::commitments::DISPUTE_STAKE_AMOUNT);
+
+    // Create, attest, dispute.
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &2000,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
+    env.ledger().with_mut(|l| l.timestamp = 1500);
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+    env.ledger().with_mut(|l| l.timestamp = 1600);
+    client.dispute(&counterparty, &id);
+
+    // Resolve as Fulfilled — issuer wins and receives the stake.
+    env.ledger().with_mut(|l| l.timestamp = 1700);
+    client.resolve_dispute(&resolver, &id, &CommitmentStatus::Fulfilled);
+
+    let token_client = TokenClient::new(&env, &token);
+    assert_eq!(
+        token_client.balance(&issuer),
+        crate::commitments::DISPUTE_STAKE_AMOUNT
+    );
+    assert_eq!(token_client.balance(&client.address), 0);
+}
+
+#[test]
+fn test_dispute_fails_without_dispute_token_set() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(RegistryContract, ());
+    let client = RegistryContractClient::new(&env, &contract_id);
+    let issuer = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let resolver = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+
+    // Do NOT call set_dispute_token.
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let id = client.create_commitment(
+        &issuer,
+        &counterparty,
+        &terms_hash,
+        &2000,
+        &resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
+    );
+    env.ledger().with_mut(|l| l.timestamp = 1500);
+    client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
+
+    // Dispute should fail because no dispute token is configured.
+    env.ledger().with_mut(|l| l.timestamp = 1600);
+    let res = client.try_dispute(&counterparty, &id);
+    assert_eq!(res, Err(Ok(Error::DisputeTokenNotSet.into())));
 }

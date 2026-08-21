@@ -364,3 +364,4 @@ export class SorobanClient {
     return new Account(this.keypair.publicKey(), '0');
   }
 }
+

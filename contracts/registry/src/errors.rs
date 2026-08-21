@@ -89,8 +89,12 @@ pub enum Error {
     /// can be read or mutated.  Callers should submit a `RestoreFootprint`
     /// operation — or invoke `restore_reputation` — and retry.
     ReputationArchived = 39,
+    /// No dispute token has been configured for the registry.
+    DisputeTokenNotSet = 40,
+    /// The dispute stake amount must be greater than zero.
+    InvalidDisputeStakeAmount = 41,
     /// Forced inclusion was attempted before the rollup challenge window elapsed.
-    RollupChallengePending = 40,
+    RollupChallengePending = 42,
     /// The provided Merkle proof does not resolve to the expected batch root.
-    RollupProofInvalid = 41,
+    RollupProofInvalid = 43,
 }
