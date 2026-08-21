@@ -17,11 +17,14 @@ export class PostgresReputationRepository implements ReputationRepository {
 
   async findByAddress(address: string): Promise<Reputation | null> {
     const result = await this.pool.query<ReputationRow>(
-      `SELECT address, trust_score, total_commitments, fulfilled_commitments,
-              late_commitments, breached_commitments, fulfillment_rate, time
-       FROM trust_score_snapshots
+      `SELECT address, avg_score as trust_score, total_count as total_commitments, 
+              fulfilled_count as fulfilled_commitments, late_count as late_commitments, 
+              breached_count as breached_commitments, fulfillment_rate_pct as fulfillment_rate,
+              bucket as time
+       FROM reputation_snapshots_daily
+       JOIN mv_trust_score_trends_cagg USING (address, bucket)
        WHERE address = $1
-       ORDER BY time DESC
+       ORDER BY bucket DESC
        LIMIT 1`,
       [address],
     );

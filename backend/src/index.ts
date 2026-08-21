@@ -13,10 +13,12 @@ import { createOpenApiRouter } from './openapi/openapi';
 import { requestLogger } from './middleware/requestLogger';
 import { logger } from './logger/logger';
 import client from 'prom-client';
-import { startSnapshotCron, startTtlMonitorCron, createTtlRpcClient } from './indexer/cron';
+import { startTtlMonitorCron, createTtlRpcClient } from './indexer/cron';
 import { SorobanClient } from './soroban/client';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
+
+import { WebSocketService } from './ws/WebSocketService';
 
 dotenv.config();
 const app = express();
@@ -169,7 +171,9 @@ app.get('/metrics', async (req: Request, res: Response) => {
 });
 
 if (process.env.INDEXER_ENABLED !== 'off') {
-  startSnapshotCron();
+  // NOTE: Legacy startSnapshotCron() removed — reputation snapshots are now
+  // handled natively by TimescaleDB Continuous Aggregate refresh policies
+  // (see migration 007_continuous_aggregates.sql).
 
   // ── Soroban State Archival / TTL Monitor (Issue #58) ──────────────────
   // Proactively bumps the TTL of high-value reputation entries before they
@@ -188,16 +192,19 @@ if (process.env.INDEXER_ENABLED !== 'off') {
 }
 
 let server: ReturnType<typeof app.listen>;
+let wsService: WebSocketService | undefined;
 
 async function init() {
   server = app.listen(port, () => {
     logger.info(`Server running on port ${port}`, { port, metricsPort });
+    wsService = new WebSocketService(server);
   });
 }
 
 init();
 
 export const stop = async () => {
+  wsService?.close();
   server?.close();
 };
 export default app;
