@@ -775,6 +775,30 @@ impl RegistryContract {
         staking::set_staking_token(&env, caller, token);
     }
 
+    /// Configures the token used for dispute staking. One-time setup by arbitrator.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `caller` must be a member of the arbitrator set.
+    ///
+    /// # Panics
+    /// * `Error::NotArbitrator` if caller is not in the arbitrator set.
+    /// * `Error::AlreadyInitialized` if a dispute token is already configured.
+    pub fn set_dispute_token(env: Env, caller: Address, token: Address) {
+        caller.require_auth();
+        let arbitrators = crate::commitments::arbitrators(&env);
+        if !arbitrators.contains(&caller) {
+            panic_with_error!(env, Error::NotArbitrator);
+        }
+        if env.storage().instance().has(&DataKey::DisputeToken) {
+            panic_with_error!(env, Error::AlreadyInitialized);
+        }
+        env.storage().instance().set(&DataKey::DisputeToken, &token);
+        env.storage().instance().extend_ttl(
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
+    }
+
     /// Locks `amount` of the staking token from the attestor into the registry vault.
     ///
     /// # Authorization
