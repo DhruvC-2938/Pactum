@@ -168,11 +168,11 @@ function __wbg_get_imports() {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbg_new_32b398fb48b6d94a: function() {
-            const ret = new Array();
+            const ret = [];
             return addHeapObject(ret);
         },
         __wbg_new_da52cf8fe3429cb2: function() {
-            const ret = new Object();
+            const ret = {};
             return addHeapObject(ret);
         },
         __wbg_set_6be42768c690e380: function(arg0, arg1, arg2) {

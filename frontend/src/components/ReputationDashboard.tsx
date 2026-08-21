@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import UserProfile from './UserProfile';
-import { fetchCommitments } from '../lib/api';
-import type { Reputation } from '../lib/api';
+import { fetchCommitments, type CommitmentFilters, type CommitmentStatus, type Reputation } from '../lib/api';
 import { fetchVerifiedReputation, type ReputationIntegrity } from '../lib/verifiedReputation';
 import {
-  AlertTriangle,
   ChevronDown,
   ChevronUp,
-  Activity,
   Layers,
   Sparkles,
 } from 'lucide-react';
@@ -19,7 +16,7 @@ export interface CommitmentItem {
   counterparty: string;
   terms_hash: string;
   due_at: number;
-  status: 'Fulfilled' | 'Late' | 'Breached' | 'Pending' | 'Disputed';
+  status: CommitmentStatus;
   created_at: number;
   attested_at: number | null;
   description?: string;
@@ -33,6 +30,17 @@ export interface ReputationDashboardProps {
   onLaunchCreate?: () => void;
   commitments?: CommitmentItem[];
 }
+
+const STATUS_CONFIG: Record<
+  CommitmentStatus,
+  { label: string; bg: string; color: string; border: string; dotColor: string }
+> = {
+  Fulfilled: { label: 'Fulfilled', bg: '#dcfce7', color: '#15803d', border: '#bbf7d0', dotColor: '#22c55e' },
+  Late: { label: 'Late', bg: '#fef3c7', color: '#b45309', border: '#fde68a', dotColor: '#f59e0b' },
+  Breached: { label: 'Breached', bg: '#ffe4e6', color: '#be123c', border: '#fecdd3', dotColor: '#ef4444' },
+  Pending: { label: 'Pending', bg: '#f1f5f9', color: '#475569', border: '#e2e8f0', dotColor: '#94a3b8' },
+  Disputed: { label: 'Disputed', bg: '#f3e8ff', color: '#7e22ce', border: '#e9d5ff', dotColor: '#a855f7' },
+};
 
 const BASE_ADDRESS_1 = 'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C';
 const BASE_ADDRESS_2 = 'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX';
@@ -216,6 +224,10 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   }, [initialAddress, activeAddress]);
 
   const triggerAddressChange = useCallback((addr: string) => {
+    if (addr === activeAddress && !isLoading) {
+      setSearchQuery(addr);
+      return;
+    }
     abortRef.current?.abort();
     setIsLoading(true);
     setActiveAddress(addr);
@@ -233,6 +245,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       dynamicSizeCacheRef.current.clear();
       lastCacheSizeRef.current = 0;
       setCachedCount(0);
+      setIsLoading(false);
     } else if (!externalCommitments) {
       setCommitmentsState(DEMO_COMMITMENTS);
     }
@@ -240,7 +253,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
     if (onNavigateAddress) {
       onNavigateAddress(addr);
     }
-  }, [externalCommitments, onNavigateAddress]);
+  }, [activeAddress, isLoading, externalCommitments, onNavigateAddress]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,9 +263,9 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
   const loadCommitments = React.useCallback(
     async (pageNum: number, isAppend = false, signal?: AbortSignal) => {
-      const filters: any = {
+      const filters: CommitmentFilters = {
         address: activeAddress,
-        status: statusFilter === 'All' ? undefined : statusFilter,
+        status: statusFilter === 'All' ? undefined : (statusFilter as CommitmentStatus),
         page: pageNum,
         limit: itemsPerPage,
       };
@@ -265,9 +278,9 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         counterparty: c.counterparty,
         terms_hash: c.terms_hash,
         due_at: c.due_at,
-        status: c.status as CommitmentItem['status'],
-        created_at: (c as any).created_at ?? Math.floor(Date.now() / 1000),
-        attested_at: null,
+        status: c.status,
+        created_at: c.created_at ?? Math.floor(Date.now() / 1000),
+        attested_at: c.attested_at ?? (c.status === 'Fulfilled' || c.status === 'Late' || c.status === 'Breached' ? c.due_at : null),
       }));
       setCommitmentsState((prev) => (isAppend ? [...prev, ...mapped] : mapped));
       setHasMore(data.length === itemsPerPage);
@@ -364,10 +377,11 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   }, []);
 
   const triggerAsyncUpdate = useCallback((id: number) => {
+    if (!import.meta.env.DEV) return;
     setCommitmentsState((prev) =>
       prev.map((item) => {
         if (item.id === id) {
-          const asyncNote = `[Async Update @ ${new Date().toLocaleTimeString()}]: Verified Soroban quorum signature 0x${Math.random().toString(16).slice(2, 10)}. Transaction confirmed with 0 ms slippage.`;
+          const asyncNote = `[Dev Note @ ${new Date().toLocaleTimeString()}]: Dynamic height change test for commitment #${id}.`;
           const currentNotes = item.notes || [];
           return {
             ...item,
@@ -388,18 +402,34 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       setIsLoading(true);
       setFetchError(null);
       try {
-        const verifiedResult = await fetchVerifiedReputation(activeAddress, signal);
+        // Demo addresses have no backend proof; skip verification and use placeholder reputation
+        const demoAddresses = [BASE_ADDRESS_1, BASE_ADDRESS_2, BASE_ADDRESS_3, BASE_ADDRESS_4];
+        if (demoAddresses.includes(activeAddress)) {
+          // Provide dummy reputation data for demo accounts
+          setReputation({
+            address: activeAddress,
+            fulfilled: 0,
+            late: 0,
+            breached: 0,
+            total: 0,
+          });
+          setReputationIntegrity('verified');
+          setSecurityWarning(null);
+          await loadCommitments(1, false, signal);
+        } else {
+          const verifiedResult = await fetchVerifiedReputation(activeAddress, signal);
 
-        if (!signal.aborted) {
-          setReputation(verifiedResult.reputation);
-          setReputationIntegrity(verifiedResult.integrity);
-          setSecurityWarning(verifiedResult.warning ?? null);
+          if (!signal.aborted) {
+            setReputation(verifiedResult.reputation);
+            setReputationIntegrity(verifiedResult.integrity);
+            setSecurityWarning(verifiedResult.warning ?? null);
 
-          if (verifiedResult.integrity === 'verified') {
-            await loadCommitments(1, false, signal);
-          } else {
-            setCommitmentsState([]);
-            setHasMore(false);
+            if (verifiedResult.integrity === 'verified') {
+              await loadCommitments(1, false, signal);
+            } else {
+              setCommitmentsState([]);
+              setHasMore(false);
+            }
           }
         }
       } catch (error: any) {
@@ -1329,99 +1359,35 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
                         {/* Status Badge & Expand Action */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {c.status === 'Fulfilled' && (
+                          <span
+                            style={{
+                              padding: '4px 12px',
+                              borderRadius: '100px',
+                              fontSize: '12px',
+                              fontWeight: '800',
+                              background: (STATUS_CONFIG[c.status] || STATUS_CONFIG.Pending).bg,
+                              color: (STATUS_CONFIG[c.status] || STATUS_CONFIG.Pending).color,
+                              border: `1px solid ${(STATUS_CONFIG[c.status] || STATUS_CONFIG.Pending).border}`,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
                             <span
                               style={{
-                                padding: '4px 12px',
-                                borderRadius: '100px',
-                                fontSize: '12px',
-                                fontWeight: '800',
-                                background: '#dcfce7',
-                                color: '#15803d',
-                                border: '1px solid #bbf7d0',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                background: (STATUS_CONFIG[c.status] || STATUS_CONFIG.Pending).dotColor,
                               }}
-                            >
-                              <span
-                                style={{
-                                  width: '6px',
-                                  height: '6px',
-                                  borderRadius: '50%',
-                                  background: '#22c55e',
-                                }}
-                              ></span>
-                              Fulfilled
-                            </span>
-                          )}
-                          {c.status === 'Late' && (
-                            <span
-                              style={{
-                                padding: '4px 12px',
-                                borderRadius: '100px',
-                                fontSize: '12px',
-                                fontWeight: '800',
-                                background: '#fef3c7',
-                                color: '#b45309',
-                                border: '1px solid #fde68a',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                              }}
-                            >
-                              <span
-                                style={{
-                                  width: '6px',
-                                  height: '6px',
-                                  borderRadius: '50%',
-                                  background: '#f59e0b',
-                                }}
-                              ></span>
-                              Late
-                            </span>
-                          )}
-                          {c.status === 'Breached' && (
-                            <span
-                              style={{
-                                padding: '4px 12px',
-                                borderRadius: '100px',
-                                fontSize: '12px',
-                                fontWeight: '800',
-                                background: '#ffe4e6',
-                                color: '#be123c',
-                                border: '1px solid #fecdd3',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                              }}
-                            >
-                              <span
-                                style={{
-                                  width: '6px',
-                                  height: '6px',
-                                  borderRadius: '50%',
-                                  background: '#ef4444',
-                                }}
-                              ></span>
-                              Breached
-                            </span>
-                          )}
-                          {c.status === 'Pending' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <Activity size={14} color="#94a3b8" />
-                              Pending
-                            </span>
-                          )}
-                          {c.status === 'Disputed' && (
-                            <span style={{ padding: '4px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: '800', background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <AlertTriangle size={14} color="#a855f7" />
-                              Disputed
-                            </span>
-                          )}
+                            />
+                            {(STATUS_CONFIG[c.status] || STATUS_CONFIG.Pending).label}
+                          </span>
 
                           <button
                             onClick={() => toggleExpand(c.id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={`commitment-details-${c.id}`}
                             style={{
                               background: '#f8fafc',
                               border: '1px solid #e2e8f0',
@@ -1433,7 +1399,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                               fontSize: '11.5px',
                               fontWeight: '700',
                               color: '#475569',
-                              cursor: 'pointer'
+                              cursor: 'pointer',
                             }}
                             title={isExpanded ? 'Collapse card details' : 'Expand card details'}
                           >
@@ -1480,38 +1446,43 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                         </div>
 
                         {/* Test action to simulate async height shift and prove scroll position stability */}
-                        <button
-                          onClick={() => triggerAsyncUpdate(c.id)}
-                          style={{
-                            background: 'transparent',
-                            border: '1px dashed #cbd5e1',
-                            borderRadius: '6px',
-                            padding: '3px 8px',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            color: '#6366f1',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                          title="Simulates asynchronous height changes above viewport to verify scroll anchoring"
-                        >
-                          <Sparkles size={11} />
-                          Async Update Height
-                        </button>
+                        {import.meta.env.DEV && (
+                          <button
+                            onClick={() => triggerAsyncUpdate(c.id)}
+                            style={{
+                              background: 'transparent',
+                              border: '1px dashed #cbd5e1',
+                              borderRadius: '6px',
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              color: '#6366f1',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            title="Simulates asynchronous height changes above viewport to verify scroll anchoring"
+                          >
+                            <Sparkles size={11} />
+                            Dev: Test Async Height
+                          </button>
+                        )}
                       </div>
 
                       {/* Expanded Dynamic Details Drawer */}
                       {isExpanded && (
-                        <div style={{
-                          marginTop: '14px',
-                          padding: '14px',
-                          background: '#f8fafc',
-                          borderRadius: '12px',
-                          border: '1px solid #e2e8f0',
-                          animation: 'fadeIn 0.15s ease'
-                        }}>
+                        <div
+                          id={`commitment-details-${c.id}`}
+                          style={{
+                            marginTop: '14px',
+                            padding: '14px',
+                            background: '#f8fafc',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0',
+                            animation: 'fadeIn 0.15s ease'
+                          }}
+                        >
                           <div style={{ fontSize: '11.5px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
                             Cryptographic Terms & Audit Log
                           </div>

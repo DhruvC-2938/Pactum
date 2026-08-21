@@ -71,9 +71,10 @@ export function verifyAttestation(attestation: Attestation, now = Date.now()): b
       attestation.expiresAt,
     )
     const pub = Keypair.fromPublicKey(attestation.address)
-    // `verifyMessage` (SEP-53) accepts any Uint8Array at runtime — it does its own
-    // `Buffer.from(data)` internally — the `Buffer` param type is just its TS signature.
-    return pub.verifyMessage(payload, attestation.walletSignature as any)
+    // `verifyMessage` (SEP-53) accepts Uint8Array data and signature at runtime.
+    // The typed adapter isolates the BufferSource -> SDK parameter compatibility.
+    const signature = attestation.walletSignature as unknown as Parameters<typeof pub.verifyMessage>[1]
+    return pub.verifyMessage(payload, signature)
   } catch {
     return false
   }

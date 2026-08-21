@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, useRef } from 'react';
 import type { CommitmentStatus } from '../lib/api';
 
 export type CommitmentOutcomeName = 'fulfilled' | 'late' | 'breached';
@@ -39,8 +39,19 @@ const mapOutcomeToStatus = (outcome?: CommitmentOutcomeName): CommitmentStatus |
 let state: StoreState;
 const listeners = new Set<() => void>();
 
-function setState(updater: (prev: StoreState) => Partial<StoreState>) {
-  state = { ...state, ...updater(state) };
+function subscribe(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  return () => {
+    listeners.delete(onStoreChange);
+  };
+}
+
+function setState(updater: (prev: StoreState) => Partial<StoreState> | null | undefined) {
+  const partial = updater(state);
+  if (!partial || partial === state) {
+    return;
+  }
+  state = { ...state, ...partial };
   listeners.forEach((l) => l());
 }
 
@@ -54,7 +65,8 @@ state = {
   
   applyEvent: (event) => setState((prev) => {
     if (event.sequence && event.sequence <= prev.lastProcessedSequence) {
-      return prev;
+      // Deduplicate old events or repeat events — signal no change
+      return null;
     }
     
     const commitmentIdStr = event.commitmentId.toString();
@@ -73,7 +85,7 @@ state = {
         nextOutcome = nextStatus;
         break;
       case 'disputed':
-        nextStatus = 'Pending';
+        nextStatus = 'Disputed';
         break;
     }
     
@@ -94,14 +106,19 @@ state = {
 };
 
 export function useStore<T = StoreState>(selector: (s: StoreState) => T = (s) => s as unknown as T): T {
-  return useSyncExternalStore(
-    (onStoreChange) => {
-      listeners.add(onStoreChange);
-      return () => listeners.delete(onStoreChange);
-    },
-    () => selector(state),
-    () => selector(state),
-  );
+  const lastStateRef = useRef(state);
+  const lastSelectedRef = useRef<T>(selector(state));
+
+  const getSnapshot = () => {
+    if (state !== lastStateRef.current) {
+      lastStateRef.current = state;
+      lastSelectedRef.current = selector(state);
+    }
+    return lastSelectedRef.current;
+  };
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 useStore.getState = getState;
+useStore.subscribe = subscribe;

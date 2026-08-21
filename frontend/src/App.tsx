@@ -313,6 +313,7 @@ export default function App() {
             <button
               className={`nav-item ${activePage === 'create' ? 'active' : ''}`}
               id="nav-create"
+              aria-label="Create Commitment navigation"
               onClick={() => {
                 setActivePage('create');
                 setIsMobileMenuOpen(false);
