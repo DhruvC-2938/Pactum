@@ -1,5 +1,11 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
+extern crate alloc;
+
+pub mod ast;
+
+pub use ast::*;
+
 /// The largest number of milestones a single commitment may be split into.
 pub const MAX_MILESTONES: u32 = 256;
 
