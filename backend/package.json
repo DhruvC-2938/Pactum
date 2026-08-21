@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "test": "npm run test:indexer",
-    "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src/indexer -type f -name '*.test.js' -exec node --test {} +",
+    "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src -type f -name '*.test.js' -exec node --test {} +",
     "analytics:worker": "node dist/workers/analyticsWorker.js",
     "migrate:timescale": "node -e \"require('./dist/db/timescale').runMigrations()\""
   },
@@ -19,6 +19,7 @@
     "@stellar/stellar-sdk": "^16.2.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "ethers": "^6.13.0",
     "express": "^5.2.1",
     "jose": "^5.2.2",
     "pg": "^8.23.0",
