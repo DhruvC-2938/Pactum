@@ -31,13 +31,96 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-test-
 
+      # The upgrade tests embed a compiled Wasm fixture in order to exercise a real
+      # executable swap, so the artifacts have to exist before the tests are compiled.
+      - name: Build Wasm artifacts for the upgrade tests
+        working-directory: contracts
+        run: cargo build --target wasm32-unknown-unknown --release
+
       - name: Run Soroban contract test suite
         working-directory: contracts
-        run: cargo test --workspace
+        run: cargo test --workspace --features registry/wasm-tests,timelock/wasm-tests
+
+  zk-tests:
+    name: ZK Circuit Tests
+    runs-on: ubuntu-latest
+    # Building circom from source dominates a cold run. The cap is here so a hang in
+    # the proving toolchain fails the job promptly instead of burning the default
+    # six-hour budget.
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Node 22.18+ runs the package's TypeScript sources directly, so there is no
+      # build step to keep in sync with the tests.
+      - name: Set up Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # circom is not published to npm, so it is built from source and cached — the
+      # circuit tests skip without it, and a skipped circuit test proves nothing.
+      - name: Cache circom binary
+        id: cache_circom
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/circom
+          key: ${{ runner.os }}-circom-2.2.3
+
+      - name: Build circom from source
+        if: steps.cache_circom.outputs.cache-hit != 'true'
+        run: cargo install --locked --git https://github.com/iden3/circom.git --tag v2.2.3 circom
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-zk-${{ hashFiles('zk/package-lock.json', 'zk/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-zk-
+
+      - name: Install zk dependencies
+        working-directory: zk
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Compile circuit and run the Groth16 setup
+        working-directory: zk
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          npm run build:circuit
+
+      - name: Run zk test suite
+        working-directory: zk
+        run: npm test
 
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pactum_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pactum_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pactum_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -54,11 +137,11 @@ jobs:
             echo "::notice title=Backend Skipped::backend/package.json is missing or empty. Skipping backend tests gracefully until backend phase begins."
           fi
 
-      - name: Set up Node.js 20.x (LTS)
+      - name: Set up Node.js 22.x (LTS)
         if: steps.check_backend.outputs.ready == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: '22.x'
 
       - name: Cache npm dependencies
         if: steps.check_backend.outputs.ready == 'true'
@@ -94,8 +177,8 @@ jobs:
             echo "No valid test script defined in backend/package.json yet. Skipping test execution."
           fi
 
-  frontend-tests:
-    name: Frontend Tests (Module Federation)
+  frontend-checks:
+    name: Frontend Checks
     runs-on: ubuntu-latest
 
     steps:
@@ -106,6 +189,91 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-frontend-node-${{ hashFiles('frontend/package-lock.json', 'frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-node-
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend linter
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run frontend e2e tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+  sdk-tests:
+    name: SDK Tests (@pactum/sdk)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.x (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-sdk-node-${{ hashFiles('sdk/js/package-lock.json', 'sdk/js/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-sdk-node-
+
+      - name: Install SDK dependencies
+        working-directory: sdk/js
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build SDK
+        working-directory: sdk/js
+        run: npm run build
+
+      - name: Run SDK tests
+        working-directory: sdk/js
+        run: npm test
+
+  frontend-tests:
+    name: Frontend Tests (Module Federation)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.x (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
 
       # The host and the two Module Federation remotes it loads at runtime (see
       # docs/module-federation.md) are independent npm projects, each installed separately.
@@ -129,24 +297,27 @@ jobs:
         working-directory: frontend-wizard-remote
         run: npm run build
 
+      # Not `npm run build`: that chains through `build:wasm`, which needs a Rust toolchain to
+      # regenerate src/wasm/pactum-validation/ via wasm-pack. This job doesn't set one up, and
+      # that output is already committed and current, so typecheck + bundle directly instead.
       - name: Typecheck and build host
         working-directory: frontend
-        run: npm run build
+        run: npx tsc -b && npx vite build
 
       - name: Install Playwright Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      # playwright.config.ts starts the host and both remotes' dev servers for the run (see its
-      # array `webServer` config) and tears them down afterwards.
-      - name: Run e2e tests
+      # playwright.module-federation.config.ts starts the host and both remotes (build + preview,
+      # not dev servers — see the config file's comments) and tears them down afterwards.
+      - name: Run Module Federation e2e tests
         working-directory: frontend
-        run: npx playwright test tests/e2e/module-federation.spec.ts
+        run: npx playwright test --config=playwright.module-federation.config.ts
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-module-federation
           path: frontend/playwright-report/
           retention-days: 7

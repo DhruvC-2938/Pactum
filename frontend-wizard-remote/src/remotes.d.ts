@@ -7,20 +7,27 @@
 //
 // Deliberately no top-level import/export in this file: that would make it a module, and a
 // module's `declare module 'literal'` blocks stop being seen as global ambient declarations
-// under this project's compiler options (confirmed empirically — see the sibling remote's
-// identical file for the same fix). Use inline `import('pkg').Type` instead.
+// under this project's compiler options (confirmed empirically). Use inline `import('pkg').Type`
+// instead.
 declare module 'host/WalletContext' {
-  export interface WalletState {
+  type WalletProviderName = 'freighter' | 'albedo' | 'ledger'
+  type WalletErrorCode =
+    'NOT_INSTALLED' | 'CONNECTION_REJECTED' | 'NETWORK_MISMATCH' | 'INVALID_ADDRESS' | 'UNKNOWN'
+
+  export interface WalletContextType {
     address: string | null
-    isReady: boolean
-    isAvailable: boolean
+    provider: WalletProviderName | null
     isConnected: boolean
+    isInstalled: boolean
+    isConnecting: boolean
     error: string | null
-    connect: () => Promise<void>
-    disconnect: () => void
+    errorCode: WalletErrorCode | null
+    connectWallet: (provider?: WalletProviderName) => Promise<void>
+    disconnectWallet: () => void
+    clearError: () => void
     contextModuleId: string
   }
-  export function useWallet(): WalletState
+  export function useWallet(): WalletContextType
   export function WalletProvider(props: { children: import('react').ReactNode }): import('react').ReactElement
 }
 

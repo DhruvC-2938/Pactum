@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PactumStateProof",
+  "description": "Cryptographic zero-trust state proof of a Pactum trust score at a specific Stellar ledger sequence.",
+  "type": "object",
+  "required": [
+    "version",
+    "networkPassphrase",
+    "ledgerSeq",
+    "ledgerHeaderHash",
+    "stateRootHash",
+    "contractId",
+    "stellarAddress",
+    "scoreData",
+    "leafHash",
+    "merkleProof",
+    "headerProof"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "networkPassphrase": {
+      "type": "string"
+    },
+    "ledgerSeq": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "ledgerHeaderHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{64}$"
+    },
+    "stateRootHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{64}$"
+    },
+    "contractId": {
+      "type": "string"
+    },
+    "stellarAddress": {
+      "type": "string"
+    },
+    "scoreData": {
+      "type": "object",
+      "required": [
+        "score",
+        "fulfilledCount",
+        "lateCount",
+        "breachedCount",
+        "epoch",
+        "sourceLedgerSeq"
+      ],
+      "properties": {
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "fulfilledCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "lateCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "breachedCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "sourceLedgerSeq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "leafHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{64}$"
+    },
+    "merkleProof": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": ["sibling", "isRight"],
+        "properties": {
+          "sibling": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          },
+          "isRight": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "headerProof": {
+      "type": "object",
+      "required": [
+        "previousLedgerHash",
+        "txSetResultHash",
+        "bucketListHash",
+        "ledgerVersion"
+      ],
+      "properties": {
+        "previousLedgerHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$"
+        },
+        "txSetResultHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$"
+        },
+        "bucketListHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{64}$"
+        },
+        "ledgerVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

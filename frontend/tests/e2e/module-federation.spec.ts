@@ -20,7 +20,7 @@ declare global {
 test.describe('Module Federation: host + remotes', () => {
   test('dashboard remote loads and renders via Module Federation', async ({ page }) => {
     await page.goto('/');
-    await page.click('#hero-launch-btn');
+    await page.getByRole('button', { name: 'Launch App' }).first().click();
     await page.click('#nav-reputation');
 
     // #dashboard-remote-wallet-status only exists in frontend-dashboard-remote/src/ReputationDashboard.tsx —
@@ -31,7 +31,7 @@ test.describe('Module Federation: host + remotes', () => {
 
   test('wizard remote loads and renders via Module Federation', async ({ page }) => {
     await page.goto('/');
-    await page.click('#hero-launch-btn');
+    await page.getByRole('button', { name: 'Launch App' }).first().click();
     await page.click('#nav-create');
 
     // #wizard-remote-wallet-status only exists in frontend-wizard-remote/src/CreateCommitmentWizard.tsx.
@@ -41,7 +41,7 @@ test.describe('Module Federation: host + remotes', () => {
 
   test('WalletContext is a true shared singleton across host and both remotes', async ({ page }) => {
     await page.goto('/');
-    await page.click('#hero-launch-btn');
+    await page.getByRole('button', { name: 'Launch App' }).first().click();
 
     // Visit the dashboard, forcing frontend-dashboard-remote's useWallet() to run and record what
     // module instance it read from.
@@ -71,7 +71,7 @@ test.describe('Module Federation: host + remotes', () => {
     page,
   }) => {
     await page.goto('/');
-    await page.click('#hero-launch-btn');
+    await page.getByRole('button', { name: 'Launch App' }).first().click();
     await page.click('#nav-reputation');
     await expect(page.locator('#dashboard-remote-wallet-status')).toBeVisible();
 
@@ -92,7 +92,7 @@ test.describe('Module Federation: host + remotes', () => {
     await page.route('http://localhost:5175/remoteEntry.js', (route) => route.abort());
 
     await page.goto('/');
-    await page.click('#hero-launch-btn');
+    await page.getByRole('button', { name: 'Launch App' }).first().click();
     await page.click('#nav-create');
 
     await expect(page.locator('.inline-alert.warning', { hasText: 'wizard' })).toBeVisible();

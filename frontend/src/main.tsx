@@ -1,10 +1,11 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { QueryClientProvider } from '@tanstack/react-query'
-import './index.css'
-import App from './App.tsx'
-import { queryClient } from './lib/queryClient'
-import { WalletProvider } from './contexts/WalletContext'
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
+import './index.css';
+import App from './App.tsx';
+import { queryClient } from './lib/queryClient';
+import { WalletProvider } from './context/WalletContext';
+import { ThemeProvider } from './context/ThemeContext';
 
 // WalletProvider and QueryClientProvider wrap the whole tree here, in the host, exactly once —
 // not per-remote — since the host owns the single WalletContext and QueryClient instances that
@@ -15,8 +16,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
-        <App />
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
       </WalletProvider>
     </QueryClientProvider>
   </StrictMode>,
-)
+);

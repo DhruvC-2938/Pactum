@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -23,6 +24,10 @@ export default defineConfig(({ mode }) => {
       federation({
         name: 'host',
         filename: 'remoteEntry.js',
+        // Default (10s) is tuned for a small module graph; the real Stellar wallet stack
+        // (stellar-sdk, ledger hardware transports, etc.) is large enough that a cold build can
+        // go quiet for longer than that between individually-fast module parses.
+        moduleParseIdleTimeout: 60,
         // We hand-maintain ambient .d.ts declarations for federated imports (src/remotes.d.ts
         // and each remote's src/remotes.d.ts) instead of relying on the plugin's automatic
         // cross-package type generation, so that a real drift between an exposed module's actual
@@ -30,7 +35,7 @@ export default defineConfig(({ mode }) => {
         // rather than depending on a build-time codegen step.
         dts: false,
         exposes: {
-          './WalletContext': './src/contexts/WalletContext.tsx',
+          './WalletContext': './src/context/WalletContext.tsx',
           './queryClient': './src/lib/queryClient.ts',
         },
         remotes: {
@@ -72,6 +77,10 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       target: 'esnext',
+    },
+    test: {
+      environment: 'node',
+      include: ['src/**/*.test.ts'],
     },
   }
 })

@@ -22,8 +22,14 @@ declare module 'wizard/CreateCommitmentWizard' {
     termsHash: string
     dueAt: number
   }
+  export interface CreateCommitmentResult {
+    hash: string
+    commitmentId?: number | bigint
+    status: 'SUCCESS'
+  }
   export interface CreateCommitmentWizardProps {
-    onSubmit: (payload: CreateCommitmentPayload) => void
+    onSubmit?: (payload: CreateCommitmentPayload) => void
+    onSuccess?: (result: CreateCommitmentResult) => void
   }
   const CreateCommitmentWizard: ComponentType<CreateCommitmentWizardProps>
   export default CreateCommitmentWizard

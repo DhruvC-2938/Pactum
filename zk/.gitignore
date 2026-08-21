@@ -1,0 +1,5 @@
+node_modules/
+
+# Circuit build products (r1cs, witness generator, proving key, powers of tau).
+# Regenerate with `npm run build:circuit` — see docs/zk-reputation-proofs.md.
+build/

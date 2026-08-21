@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
+import { OptimisticConflictEngine } from './optimisticEngine'
 
 // This module is exposed to remotes over Module Federation (see vite.config.ts `exposes`) so the
 // host and every remote import the same evaluated module — and therefore the same QueryClient
@@ -16,7 +17,10 @@ export const queryClient = new QueryClient({
   },
 })
 
-// VITE_E2E_DIAGNOSTICS, not DEV: see the identical note in contexts/WalletContext.tsx. Off by
+/** Reconciles optimistic mutations against incoming Soroban chain events, per query key. */
+export const conflictEngine = new OptimisticConflictEngine(queryClient)
+
+// VITE_E2E_DIAGNOSTICS, not DEV: see the identical note in context/WalletContext.tsx. Off by
 // default in every real deployment.
 if (import.meta.env.VITE_E2E_DIAGNOSTICS === 'true') {
   // Referential-identity marker for e2e verification that remotes truly share this one

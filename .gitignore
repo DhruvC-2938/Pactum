@@ -6,6 +6,8 @@ target/
 # Node / TypeScript
 node_modules/
 dist/
+dist-indexer-test/
+dist-middleware-test/
 .env
 .env.local
 .env.*.local
@@ -17,7 +19,15 @@ yarn-error.log*
 .mf/
 *.tsbuildinfo
 
+# Hardhat (evm/)
+evm/artifacts/
+evm/cache/
+evm/typechain-types/
+
 # OS
 .DS_Store
 *.swp
 *.swo
+
+# Soroban test snapshots
+test_snapshots/
