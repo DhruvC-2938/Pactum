@@ -5,6 +5,7 @@ import type { Commitment, Reputation } from '@/lib/api'
 import { BroadcastChannelProvider } from './broadcastchannel'
 import { mergeCommitmentsFromCanonical, mergeReputationsFromCanonical } from './merge'
 import type { CanonicalState, StoredCommitment, StoredReputation } from './types'
+import { WebRTCProvider, type WebRTCProviderOptions } from './webrtc'
 
 /** Room used by both the IndexedDB persistence and the BroadcastChannel provider. */
 export const SYNC_ROOM = 'pactum-cache-v1'
@@ -37,6 +38,8 @@ class SyncStore {
   private readonly readyPromise: Promise<void>
 
   private online = typeof navigator !== 'undefined' ? navigator.onLine : true
+
+  private webrtcProvider: WebRTCProvider | null = null
 
   constructor() {
     let persistence: IndexeddbPersistence | null = null
@@ -73,6 +76,30 @@ class SyncStore {
 
   setOffline(): void {
     this.online = false
+  }
+
+  /**
+   * Opt-in peer-to-peer sync: connects a WebRTC mesh over this same Y.Doc so
+   * counterparties can reconcile CRDT state directly with each other, even
+   * when the Soroban RPC or indexer backend is completely unreachable.
+   * Requires one wallet popup (to attest this tab's session key) — call once
+   * per session, e.g. when a wallet address becomes available. Failure
+   * (no WebRTC, wallet rejects the signature, etc.) is logged and otherwise
+   * ignored: peer sync is additive, not required for the app to function.
+   */
+  connectPeerSync(address: string, options?: WebRTCProviderOptions): void {
+    if (this.webrtcProvider || typeof RTCPeerConnection === 'undefined') return
+    const provider = new WebRTCProvider(SYNC_ROOM, this.doc, address, options)
+    this.webrtcProvider = provider
+    provider.connect().catch((err) => {
+      console.warn('[CRDT] WebRTC peer sync unavailable.', err)
+      if (this.webrtcProvider === provider) this.webrtcProvider = null
+    })
+  }
+
+  disconnectPeerSync(): void {
+    this.webrtcProvider?.destroy()
+    this.webrtcProvider = null
   }
 
   private toYMap(record: object): Y.Map<unknown> {

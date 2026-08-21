@@ -13,6 +13,7 @@ import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
 import { useSyncCache } from './hooks/useSyncCache';
+import { wsClient } from './lib/wsClient';
 import type { WalletProvider } from './lib/wallet';
 import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
@@ -157,7 +158,11 @@ function InlineWalletError() {
 }
 
 export default function App() {
-  useSyncCache();
+  const wallet = useWallet();
+  // WebRTC peer sync needs a wallet that can sign an arbitrary message to attest its
+  // session key (SEP-53 `signMessage`) — today that's Freighter only, same gating the
+  // encryption flow already uses.
+  useSyncCache(wallet.provider === 'freighter' ? wallet.address : null);
 
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
@@ -167,7 +172,6 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
-  const wallet = useWallet();
 
   const handleNavigateReputation = (addr: string) => {
     setReputationAddress(addr);
@@ -199,7 +203,13 @@ export default function App() {
 
     handleUrlChange();
     window.addEventListener('popstate', handleUrlChange);
-    return () => window.removeEventListener('popstate', handleUrlChange);
+    
+    wsClient.connect();
+    
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      wsClient.disconnect();
+    };
   }, []);
 
   if (activePage === 'landing') {

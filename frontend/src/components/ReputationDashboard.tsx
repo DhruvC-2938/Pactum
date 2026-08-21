@@ -121,6 +121,170 @@ const PRESETS = [
   },
 ];
 
+const DashboardCommitmentRow: React.FC<{ commitment: Commitment; activeAddress: string; formatDate: (ts: number) => string }> = ({ commitment, activeAddress, formatDate }) => {
+  const realtime = useStore(state => state.getRealtimeCommitment(commitment.id));
+  const c = { ...commitment, ...realtime };
+  const isIssuer = c.issuer === activeAddress;
+  const counterpartyAddr = isIssuer ? c.counterparty : c.issuer;
+
+  return (
+    <tr
+      style={{
+        borderBottom: '1px solid #f1f5f9',
+        transition: 'background 0.15s ease',
+      }}
+    >
+      <td style={{ padding: '18px 24px', fontWeight: '800', color: '#0f172a' }}>
+        #{c.id}
+      </td>
+      <td style={{ padding: '18px 24px' }}>
+        <span
+          style={{
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '11px',
+            fontWeight: '800',
+            background: isIssuer ? '#e0e7ff' : '#f1f5f9',
+            color: isIssuer ? '#3730a3' : '#475569',
+            border: isIssuer ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
+          }}
+        >
+          {isIssuer ? 'Issuer' : 'Counterparty'}
+        </span>
+      </td>
+      <td style={{ padding: '18px 24px' }}>
+        <UserProfile
+          address={counterpartyAddr}
+          avatarSize={24}
+          showDomain={false}
+        />
+      </td>
+      <td
+        style={{ padding: '18px 24px', color: '#64748b', fontSize: '12px' }}
+        title={c.terms_hash}
+      >
+        {c.terms_hash.substring(0, 14)}...
+      </td>
+      <td
+        style={{
+          padding: '18px 24px',
+          color: '#0f172a',
+          fontFamily: 'sans-serif',
+          fontWeight: '600',
+        }}
+      >
+        {formatDate(c.due_at)}
+      </td>
+      <td style={{ padding: '18px 24px', fontFamily: 'sans-serif' }}>
+        {c.status === 'Fulfilled' && (
+          <span
+            style={{
+              padding: '4px 12px',
+              borderRadius: '100px',
+              fontSize: '12px',
+              fontWeight: '800',
+              background: '#dcfce7',
+              color: '#15803d',
+              border: '1px solid #bbf7d0',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: '#22c55e',
+              }}
+            ></span>
+            Fulfilled
+          </span>
+        )}
+        {c.status === 'Late' && (
+          <span
+            style={{
+              padding: '4px 12px',
+              borderRadius: '100px',
+              fontSize: '12px',
+              fontWeight: '800',
+              background: '#fef3c7',
+              color: '#b45309',
+              border: '1px solid #fde68a',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: '#f59e0b',
+              }}
+            ></span>
+            Late
+          </span>
+        )}
+        {c.status === 'Breached' && (
+          <span
+            style={{
+              padding: '4px 12px',
+              borderRadius: '100px',
+              fontSize: '12px',
+              fontWeight: '800',
+              background: '#ffe4e6',
+              color: '#be123c',
+              border: '1px solid #fecdd3',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: '#ef4444',
+              }}
+            ></span>
+            Breached
+          </span>
+        )}
+        {c.status === 'Pending' && (
+          <span
+            style={{
+              padding: '4px 12px',
+              borderRadius: '100px',
+              fontSize: '12px',
+              fontWeight: '800',
+              background: '#f1f5f9',
+              color: '#475569',
+              border: '1px solid #e2e8f0',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <span
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: '#94a3b8',
+              }}
+            ></span>
+            Pending
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+};
+
 export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   initialAddress = BASE_ADDRESS_1,
   onNavigateAddress,
