@@ -15,6 +15,12 @@ import { useWallet } from './context/WalletContext';
 import { useSyncCache } from './hooks/useSyncCache';
 import { wsClient } from './lib/wsClient';
 import type { WalletProvider } from './lib/wallet';
+import {
+  submitAttest,
+  submitDispute,
+  submitResolve,
+  submitInitRegistry,
+} from './lib/sorobanTxHelpers';
 import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
 
@@ -171,6 +177,25 @@ export default function App() {
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleGenericSubmit = async (actionName: string, actionFn: () => Promise<any>) => {
+    if (!wallet.address || !wallet.provider) {
+      alert('Please connect your wallet first.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await actionFn();
+      alert(`${actionName} successful!`);
+    } catch (e: any) {
+      console.error(e);
+      alert(`Error during ${actionName}: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
 
   const handleNavigateReputation = (addr: string) => {
@@ -203,9 +228,9 @@ export default function App() {
 
     handleUrlChange();
     window.addEventListener('popstate', handleUrlChange);
-    
+
     wsClient.connect();
-    
+
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
       wsClient.disconnect();
@@ -972,6 +997,14 @@ export default function App() {
 
             <CreateCommitmentWizard
               onSubmit={(payload) => console.log('commitment payload', payload)}
+              onSuccess={(result) => {
+                console.log('Transaction successful:', result);
+                if (wallet.address) {
+                  handleNavigateReputation(wallet.address);
+                } else {
+                  setActivePage('reputation');
+                }
+              }}
             />
           </section>
 
@@ -1055,9 +1088,29 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-attest" onClick={() => {}}>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Submit Attestation</span>
+                  <button
+                    className="btn btn-primary btn-full"
+                    id="btn-attest"
+                    onClick={() => {
+                      const idStr = (document.getElementById('attest-id') as HTMLInputElement)
+                        ?.value;
+                      const outcome = (
+                        document.getElementById('attest-outcome') as HTMLSelectElement
+                      )?.value;
+                      if (!idStr || !outcome) {
+                        alert('Please provide Commitment ID and Outcome');
+                        return;
+                      }
+                      handleGenericSubmit('Attest Commitment', () =>
+                        submitAttest(Number(idStr), outcome, wallet.address!, wallet.provider!),
+                      );
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting && <div className="spinner"></div>}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Submitting...' : 'Submit Attestation'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1178,21 +1231,40 @@ export default function App() {
                   <button
                     className="btn btn-destructive btn-full"
                     id="btn-dispute"
-                    onClick={() => {}}
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      const idStr = (document.getElementById('dispute-id') as HTMLInputElement)
+                        ?.value;
+                      const reason = (
+                        document.getElementById('dispute-reason') as HTMLTextAreaElement
+                      )?.value;
+                      if (!idStr || !reason) {
+                        alert('Please provide Commitment ID and Reason');
+                        return;
+                      }
+                      handleGenericSubmit('Raise Dispute', () =>
+                        submitDispute(Number(idStr), reason, wallet.address!, wallet.provider!),
+                      );
+                    }}
                   >
-                    <svg
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M8 2L1 14h14L8 2z" />
-                      <path d="M8 6v4" />
-                    </svg>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Raise Dispute</span>
+                    {isSubmitting ? (
+                      <div className="spinner"></div>
+                    ) : (
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M8 2L1 14h14L8 2z" />
+                        <path d="M8 6v4" />
+                      </svg>
+                    )}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Submitting...' : 'Raise Dispute'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1328,9 +1400,29 @@ export default function App() {
                     </select>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-resolve" onClick={() => {}}>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Submit Resolution</span>
+                  <button
+                    className="btn btn-primary btn-full"
+                    id="btn-resolve"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      const idStr = (document.getElementById('resolve-id') as HTMLInputElement)
+                        ?.value;
+                      const outcome = (
+                        document.getElementById('resolve-outcome') as HTMLSelectElement
+                      )?.value;
+                      if (!idStr || !outcome) {
+                        alert('Please provide Commitment ID and Outcome');
+                        return;
+                      }
+                      handleGenericSubmit('Resolve Dispute', () =>
+                        submitResolve(Number(idStr), outcome, wallet.address!, wallet.provider!),
+                      );
+                    }}
+                  >
+                    {isSubmitting && <div className="spinner"></div>}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Submitting...' : 'Submit Resolution'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1435,7 +1527,12 @@ export default function App() {
                         className="btn btn-primary"
                         style={{ flex: '1' }}
                         id="btn-lookup"
-                        onClick={() => {}}
+                        onClick={() => {
+                          const id = (document.getElementById('lookup-id') as HTMLInputElement)
+                            ?.value;
+                          if (!id) return;
+                          alert(`Lookup for ${id} not implemented in frontend yet.`);
+                        }}
                       >
                         <div className="spinner"></div>
                         <span className="btn-text">Fetch Commitment</span>
@@ -1530,9 +1627,20 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-init" onClick={() => {}}>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Initialize Contract</span>
+                  <button
+                    className="btn btn-primary btn-full"
+                    id="btn-init"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      handleGenericSubmit('Initialize Contract', () =>
+                        submitInitRegistry(wallet.address!, wallet.provider!),
+                      );
+                    }}
+                  >
+                    {isSubmitting && <div className="spinner"></div>}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Initializing...' : 'Initialize Contract'}
+                    </span>
                   </button>
                 </div>
               </div>
