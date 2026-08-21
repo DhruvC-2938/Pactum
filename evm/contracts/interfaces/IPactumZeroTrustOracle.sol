@@ -23,6 +23,7 @@ interface IPactumZeroTrustOracle is IPactumTrustOracle {
         bytes32 stateRoot;
         BatchStatus status;
         uint256 entryCount;
+        uint256 lockedBond;
     }
 
     struct Challenge {

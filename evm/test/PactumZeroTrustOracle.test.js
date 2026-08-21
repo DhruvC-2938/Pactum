@@ -87,6 +87,7 @@ describe("PactumZeroTrustOracle", function () {
       expect(proposal.batchNonce).to.equal(1n);
       expect(proposal.status).to.equal(1); // BatchStatus.Proposed
       expect(proposal.relayer).to.equal(relayer.address);
+      expect(proposal.lockedBond).to.equal(MIN_RELAYER_BOND);
 
       // Score must NOT be active before finalization
       const score = await oracle.getTrustScore(stellarAddr(1));
@@ -230,6 +231,25 @@ describe("PactumZeroTrustOracle", function () {
       expect(score.score).to.equal(85n);
     });
 
+    it("reverts override resolution when proof is empty or unauthorized caller", async function () {
+      const { relayer, challenger, other, oracle } = await loadFixture(deployFixture);
+      const batch = await makeBatch({ batchNonce: 1 });
+      await oracle.connect(relayer).proposeBatch(encodeBatch(batch));
+      await oracle.connect(challenger).challengeBatch(1n, "0x1234", "Chain reorg", {
+        value: MIN_CHALLENGER_BOND,
+      });
+
+      // Unauthorized caller
+      await expect(
+        oracle.connect(other).resolveChallengeWithOverride(1n, "0x12", "0x")
+      ).to.be.revertedWithCustomError(oracle, "NotAuthorizedAdjudicator");
+
+      // Empty proof
+      await expect(
+        oracle.connect(relayer).resolveChallengeWithOverride(1n, "0x", "0x")
+      ).to.be.revertedWithCustomError(oracle, "InvalidOverrideProof");
+    });
+
     it("supports reorg fault recovery by applying corrected payload with override proof", async function () {
       const { relayer, challenger, oracle } = await loadFixture(deployFixture);
       const batch = await makeBatch({ batchNonce: 1, entries: [makeEntry({ score: 50 })] });
@@ -248,7 +268,15 @@ describe("PactumZeroTrustOracle", function () {
       const correctedPayload = encodeBatch(correctedBatch);
       const overrideProof = ethers.hexlify(ethers.toUtf8Bytes("post-reorg-canonical-proof"));
 
-      await oracle.connect(relayer).resolveChallengeWithOverride(1n, overrideProof, correctedPayload);
+      await expect(
+        oracle.connect(relayer).resolveChallengeWithOverride(1n, overrideProof, correctedPayload)
+      )
+        .to.emit(oracle, "ChallengerSlashed")
+        .withArgs(challenger.address, MIN_CHALLENGER_BOND, relayer.address)
+        .and.to.emit(oracle, "ChallengeResolved")
+        .withArgs(1n, true, relayer.address, (MIN_CHALLENGER_BOND * 7000n) / 10000n)
+        .and.to.emit(oracle, "BatchFinalized")
+        .withArgs(REGISTRY_ID, 1n, 1n);
 
       const score = await oracle.getTrustScore(stellarAddr(1));
       expect(score.score).to.equal(92n);
@@ -256,7 +284,28 @@ describe("PactumZeroTrustOracle", function () {
     });
   });
 
-  describe("Stake & Edge Case Handling", function () {
+  describe("Stake & Proposal-Specific Bond Accounting", function () {
+    it("releases exact proposal locked bond even if owner updates bond requirements", async function () {
+      const { owner, relayer, oracle } = await loadFixture(deployFixture);
+      const batch = await makeBatch({ batchNonce: 1 });
+      await oracle.connect(relayer).proposeBatch(encodeBatch(batch));
+
+      let stake = await oracle.getRelayerStake(relayer.address);
+      expect(stake.lockedAmount).to.equal(MIN_RELAYER_BOND);
+
+      // Owner increases minRelayerBond to 0.5 ETH
+      await oracle.connect(owner).setBondRequirements(ethers.parseEther("0.5"), ethers.parseEther("0.2"));
+
+      // Advance time and finalize
+      await time.increase(CHALLENGE_PERIOD + 10);
+      await oracle.finalizeBatch(1n);
+
+      // Relayer's stake should be completely unlocked
+      stake = await oracle.getRelayerStake(relayer.address);
+      expect(stake.lockedAmount).to.equal(0n);
+      expect(stake.bondedAmount).to.equal(ethers.parseEther("1.0"));
+    });
+
     it("allows unbonded stake withdrawal when no active proposals are locked", async function () {
       const { relayer, oracle } = await loadFixture(deployFixture);
       const stakeBefore = await oracle.getRelayerStake(relayer.address);

@@ -224,11 +224,12 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
             revert UntrustedRemote(sourceChainId, bytes32(sourceAddress));
         }
 
-        _handleIncomingPayload(payload, tx.origin);
+        _handleIncomingPayload(payload, tx.origin, 0);
     }
 
     /// @notice Allows a bonded relayer to propose a state batch directly.
     function proposeBatch(bytes calldata payload) external payable {
+        uint256 lockedBond = 0;
         if (minRelayerBond > 0) {
             RelayerStake storage stake = _relayerStakes[msg.sender];
             if (msg.value > 0) {
@@ -241,12 +242,13 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
             }
             stake.lockedAmount += minRelayerBond;
             stake.activeProposals += 1;
+            lockedBond = minRelayerBond;
         }
 
-        _handleIncomingPayload(payload, msg.sender);
+        _handleIncomingPayload(payload, msg.sender, lockedBond);
     }
 
-    function _handleIncomingPayload(bytes calldata payload, address relayer) internal {
+    function _handleIncomingPayload(bytes calldata payload, address relayer, uint256 lockedBond) internal {
         TrustScoreBatch memory batch = abi.decode(payload, (TrustScoreBatch));
 
         if (batch.version != SCHEMA_VERSION) {
@@ -270,8 +272,10 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
         if (challengePeriodDuration == 0) {
             // Immediate finalization mode
             _applyBatch(batch);
-            lastFinalizedBatchNonce = batch.batchNonce;
-            _unlockRelayerStake(relayer);
+            if (batch.batchNonce > lastFinalizedBatchNonce) {
+                lastFinalizedBatchNonce = batch.batchNonce;
+            }
+            _unlockRelayerStake(relayer, lockedBond);
             emit BatchFinalized(batch.registryId, batch.batchNonce, batch.entries.length);
             return;
         }
@@ -286,7 +290,8 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
             relayer: relayer,
             stateRoot: stateRoot,
             status: BatchStatus.Proposed,
-            entryCount: batch.entries.length
+            entryCount: batch.entries.length,
+            lockedBond: lockedBond
         });
 
         _pendingPayloads[batch.batchNonce] = payload;
@@ -354,9 +359,11 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
 
         _applyBatch(batch);
         proposal.status = BatchStatus.Finalized;
-        lastFinalizedBatchNonce = batchNonce;
+        if (batchNonce > lastFinalizedBatchNonce) {
+            lastFinalizedBatchNonce = batchNonce;
+        }
 
-        _unlockRelayerStake(proposal.relayer);
+        _unlockRelayerStake(proposal.relayer, proposal.lockedBond);
         delete _pendingPayloads[batchNonce];
 
         emit BatchFinalized(registryId, batchNonce, proposal.entryCount);
@@ -377,6 +384,16 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
             revert InvalidBatchStatus(batchNonce, proposal.status, BatchStatus.Challenged);
         }
 
+        // Restrict authorized callers to the relayer, messaging endpoint, adjudicator, or owner
+        if (
+            msg.sender != proposal.relayer &&
+            msg.sender != messagingEndpoint &&
+            msg.sender != owner() &&
+            msg.sender != adjudicator
+        ) {
+            revert NotAuthorizedAdjudicator(msg.sender);
+        }
+
         Challenge storage challenge = _challenges[batchNonce];
         if (challenge.resolved) {
             revert ChallengeAlreadyResolved(batchNonce);
@@ -388,6 +405,9 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
             effectivePayload = correctedPayload;
         } else {
             effectivePayload = _pendingPayloads[batchNonce];
+            if (keccak256(effectivePayload) != proposal.stateRoot) {
+                revert InvalidOverrideProof();
+            }
         }
 
         if (overrideProof.length == 0) {
@@ -395,17 +415,25 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
         }
 
         TrustScoreBatch memory batch = abi.decode(effectivePayload, (TrustScoreBatch));
-        if (batch.batchNonce != batchNonce || batch.registryId != registryId) {
+        if (batch.batchNonce != batchNonce || batch.registryId != registryId || batch.version != SCHEMA_VERSION) {
             revert InvalidOverrideProof();
+        }
+        if (batch.entries.length > MAX_BATCH_SIZE) {
+            revert BatchTooLarge(batch.entries.length, MAX_BATCH_SIZE);
+        }
+        if (block.timestamp > uint256(batch.batchTimestamp) + maxBatchAge) {
+            revert BatchTooStale(batch.batchTimestamp, block.timestamp, maxBatchAge);
         }
 
         // Relayer is vindicated
         challenge.resolved = true;
         proposal.status = BatchStatus.Finalized;
-        lastFinalizedBatchNonce = batchNonce;
+        if (batchNonce > lastFinalizedBatchNonce) {
+            lastFinalizedBatchNonce = batchNonce;
+        }
 
         _applyBatch(batch);
-        _unlockRelayerStake(proposal.relayer);
+        _unlockRelayerStake(proposal.relayer, proposal.lockedBond);
         delete _pendingPayloads[batchNonce];
 
         // Slash challenger bond
@@ -415,7 +443,7 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
 
         emit ChallengerSlashed(challenge.challenger, challengerBond, relayer);
         emit ChallengeResolved(batchNonce, true, relayer, relayerReward);
-        emit BatchFinalized(registryId, batchNonce, proposal.entryCount);
+        emit BatchFinalized(registryId, batchNonce, batch.entries.length);
 
         if (relayerReward > 0 && relayer != address(0)) {
             (bool success, ) = relayer.call{value: relayerReward}("");
@@ -445,16 +473,17 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
             address challenger = challenge.challenger;
             uint256 challengerBondRefund = challenge.bond;
 
-            // Slash relayer stake
+            // Slash relayer stake using proposal's recorded locked bond
             address relayer = proposal.relayer;
             RelayerStake storage stake = _relayerStakes[relayer];
             uint256 slashedAmount = 0;
+            uint256 proposalBond = proposal.lockedBond;
 
-            if (stake.lockedAmount >= minRelayerBond) {
-                slashedAmount = minRelayerBond;
-                stake.lockedAmount -= minRelayerBond;
-                if (stake.bondedAmount >= minRelayerBond) {
-                    stake.bondedAmount -= minRelayerBond;
+            if (proposalBond > 0) {
+                slashedAmount = proposalBond > stake.lockedAmount ? stake.lockedAmount : proposalBond;
+                stake.lockedAmount -= slashedAmount;
+                if (stake.bondedAmount >= slashedAmount) {
+                    stake.bondedAmount -= slashedAmount;
                 } else {
                     stake.bondedAmount = 0;
                 }
@@ -481,12 +510,14 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
         } else {
             // Challenge was invalid / frivolous
             proposal.status = BatchStatus.Finalized;
-            lastFinalizedBatchNonce = batchNonce;
+            if (batchNonce > lastFinalizedBatchNonce) {
+                lastFinalizedBatchNonce = batchNonce;
+            }
 
             bytes memory payload = _pendingPayloads[batchNonce];
             TrustScoreBatch memory batch = abi.decode(payload, (TrustScoreBatch));
             _applyBatch(batch);
-            _unlockRelayerStake(proposal.relayer);
+            _unlockRelayerStake(proposal.relayer, proposal.lockedBond);
             delete _pendingPayloads[batchNonce];
 
             uint256 challengerBond = challenge.bond;
@@ -549,12 +580,9 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
             TrustScoreEntry memory entry = batch.entries[i];
             TrustScore storage existing = _scores[entry.stellarAddress];
 
+            // Skip updating entries whose ledger sequence is not newer, preventing stuck resolution
             if (entry.sourceLedgerSeq <= existing.sourceLedgerSeq && existing.updatedAt != 0) {
-                revert LedgerSeqNotIncreasing(
-                    entry.stellarAddress,
-                    entry.sourceLedgerSeq,
-                    existing.sourceLedgerSeq
-                );
+                continue;
             }
 
             existing.score = entry.score;
@@ -572,15 +600,18 @@ contract PactumZeroTrustOracle is IPactumTrustOracle, IPactumZeroTrustOracle, IP
         emit TrustScoreBatchUpdated(batch.registryId, batch.batchNonce, length);
     }
 
-    function _unlockRelayerStake(address relayer) internal {
+    function _unlockRelayerStake(address relayer, uint256 lockedBond) internal {
+        if (relayer == address(0)) return;
         RelayerStake storage stake = _relayerStakes[relayer];
         if (stake.activeProposals > 0) {
             stake.activeProposals -= 1;
         }
-        if (stake.lockedAmount >= minRelayerBond) {
-            stake.lockedAmount -= minRelayerBond;
-        } else {
-            stake.lockedAmount = 0;
+        if (lockedBond > 0) {
+            if (stake.lockedAmount >= lockedBond) {
+                stake.lockedAmount -= lockedBond;
+            } else {
+                stake.lockedAmount = 0;
+            }
         }
     }
 

@@ -1,7 +1,15 @@
 import { ethers } from 'ethers';
 
+export interface SorobanTrustScoreSnapshot {
+  score: number;
+  fulfilledCount: number;
+  lateCount: number;
+  breachedCount: number;
+  sourceLedgerSeq: bigint;
+}
+
 export interface ISorobanClient {
-  getTrustScore(address: string): Promise<number | null>;
+  getTrustScoreSnapshot(address: string): Promise<SorobanTrustScoreSnapshot | null>;
 }
 
 export interface TrustScoreEntry {
@@ -66,23 +74,39 @@ export class CrossChainRelayer {
    * Creates and submits a new state batch to the zero-trust oracle.
    */
   public async submitBatch(entries: TrustScoreEntry[]): Promise<string> {
+    if (this.currentNonce === 0n) {
+      try {
+        const onChainNonce = await this.oracleContract.lastProposedBatchNonce();
+        this.currentNonce = BigInt(onChainNonce);
+      } catch {
+        // Fallback to local tracking if view fails
+      }
+    }
+
     this.currentNonce += 1n;
+    const batchNonce = this.currentNonce;
     const now = BigInt(Math.floor(Date.now() / 1000));
 
     const batch: TrustScoreBatch = {
       version: 1,
       registryId: this.registryId,
-      batchNonce: this.currentNonce,
+      batchNonce,
       batchTimestamp: now,
       entries,
     };
 
     const encoded = this.encodeBatch(batch);
-    this.pendingBatches.set(batch.batchNonce.toString(), batch);
+    this.pendingBatches.set(batchNonce.toString(), batch);
 
-    const tx = await this.oracleContract.proposeBatch(encoded);
-    const receipt = await tx.wait();
-    return receipt.hash;
+    try {
+      const tx = await this.oracleContract.proposeBatch(encoded);
+      const receipt = await tx.wait();
+      return receipt ? receipt.hash : tx.hash;
+    } catch (error) {
+      this.pendingBatches.delete(batchNonce.toString());
+      this.currentNonce -= 1n;
+      throw error;
+    }
   }
 
   /**
@@ -110,13 +134,14 @@ export class CrossChainRelayer {
 
     const batch = this.pendingBatches.get(batchNonce.toString());
     if (!batch) {
-      console.warn(`[Relayer] Batch ${batchNonce} not found in pending cache. Fetching on-chain proposal.`);
+      console.error(`[Relayer] Batch ${batchNonce} not found in pending cache. Cannot build an override payload.`);
+      return { resolved: false };
     }
 
     // Verify source state against Soroban canonical ledger
     const isSourceStateValid = await this.verifySorobanCanonicalState(batch);
 
-    if (isSourceStateValid && batch) {
+    if (isSourceStateValid) {
       // Relayer's state is valid -> Generate override proof to vindicate relayer and slash challenger
       const payload = this.encodeBatch(batch);
       const stateRoot = ethers.keccak256(payload);
@@ -129,12 +154,17 @@ export class CrossChainRelayer {
         payload
       );
       const receipt = await tx.wait();
-      return { resolved: true, txHash: receipt.hash };
+      this.pendingBatches.delete(batchNonce.toString());
+      return { resolved: true, txHash: receipt ? receipt.hash : tx.hash };
     } else {
       // Reorg or dropped packet occurred -> Recover by querying fresh Soroban state and submitting corrected payload
       console.log(`[Relayer] State mismatch detected (reorg/packet drop). Initiating automated fault recovery...`);
-      const correctedEntries = await this.fetchAuthoritativeState(batch?.entries || []);
-      
+      const correctedEntries = await this.fetchAuthoritativeState(batch.entries);
+      if (correctedEntries.length === 0) {
+        console.error(`[Relayer] Failed to fetch authoritative state during recovery for batch ${batchNonce}.`);
+        return { resolved: false };
+      }
+
       const correctedBatch: TrustScoreBatch = {
         version: 1,
         registryId: this.registryId,
@@ -153,20 +183,29 @@ export class CrossChainRelayer {
         correctedPayload
       );
       const receipt = await tx.wait();
-      return { resolved: true, txHash: receipt.hash };
+      this.pendingBatches.delete(batchNonce.toString());
+      return { resolved: true, txHash: receipt ? receipt.hash : tx.hash };
     }
   }
 
   /**
-   * Verifies if the proposed entries match the canonical Soroban ledger state.
+   * Verifies if the proposed entries match the canonical Soroban ledger state across all fields.
    */
   private async verifySorobanCanonicalState(batch?: TrustScoreBatch): Promise<boolean> {
     if (!batch || batch.entries.length === 0) return false;
 
     for (const entry of batch.entries) {
       try {
-        const score = await this.sorobanClient.getTrustScore(entry.stellarAddress);
-        if (score === null || BigInt(score) !== entry.score) {
+        const snapshot = await this.sorobanClient.getTrustScoreSnapshot(entry.stellarAddress);
+        if (!snapshot) return false;
+
+        if (
+          BigInt(snapshot.score) !== entry.score ||
+          snapshot.fulfilledCount !== entry.fulfilledCount ||
+          snapshot.lateCount !== entry.lateCount ||
+          snapshot.breachedCount !== entry.breachedCount ||
+          snapshot.sourceLedgerSeq !== entry.sourceLedgerSeq
+        ) {
           return false;
         }
       } catch (error) {
@@ -184,12 +223,23 @@ export class CrossChainRelayer {
     const authoritativeEntries: TrustScoreEntry[] = [];
 
     for (const entry of entries) {
-      const score = await this.sorobanClient.getTrustScore(entry.stellarAddress);
-      authoritativeEntries.push({
-        ...entry,
-        score: score !== null ? BigInt(score) : entry.score,
-        sourceLedgerSeq: entry.sourceLedgerSeq + 1n,
-      });
+      try {
+        const snapshot = await this.sorobanClient.getTrustScoreSnapshot(entry.stellarAddress);
+        if (snapshot) {
+          authoritativeEntries.push({
+            stellarAddress: entry.stellarAddress,
+            score: BigInt(snapshot.score),
+            fulfilledCount: snapshot.fulfilledCount,
+            lateCount: snapshot.lateCount,
+            breachedCount: snapshot.breachedCount,
+            sourceLedgerSeq: snapshot.sourceLedgerSeq,
+          });
+        } else {
+          authoritativeEntries.push(entry);
+        }
+      } catch (error) {
+        console.error(`Failed to fetch authoritative state for ${entry.stellarAddress}:`, error);
+      }
     }
 
     return authoritativeEntries;
