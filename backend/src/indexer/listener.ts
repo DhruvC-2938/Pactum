@@ -1,5 +1,5 @@
 import pool from '../db/timescale';
-import { insertCommitmentOutcome, updateCommitmentOutcome } from '../workers/timescaleSnapshot';
+
 import { invalidateLedger } from './cache';
 import { CommitmentCreatedEvent, parseLedgerEvents } from './events';
 import { createSorobanRpcLedgerClient, SorobanLedgerSource } from './rpc-source';

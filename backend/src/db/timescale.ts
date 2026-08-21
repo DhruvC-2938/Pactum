@@ -134,33 +134,5 @@ export const runMigrations = async (
   }
 };
 
-export const refreshMaterializedViews = async () => {
-  const views = [
-    'mv_daily_fulfillment_rates',
-    'mv_weekly_fulfillment_rates',
-    'mv_monthly_fulfillment_rates',
-    'mv_moving_averages',
-    'mv_trust_score_trends',
-  ];
-
-  for (const view of views) {
-    const start = Date.now();
-    try {
-      await queryTimescale(`REFRESH MATERIALIZED VIEW CONCURRENTLY ${view}`);
-      const duration = Date.now() - start;
-      logger.debug(`Refreshed materialized view ${view} in ${duration}ms`);
-    } catch (error) {
-      logger.warn(`Failed to refresh ${view} concurrently, falling back to standard refresh`, {
-        error,
-      });
-      try {
-        await queryTimescale(`REFRESH MATERIALIZED VIEW ${view}`);
-        logger.info(`Refreshed ${view} with standard refresh`);
-      } catch (fallbackError) {
-        logger.error(`Failed to refresh ${view} with fallback`, fallbackError);
-      }
-    }
-  }
-};
 
 export default pool;
