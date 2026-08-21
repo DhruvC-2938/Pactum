@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { CrossChainRelayer, TrustScoreEntry } from '../src/workers/crossChainRelayer';
+import {
+  CrossChainRelayer,
+  TrustScoreEntry,
+  MemoryBatchStore,
+  TrustScoreBatch,
+} from '../src/workers/crossChainRelayer';
 
 describe('CrossChainRelayer', () => {
   const dummyRegistryId = '0x1111111111111111111111111111111111111111111111111111111111111111';
@@ -63,5 +68,24 @@ describe('CrossChainRelayer', () => {
 
     assert.ok(encoded.startsWith('0x'));
     assert.ok(encoded.length > 64);
+  });
+
+  it('persists and retrieves batches through MemoryBatchStore across operations', async () => {
+    const store = new MemoryBatchStore();
+    const batch: TrustScoreBatch = {
+      version: 1,
+      registryId: dummyRegistryId,
+      batchNonce: 42n,
+      batchTimestamp: 1700000000n,
+      entries: [],
+    };
+
+    await store.saveBatch(batch);
+    const retrieved = await store.getBatch(42n);
+    assert.deepEqual(retrieved, batch);
+
+    await store.deleteBatch(42n);
+    const deleted = await store.getBatch(42n);
+    assert.equal(deleted, null);
   });
 });

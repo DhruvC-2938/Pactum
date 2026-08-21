@@ -29,12 +29,35 @@ export interface TrustScoreBatch {
   entries: TrustScoreEntry[];
 }
 
+export interface IBatchStore {
+  saveBatch(batch: TrustScoreBatch): Promise<void>;
+  getBatch(batchNonce: bigint): Promise<TrustScoreBatch | null>;
+  deleteBatch(batchNonce: bigint): Promise<void>;
+}
+
+export class MemoryBatchStore implements IBatchStore {
+  private store: Map<string, TrustScoreBatch> = new Map();
+
+  async saveBatch(batch: TrustScoreBatch): Promise<void> {
+    this.store.set(batch.batchNonce.toString(), batch);
+  }
+
+  async getBatch(batchNonce: bigint): Promise<TrustScoreBatch | null> {
+    return this.store.get(batchNonce.toString()) || null;
+  }
+
+  async deleteBatch(batchNonce: bigint): Promise<void> {
+    this.store.delete(batchNonce.toString());
+  }
+}
+
 export interface RelayerConfig {
   registryId: string;
   oracleContractAddress: string;
   sourceChainId: number;
   pollIntervalMs?: number;
   overrideSigningKey?: string;
+  batchStore?: IBatchStore;
 }
 
 export class CrossChainRelayer {
@@ -44,7 +67,7 @@ export class CrossChainRelayer {
   private registryId: string;
   private currentNonce: bigint = 0n;
   private isRunning: boolean = false;
-  private pendingBatches: Map<string, TrustScoreBatch> = new Map();
+  private batchStore: IBatchStore;
 
   constructor(
     sorobanClient: ISorobanClient,
@@ -56,6 +79,7 @@ export class CrossChainRelayer {
     this.oracleContract = oracleContract;
     this.signer = signer;
     this.registryId = config.registryId;
+    this.batchStore = config.batchStore || new MemoryBatchStore();
   }
 
   /**
@@ -96,14 +120,14 @@ export class CrossChainRelayer {
     };
 
     const encoded = this.encodeBatch(batch);
-    this.pendingBatches.set(batchNonce.toString(), batch);
+    await this.batchStore.saveBatch(batch);
 
     try {
       const tx = await this.oracleContract.proposeBatch(encoded);
       const receipt = await tx.wait();
       return receipt ? receipt.hash : tx.hash;
     } catch (error) {
-      this.pendingBatches.delete(batchNonce.toString());
+      await this.batchStore.deleteBatch(batchNonce);
       this.currentNonce -= 1n;
       throw error;
     }
@@ -132,9 +156,9 @@ export class CrossChainRelayer {
   ): Promise<{ resolved: boolean; txHash?: string }> {
     console.log(`[Relayer] Detected challenge on batch ${batchNonce} from ${challenger}`);
 
-    const batch = this.pendingBatches.get(batchNonce.toString());
+    const batch = await this.batchStore.getBatch(batchNonce);
     if (!batch) {
-      console.error(`[Relayer] Batch ${batchNonce} not found in pending cache. Cannot build an override payload.`);
+      console.error(`[Relayer] Batch ${batchNonce} not found in store/cache. Cannot build an override payload.`);
       return { resolved: false };
     }
 
@@ -154,14 +178,14 @@ export class CrossChainRelayer {
         payload
       );
       const receipt = await tx.wait();
-      this.pendingBatches.delete(batchNonce.toString());
+      await this.batchStore.deleteBatch(batchNonce);
       return { resolved: true, txHash: receipt ? receipt.hash : tx.hash };
     } else {
       // Reorg or dropped packet occurred -> Recover by querying fresh Soroban state and submitting corrected payload
       console.log(`[Relayer] State mismatch detected (reorg/packet drop). Initiating automated fault recovery...`);
       const correctedEntries = await this.fetchAuthoritativeState(batch.entries);
-      if (correctedEntries.length === 0) {
-        console.error(`[Relayer] Failed to fetch authoritative state during recovery for batch ${batchNonce}.`);
+      if (!correctedEntries || correctedEntries.length !== batch.entries.length) {
+        console.error(`[Relayer] Incomplete or unavailable authoritative state during recovery for batch ${batchNonce}.`);
         return { resolved: false };
       }
 
@@ -183,7 +207,7 @@ export class CrossChainRelayer {
         correctedPayload
       );
       const receipt = await tx.wait();
-      this.pendingBatches.delete(batchNonce.toString());
+      await this.batchStore.deleteBatch(batchNonce);
       return { resolved: true, txHash: receipt ? receipt.hash : tx.hash };
     }
   }
@@ -218,27 +242,29 @@ export class CrossChainRelayer {
 
   /**
    * Queries authoritative state directly from Soroban RPC for fault recovery.
+   * Rejects and aborts recovery if any single entry snapshot is missing or throws.
    */
-  private async fetchAuthoritativeState(entries: TrustScoreEntry[]): Promise<TrustScoreEntry[]> {
+  private async fetchAuthoritativeState(entries: TrustScoreEntry[]): Promise<TrustScoreEntry[] | null> {
     const authoritativeEntries: TrustScoreEntry[] = [];
 
     for (const entry of entries) {
       try {
         const snapshot = await this.sorobanClient.getTrustScoreSnapshot(entry.stellarAddress);
-        if (snapshot) {
-          authoritativeEntries.push({
-            stellarAddress: entry.stellarAddress,
-            score: BigInt(snapshot.score),
-            fulfilledCount: snapshot.fulfilledCount,
-            lateCount: snapshot.lateCount,
-            breachedCount: snapshot.breachedCount,
-            sourceLedgerSeq: snapshot.sourceLedgerSeq,
-          });
-        } else {
-          authoritativeEntries.push(entry);
+        if (!snapshot) {
+          console.error(`[Relayer] Authoritative snapshot missing for ${entry.stellarAddress}. Aborting recovery.`);
+          return null;
         }
+        authoritativeEntries.push({
+          stellarAddress: entry.stellarAddress,
+          score: BigInt(snapshot.score),
+          fulfilledCount: snapshot.fulfilledCount,
+          lateCount: snapshot.lateCount,
+          breachedCount: snapshot.breachedCount,
+          sourceLedgerSeq: snapshot.sourceLedgerSeq,
+        });
       } catch (error) {
         console.error(`Failed to fetch authoritative state for ${entry.stellarAddress}:`, error);
+        return null;
       }
     }
 
