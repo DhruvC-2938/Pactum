@@ -39,6 +39,12 @@ pub struct BinaryWriter {
     buf: Vec<u8>,
 }
 
+impl Default for BinaryWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BinaryWriter {
     pub fn new() -> Self {
         Self { buf: Vec::new() }

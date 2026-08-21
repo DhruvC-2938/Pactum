@@ -5,7 +5,10 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec;
 
-use super::codec::{deserialize_expr, deserialize_rule_set, serialize_expr, serialize_rule_set, BinaryReader, BinaryWriter};
+use super::codec::{
+    deserialize_expr, deserialize_rule_set, serialize_expr, serialize_rule_set, BinaryReader,
+    BinaryWriter,
+};
 use super::eval::{EvalError, Evaluator};
 use super::gas::{GasError, GasMeter};
 use super::types::{CompareOp, EvalContext, Expr, FnName, Rule, RuleSet, RuntimeValue};

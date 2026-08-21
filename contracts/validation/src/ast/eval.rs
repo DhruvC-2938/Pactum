@@ -76,7 +76,8 @@ impl<'a> Evaluator<'a> {
             Expr::Field { name } => {
                 let segments_count = name.split('.').count() as u64;
                 self.meter.consume(
-                    COST_FIELD_BASE.saturating_add(COST_FIELD_SEGMENT.saturating_mul(segments_count)),
+                    COST_FIELD_BASE
+                        .saturating_add(COST_FIELD_SEGMENT.saturating_mul(segments_count)),
                     "field_lookup",
                 )?;
                 let val = self.ctx.get_field_value(name);
@@ -157,9 +158,8 @@ impl<'a> Evaluator<'a> {
             } => {
                 let target = self.eval_expr(value)?;
                 let input_str = target.to_string_repr();
-                let cost = COST_REGEX_BASE.saturating_add(
-                    ((pattern.len() + input_str.len()) / 8) as u64,
-                );
+                let cost =
+                    COST_REGEX_BASE.saturating_add(((pattern.len() + input_str.len()) / 8) as u64);
                 self.meter.consume(cost, "regex_match")?;
 
                 let is_match = if input_str.len() > MAX_MATCH_INPUT_LEN {
@@ -252,7 +252,7 @@ impl<'a> Evaluator<'a> {
     }
 
     fn eval_match(&self, input: &str, pattern: &str, flags: Option<&str>) -> bool {
-        let case_insensitive = flags.map_or(false, |f| f.contains('i'));
+        let case_insensitive = flags.is_some_and(|f| f.contains('i'));
 
         // Handle alternations e.g. \b(todo|tbd|xxx)\b or (a|b|c)
         let clean_pat = pattern.trim_start_matches('^').trim_end_matches('$');
@@ -317,8 +317,7 @@ impl<'a> Evaluator<'a> {
             while let Some(pos) = target[start_idx..].find(&pat) {
                 let actual_pos = start_idx + pos;
                 let left_ok = if has_word_boundary_start {
-                    actual_pos == 0
-                        || !target.as_bytes()[actual_pos - 1].is_ascii_alphanumeric()
+                    actual_pos == 0 || !target.as_bytes()[actual_pos - 1].is_ascii_alphanumeric()
                 } else {
                     true
                 };
@@ -355,7 +354,7 @@ impl<'a> Evaluator<'a> {
         match fn_name {
             FnName::Now => Ok(RuntimeValue::Num(self.ctx.now)),
             FnName::ToNumber => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     match v.as_number() {
                         Some(n) => Ok(RuntimeValue::Num(n)),
@@ -366,7 +365,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::ToDate => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     match v {
                         RuntimeValue::Num(n) => {
@@ -397,7 +396,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::Len => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     let len = match &v {
                         RuntimeValue::Null => 0.0,
@@ -410,7 +409,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::Lower => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     let s = v.to_string_repr();
                     self.meter.consume(
@@ -423,7 +422,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::Upper => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     let s = v.to_string_repr();
                     self.meter.consume(
@@ -436,7 +435,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::Trim => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     let s = v.to_string_repr();
                     Ok(RuntimeValue::Str(String::from(s.trim())))
@@ -445,7 +444,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::IsBlank => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     let is_blank = match &v {
                         RuntimeValue::Null => true,
@@ -458,7 +457,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::Abs => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     match v.as_number() {
                         Some(n) => Ok(RuntimeValue::Num(n.abs())),
@@ -469,7 +468,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::Days => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     match v.as_number() {
                         Some(n) => Ok(RuntimeValue::Num(n * 86_400_000.0)),
@@ -480,7 +479,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             FnName::Hours => {
-                if let Some(arg) = args.get(0) {
+                if let Some(arg) = args.first() {
                     let v = self.eval_expr(arg)?;
                     match v.as_number() {
                         Some(n) => Ok(RuntimeValue::Num(n * 3_600_000.0)),
@@ -578,14 +577,14 @@ fn parse_iso_date(s: &str) -> Option<f64> {
     let month = ymd[1].parse::<u32>().ok()?;
     let day = ymd[2].parse::<u32>().ok()?;
 
-    if month < 1 || month > 12 || day < 1 || day > 31 {
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
 
     let (hour, min, sec, ms) = if parts.len() > 1 {
         let time_str = parts[1].trim_end_matches('Z');
         let hms: Vec<&str> = time_str.split(':').collect();
-        let h = hms.get(0).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
+        let h = hms.first().and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
         let m = hms.get(1).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
         let (s, millis) = if let Some(sec_str) = hms.get(2) {
             if let Some((sec_val, frac)) = sec_str.split_once('.') {
@@ -606,10 +605,8 @@ fn parse_iso_date(s: &str) -> Option<f64> {
 
     // Calculate days since 1970-01-01
     let days = days_from_civil(year, month, day);
-    let total_secs = (days as i64) * 86400
-        + (hour as i64) * 3600
-        + (min as i64) * 60
-        + (sec as i64);
+    let total_secs =
+        (days as i64) * 86400 + (hour as i64) * 3600 + (min as i64) * 60 + (sec as i64);
     let total_ms = (total_secs as f64) * 1000.0 + (ms as f64);
     Some(total_ms)
 }

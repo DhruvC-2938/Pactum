@@ -175,10 +175,7 @@ pub enum Expr {
         right: Box<Expr>,
     },
     #[serde(rename = "in")]
-    In {
-        value: Box<Expr>,
-        set: Vec<Expr>,
-    },
+    In { value: Box<Expr>, set: Vec<Expr> },
     #[serde(rename = "match")]
     Match {
         value: Box<Expr>,
@@ -237,7 +234,8 @@ impl EvalContext {
 
         // Prevent prototype pollution / reserved segments
         for seg in &segments {
-            if *seg == "__proto__" || *seg == "prototype" || *seg == "constructor" || seg.is_empty() {
+            if *seg == "__proto__" || *seg == "prototype" || *seg == "constructor" || seg.is_empty()
+            {
                 return RuntimeValue::Null;
             }
         }

@@ -69,6 +69,7 @@ pub struct ExecutionTrace {
 }
 
 impl ExecutionTrace {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         valid: bool,
         rules_evaluated: u32,

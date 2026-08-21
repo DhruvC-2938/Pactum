@@ -1,9 +1,12 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 
+#[cfg(any(feature = "std", feature = "wasm", test))]
 extern crate alloc;
 
+#[cfg(any(feature = "std", feature = "wasm", test))]
 pub mod ast;
 
+#[cfg(any(feature = "std", feature = "wasm", test))]
 pub use ast::*;
 
 /// The largest number of milestones a single commitment may be split into.
