@@ -91,9 +91,14 @@ export async function ensureWasmSandboxInitialized(): Promise<void> {
   if (wasmInitialized) return;
   if (!wasmInitPromise) {
     wasmInitPromise = (async () => {
-      const source = await getWasmModuleSource();
-      await initWasm(source as any);
-      wasmInitialized = true;
+      try {
+        const source = await getWasmModuleSource();
+        await initWasm(source as any);
+        wasmInitialized = true;
+      } catch (err) {
+        wasmInitPromise = null;
+        throw err;
+      }
     })();
   }
   await wasmInitPromise;

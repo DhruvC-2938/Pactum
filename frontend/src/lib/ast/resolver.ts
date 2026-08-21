@@ -117,10 +117,13 @@ export function createWasmAstResolver<TFieldValues extends FieldValues = FieldVa
         gasLimit: options.gasLimit,
       });
 
-      if (!result.valid && Object.keys(result.errors).length > 0) {
+      if (!result.valid) {
         const errors: Record<string, unknown> = {};
         for (const [field, err] of Object.entries(result.errors)) {
           setFieldError(errors, field, err);
+        }
+        if (Object.keys(errors).length === 0) {
+          errors.root = { type: 'ast_wasm', message: 'Validation failed.' };
         }
         return { values: {}, errors } as ResolverResult<TFieldValues>;
       }

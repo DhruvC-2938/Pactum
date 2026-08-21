@@ -119,10 +119,10 @@ compiling, and falling back to `DEFAULT_COMMITMENT_RULES`, and
 
 To protect against non-determinism, runtime tampering, and unbounded loops when evaluating complex financial or legal validation logic, Pactum supports executing the AST inside a gas-metered WebAssembly sandbox (`pactum_validation_bg.wasm`):
 
-- **Binary Serialization (`binary.ts`)**: Encodes the AST into a compact binary format (`PAST` magic header, little-endian TLV) for zero-copy / low-overhead boundary passing to WASM.
+- **Binary Serialization (`binary.ts`)**: Encodes the AST into a compact binary format (`PAST` magic header, little-endian TLV) for low-overhead boundary passing to WASM.
 - **Strict Gas Metering (`gas.rs`)**: An instruction budget (default: 100,000 gas) meters each AST node visit, comparison, regex execution, and string operation. Halts immediately on infinite loops (Halting Problem guard).
-- **Cryptographic Trace Verification (`trace.rs`)**: Returns a detailed execution trace accompanied by a deterministic **SHA-256 trace hash**, allowing cryptographic verification of the exact rule evaluation sequence.
-- **Sub-50ms Execution**: Evaluates complex nested rule sets within microseconds natively in WebAssembly.
+- **Cryptographic Trace Verification (`trace.rs`)**: Returns a detailed execution trace accompanied by a deterministic **SHA-256 trace hash**, allowing cryptographic verification of the exact rule evaluation sequence and internal consistency.
+- **Sub-50ms Execution**: Evaluates complex nested rule sets natively in WebAssembly, within the 50ms budget asserted by the test suite.
 
 ### Evaluating with WASM Sandbox
 

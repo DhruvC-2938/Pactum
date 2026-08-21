@@ -313,27 +313,34 @@ impl<'a> Evaluator<'a> {
         }
 
         if has_word_boundary_start || has_word_boundary_end {
-            let mut start_idx = 0;
-            while let Some(pos) = target[start_idx..].find(&pat) {
-                let actual_pos = start_idx + pos;
+            for (actual_pos, _) in target.match_indices(&pat) {
                 let left_ok = if has_word_boundary_start {
-                    actual_pos == 0 || !target.as_bytes()[actual_pos - 1].is_ascii_alphanumeric()
+                    if actual_pos == 0 {
+                        true
+                    } else {
+                        target[..actual_pos]
+                            .chars()
+                            .next_back()
+                            .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+                    }
                 } else {
                     true
                 };
                 let right_pos = actual_pos + pat.len();
                 let right_ok = if has_word_boundary_end {
-                    right_pos >= target.len()
-                        || !target.as_bytes()[right_pos].is_ascii_alphanumeric()
+                    if right_pos >= target.len() {
+                        true
+                    } else {
+                        target[right_pos..]
+                            .chars()
+                            .next()
+                            .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+                    }
                 } else {
                     true
                 };
                 if left_ok && right_ok {
                     return true;
-                }
-                start_idx = actual_pos + 1;
-                if start_idx >= target.len() {
-                    break;
                 }
             }
             return false;
@@ -563,9 +570,32 @@ impl<'a> Evaluator<'a> {
     }
 }
 
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if is_leap_year(year) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 0,
+    }
+}
+
 /// Helper function to parse ISO-8601 date strings to UTC epoch milliseconds.
 fn parse_iso_date(s: &str) -> Option<f64> {
-    // Formats: "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM:SSZ" or "YYYY-MM-DDTHH:MM:SS.sssZ"
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+
     let parts: Vec<&str> = s.split('T').collect();
     let date_part = parts[0];
     let ymd: Vec<&str> = date_part.split('-').collect();
@@ -577,23 +607,54 @@ fn parse_iso_date(s: &str) -> Option<f64> {
     let month = ymd[1].parse::<u32>().ok()?;
     let day = ymd[2].parse::<u32>().ok()?;
 
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+    if !(0..=9999).contains(&year) || !(1..=12).contains(&month) {
+        return None;
+    }
+
+    let max_days = days_in_month(year, month);
+    if day < 1 || day > max_days {
         return None;
     }
 
     let (hour, min, sec, ms) = if parts.len() > 1 {
-        let time_str = parts[1].trim_end_matches('Z');
+        let mut time_str = parts[1];
+        if time_str.ends_with('Z') {
+            time_str = &time_str[..time_str.len() - 1];
+        } else if time_str.contains('+') || (time_str.contains('-') && !time_str.starts_with('-')) {
+            // Unsupported non-UTC timezone offset
+            return None;
+        }
+
         let hms: Vec<&str> = time_str.split(':').collect();
-        let h = hms.first().and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
-        let m = hms.get(1).and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
+        if hms.len() < 2 || hms.len() > 3 {
+            return None;
+        }
+
+        let h = hms[0].parse::<u32>().ok()?;
+        let m = hms[1].parse::<u32>().ok()?;
+        if h >= 24 || m >= 60 {
+            return None;
+        }
+
         let (s, millis) = if let Some(sec_str) = hms.get(2) {
             if let Some((sec_val, frac)) = sec_str.split_once('.') {
-                let s = sec_val.parse::<u32>().unwrap_or(0);
-                let ms_str = if frac.len() >= 3 { &frac[..3] } else { frac };
-                let ms = ms_str.parse::<u32>().unwrap_or(0);
+                let s = sec_val.parse::<u32>().ok()?;
+                if s >= 60 {
+                    return None;
+                }
+                let mut frac_padded = alloc::string::String::from(frac);
+                while frac_padded.len() < 3 {
+                    frac_padded.push('0');
+                }
+                let ms_str = &frac_padded[..3];
+                let ms = ms_str.parse::<u32>().ok()?;
                 (s, ms)
             } else {
-                (sec_str.parse::<u32>().unwrap_or(0), 0)
+                let s = sec_str.parse::<u32>().ok()?;
+                if s >= 60 {
+                    return None;
+                }
+                (s, 0)
             }
         } else {
             (0, 0)
@@ -603,7 +664,6 @@ fn parse_iso_date(s: &str) -> Option<f64> {
         (0, 0, 0, 0)
     };
 
-    // Calculate days since 1970-01-01
     let days = days_from_civil(year, month, day);
     let total_secs =
         (days as i64) * 86400 + (hour as i64) * 3600 + (min as i64) * 60 + (sec as i64);

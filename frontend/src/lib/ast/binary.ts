@@ -97,6 +97,9 @@ export class BinaryWriter {
   private offset: number;
 
   constructor(initialCapacity = 1024) {
+    if (!Number.isSafeInteger(initialCapacity) || initialCapacity < 1) {
+      throw new RangeError('initialCapacity must be a positive safe integer');
+    }
     this.buffer = new Uint8Array(initialCapacity);
     this.view = new DataView(this.buffer.buffer);
     this.offset = 0;
@@ -104,7 +107,7 @@ export class BinaryWriter {
 
   private ensureCapacity(needed: number): void {
     if (this.offset + needed <= this.buffer.length) return;
-    let nextCap = this.buffer.length * 2;
+    let nextCap = Math.max(this.buffer.length * 2, 64);
     while (this.offset + needed > nextCap) {
       nextCap *= 2;
     }
@@ -251,7 +254,12 @@ export function deserializeRuntimeValue(reader: BinaryReader): RuntimeValue {
   }
 }
 
-export function serializeExpr(expr: Expr, writer: BinaryWriter): void {
+export const MAX_EXPR_DEPTH = 64;
+
+export function serializeExpr(expr: Expr, writer: BinaryWriter, depth = 0): void {
+  if (depth > MAX_EXPR_DEPTH) {
+    throw new Error(`Maximum expression depth of ${MAX_EXPR_DEPTH} exceeded`);
+  }
   switch (expr.kind) {
     case 'lit':
       writer.writeU8(TAG_EXPR_LIT);
@@ -265,14 +273,14 @@ export function serializeExpr(expr: Expr, writer: BinaryWriter): void {
 
     case 'not':
       writer.writeU8(TAG_EXPR_NOT);
-      serializeExpr(expr.operand, writer);
+      serializeExpr(expr.operand, writer, depth + 1);
       break;
 
     case 'and':
       writer.writeU8(TAG_EXPR_AND);
       writer.writeU32(expr.operands.length);
       for (const op of expr.operands) {
-        serializeExpr(op, writer);
+        serializeExpr(op, writer, depth + 1);
       }
       break;
 
@@ -280,36 +288,36 @@ export function serializeExpr(expr: Expr, writer: BinaryWriter): void {
       writer.writeU8(TAG_EXPR_OR);
       writer.writeU32(expr.operands.length);
       for (const op of expr.operands) {
-        serializeExpr(op, writer);
+        serializeExpr(op, writer, depth + 1);
       }
       break;
 
     case 'compare':
       writer.writeU8(TAG_EXPR_COMPARE);
       writer.writeU8(COMPARE_OP_TO_TAG[expr.op]);
-      serializeExpr(expr.left, writer);
-      serializeExpr(expr.right, writer);
+      serializeExpr(expr.left, writer, depth + 1);
+      serializeExpr(expr.right, writer, depth + 1);
       break;
 
     case 'arith':
       writer.writeU8(TAG_EXPR_ARITH);
       writer.writeU8(ARITH_OP_TO_TAG[expr.op]);
-      serializeExpr(expr.left, writer);
-      serializeExpr(expr.right, writer);
+      serializeExpr(expr.left, writer, depth + 1);
+      serializeExpr(expr.right, writer, depth + 1);
       break;
 
     case 'in':
       writer.writeU8(TAG_EXPR_IN);
-      serializeExpr(expr.value, writer);
+      serializeExpr(expr.value, writer, depth + 1);
       writer.writeU32(expr.set.length);
       for (const item of expr.set) {
-        serializeExpr(item, writer);
+        serializeExpr(item, writer, depth + 1);
       }
       break;
 
     case 'match':
       writer.writeU8(TAG_EXPR_MATCH);
-      serializeExpr(expr.value, writer);
+      serializeExpr(expr.value, writer, depth + 1);
       writer.writeString(expr.pattern);
       writer.writeOptString(expr.flags);
       break;
@@ -319,7 +327,7 @@ export function serializeExpr(expr: Expr, writer: BinaryWriter): void {
       writer.writeU8(FN_NAME_TO_TAG[expr.fn]);
       writer.writeU32(expr.args.length);
       for (const arg of expr.args) {
-        serializeExpr(arg, writer);
+        serializeExpr(arg, writer, depth + 1);
       }
       break;
 
@@ -328,7 +336,10 @@ export function serializeExpr(expr: Expr, writer: BinaryWriter): void {
   }
 }
 
-export function deserializeExpr(reader: BinaryReader): Expr {
+export function deserializeExpr(reader: BinaryReader, depth = 0): Expr {
+  if (depth > MAX_EXPR_DEPTH) {
+    throw new Error(`Maximum expression depth of ${MAX_EXPR_DEPTH} exceeded`);
+  }
   const tag = reader.readU8();
   switch (tag) {
     case TAG_EXPR_LIT:
@@ -338,13 +349,13 @@ export function deserializeExpr(reader: BinaryReader): Expr {
       return { kind: 'field', name: reader.readString() };
 
     case TAG_EXPR_NOT:
-      return { kind: 'not', operand: deserializeExpr(reader) };
+      return { kind: 'not', operand: deserializeExpr(reader, depth + 1) };
 
     case TAG_EXPR_AND: {
       const count = reader.readU32();
       const operands: Expr[] = [];
       for (let i = 0; i < count; i++) {
-        operands.push(deserializeExpr(reader));
+        operands.push(deserializeExpr(reader, depth + 1));
       }
       return { kind: 'and', operands };
     }
@@ -353,7 +364,7 @@ export function deserializeExpr(reader: BinaryReader): Expr {
       const count = reader.readU32();
       const operands: Expr[] = [];
       for (let i = 0; i < count; i++) {
-        operands.push(deserializeExpr(reader));
+        operands.push(deserializeExpr(reader, depth + 1));
       }
       return { kind: 'or', operands };
     }
@@ -362,8 +373,8 @@ export function deserializeExpr(reader: BinaryReader): Expr {
       const opTag = reader.readU8();
       const op = TAG_TO_COMPARE_OP[opTag];
       if (!op) throw new Error(`Unknown compare op tag: ${opTag}`);
-      const left = deserializeExpr(reader);
-      const right = deserializeExpr(reader);
+      const left = deserializeExpr(reader, depth + 1);
+      const right = deserializeExpr(reader, depth + 1);
       return { kind: 'compare', op, left, right };
     }
 
@@ -371,23 +382,23 @@ export function deserializeExpr(reader: BinaryReader): Expr {
       const opTag = reader.readU8();
       const op = TAG_TO_ARITH_OP[opTag];
       if (!op) throw new Error(`Unknown arith op tag: ${opTag}`);
-      const left = deserializeExpr(reader);
-      const right = deserializeExpr(reader);
+      const left = deserializeExpr(reader, depth + 1);
+      const right = deserializeExpr(reader, depth + 1);
       return { kind: 'arith', op, left, right };
     }
 
     case TAG_EXPR_IN: {
-      const value = deserializeExpr(reader);
+      const value = deserializeExpr(reader, depth + 1);
       const count = reader.readU32();
       const set: Expr[] = [];
       for (let i = 0; i < count; i++) {
-        set.push(deserializeExpr(reader));
+        set.push(deserializeExpr(reader, depth + 1));
       }
       return { kind: 'in', value, set };
     }
 
     case TAG_EXPR_MATCH: {
-      const value = deserializeExpr(reader);
+      const value = deserializeExpr(reader, depth + 1);
       const pattern = reader.readString();
       const flags = reader.readOptString();
       return { kind: 'match', value, pattern, flags };
@@ -400,7 +411,7 @@ export function deserializeExpr(reader: BinaryReader): Expr {
       const count = reader.readU32();
       const args: Expr[] = [];
       for (let i = 0; i < count; i++) {
-        args.push(deserializeExpr(reader));
+        args.push(deserializeExpr(reader, depth + 1));
       }
       return { kind: 'call', fn, args };
     }

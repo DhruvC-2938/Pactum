@@ -113,11 +113,15 @@ impl<'a> BinaryReader<'a> {
     }
 
     pub fn read_bytes(&mut self, count: usize) -> Result<&'a [u8], CodecError> {
-        if self.offset + count > self.data.len() {
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(CodecError::UnexpectedEof)?;
+        if end > self.data.len() {
             return Err(CodecError::UnexpectedEof);
         }
-        let slice = &self.data[self.offset..self.offset + count];
-        self.offset += count;
+        let slice = &self.data[self.offset..end];
+        self.offset = end;
         Ok(slice)
     }
 
@@ -260,7 +264,21 @@ pub fn serialize_expr(expr: &Expr, writer: &mut BinaryWriter) {
     }
 }
 
+pub const MAX_EXPR_DEPTH: usize = 64;
+
 pub fn deserialize_expr(reader: &mut BinaryReader) -> Result<Expr, CodecError> {
+    deserialize_expr_with_depth(reader, 0)
+}
+
+pub fn deserialize_expr_with_depth(
+    reader: &mut BinaryReader,
+    depth: usize,
+) -> Result<Expr, CodecError> {
+    if depth > MAX_EXPR_DEPTH {
+        return Err(CodecError::InvalidData(String::from(
+            "Maximum expression depth exceeded",
+        )));
+    }
     let tag = reader.read_u8()?;
     match tag {
         TAG_EXPR_LIT => {
@@ -272,22 +290,22 @@ pub fn deserialize_expr(reader: &mut BinaryReader) -> Result<Expr, CodecError> {
             Ok(Expr::Field { name })
         }
         TAG_EXPR_NOT => {
-            let operand = Box::new(deserialize_expr(reader)?);
+            let operand = Box::new(deserialize_expr_with_depth(reader, depth + 1)?);
             Ok(Expr::Not { operand })
         }
         TAG_EXPR_AND => {
             let count = reader.read_u32()? as usize;
-            let mut operands = Vec::with_capacity(count);
+            let mut operands = Vec::with_capacity(count.min(1024));
             for _ in 0..count {
-                operands.push(deserialize_expr(reader)?);
+                operands.push(deserialize_expr_with_depth(reader, depth + 1)?);
             }
             Ok(Expr::And { operands })
         }
         TAG_EXPR_OR => {
             let count = reader.read_u32()? as usize;
-            let mut operands = Vec::with_capacity(count);
+            let mut operands = Vec::with_capacity(count.min(1024));
             for _ in 0..count {
-                operands.push(deserialize_expr(reader)?);
+                operands.push(deserialize_expr_with_depth(reader, depth + 1)?);
             }
             Ok(Expr::Or { operands })
         }
@@ -302,8 +320,8 @@ pub fn deserialize_expr(reader: &mut BinaryReader) -> Result<Expr, CodecError> {
                 6 => CompareOp::Lte,
                 _ => return Err(CodecError::InvalidTag(op_byte)),
             };
-            let left = Box::new(deserialize_expr(reader)?);
-            let right = Box::new(deserialize_expr(reader)?);
+            let left = Box::new(deserialize_expr_with_depth(reader, depth + 1)?);
+            let right = Box::new(deserialize_expr_with_depth(reader, depth + 1)?);
             Ok(Expr::Compare { op, left, right })
         }
         TAG_EXPR_ARITH => {
@@ -316,21 +334,21 @@ pub fn deserialize_expr(reader: &mut BinaryReader) -> Result<Expr, CodecError> {
                 5 => ArithOp::Mod,
                 _ => return Err(CodecError::InvalidTag(op_byte)),
             };
-            let left = Box::new(deserialize_expr(reader)?);
-            let right = Box::new(deserialize_expr(reader)?);
+            let left = Box::new(deserialize_expr_with_depth(reader, depth + 1)?);
+            let right = Box::new(deserialize_expr_with_depth(reader, depth + 1)?);
             Ok(Expr::Arith { op, left, right })
         }
         TAG_EXPR_IN => {
-            let value = Box::new(deserialize_expr(reader)?);
+            let value = Box::new(deserialize_expr_with_depth(reader, depth + 1)?);
             let count = reader.read_u32()? as usize;
-            let mut set = Vec::with_capacity(count);
+            let mut set = Vec::with_capacity(count.min(1024));
             for _ in 0..count {
-                set.push(deserialize_expr(reader)?);
+                set.push(deserialize_expr_with_depth(reader, depth + 1)?);
             }
             Ok(Expr::In { value, set })
         }
         TAG_EXPR_MATCH => {
-            let value = Box::new(deserialize_expr(reader)?);
+            let value = Box::new(deserialize_expr_with_depth(reader, depth + 1)?);
             let pattern = reader.read_str()?;
             let flags = reader.read_opt_str()?;
             Ok(Expr::Match {
@@ -356,9 +374,9 @@ pub fn deserialize_expr(reader: &mut BinaryReader) -> Result<Expr, CodecError> {
                 _ => return Err(CodecError::InvalidTag(fn_byte)),
             };
             let count = reader.read_u32()? as usize;
-            let mut args = Vec::with_capacity(count);
+            let mut args = Vec::with_capacity(count.min(1024));
             for _ in 0..count {
-                args.push(deserialize_expr(reader)?);
+                args.push(deserialize_expr_with_depth(reader, depth + 1)?);
             }
             Ok(Expr::Call { fn_name, args })
         }
@@ -423,7 +441,7 @@ pub fn deserialize_rule_set(bytes: &[u8]) -> Result<RuleSet, CodecError> {
         return Err(CodecError::UnsupportedVersion(version));
     }
     let count = reader.read_u32()? as usize;
-    let mut rules = Vec::with_capacity(count);
+    let mut rules = Vec::with_capacity(count.min(1024));
     for _ in 0..count {
         rules.push(deserialize_rule(&mut reader)?);
     }

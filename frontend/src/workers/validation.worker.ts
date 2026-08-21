@@ -37,9 +37,14 @@ let initPromise: Promise<void> | null = null;
 async function ensureWasmInitialized(): Promise<void> {
   if (wasmInitialized) return;
   if (!initPromise) {
-    initPromise = initWasm(wasmUrl).then(() => {
-      wasmInitialized = true;
-    });
+    initPromise = initWasm(wasmUrl)
+      .then(() => {
+        wasmInitialized = true;
+      })
+      .catch((err) => {
+        initPromise = null;
+        throw err;
+      });
   }
   await initPromise;
 }
@@ -57,10 +62,10 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
         contextJson,
         gasLimit ?? 100_000,
         recordSteps ?? false,
-      ) as { valid: boolean };
+      ) as { valid?: boolean };
       const response: ValidationResponse = {
         id,
-        isValid: trace.valid,
+        isValid: trace?.valid === true,
         trace,
       };
       self.postMessage(response);

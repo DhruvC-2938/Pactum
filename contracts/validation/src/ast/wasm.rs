@@ -11,6 +11,16 @@ use super::gas::{GasMeter, DEFAULT_GAS_LIMIT};
 use super::trace::ExecutionTrace;
 use super::types::{EvalContext, RuleSet};
 
+const MAX_GAS_LIMIT: u64 = 100_000_000;
+
+fn resolve_gas_limit(gas_limit: Option<f64>) -> Result<u64, JsValue> {
+    match gas_limit {
+        None => Ok(DEFAULT_GAS_LIMIT),
+        Some(g) if g.is_finite() && g >= 1.0 => Ok((g as u64).min(MAX_GAS_LIMIT)),
+        Some(g) => Err(JsValue::from_str(&format!("Invalid gas limit: {}", g))),
+    }
+}
+
 #[wasm_bindgen]
 pub fn evaluate_ast_binary(
     rule_set_bytes: &[u8],
@@ -24,7 +34,7 @@ pub fn evaluate_ast_binary(
     let context: EvalContext = serde_json::from_str(context_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse context JSON: {}", e)))?;
 
-    let limit = gas_limit.map(|g| g as u64).unwrap_or(DEFAULT_GAS_LIMIT);
+    let limit = resolve_gas_limit(gas_limit)?;
     let should_record = record_steps.unwrap_or(false);
 
     let meter = GasMeter::new(limit);
@@ -50,7 +60,7 @@ pub fn evaluate_ast_json(
     let context: EvalContext = serde_json::from_str(context_json)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse context JSON: {}", e)))?;
 
-    let limit = gas_limit.map(|g| g as u64).unwrap_or(DEFAULT_GAS_LIMIT);
+    let limit = resolve_gas_limit(gas_limit)?;
     let should_record = record_steps.unwrap_or(false);
 
     let meter = GasMeter::new(limit);
