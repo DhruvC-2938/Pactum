@@ -41,22 +41,11 @@ fn setup_long_horizon() -> (Env, RegistryContractClient<'static>, Address, Addre
     (env, client, issuer, counterparty)
 }
 
-/// Advances the ledger sequence to `target_seq` in chunks of 200,000 ledgers,
-/// keeping the contract instance and the issuer's trust history alive along
-/// the way (exactly as production use would): `get_arbitrator` bumps the
-/// instance TTL and `get_trust_score` bumps the history entry TTL, each to
-/// ~518,400 ledgers past the current sequence. When `commitment` is `Some`,
-/// `get_commitment` keeps that entry alive too (dispute/resolve read it).
-///
-/// Chunk math: a bump at ledger `s` extends the entry to `s + 518,400`, and
-/// the bump only fires when the entry is within `241,920` of expiry, so the
-/// gap between bumps never exceeds 400,000 ledgers — always below 518,400,
-/// and the final chunk lands exactly on `target_seq` and re-arms the TTL for
-/// the next call. Never alters the decay math.
 /// Advances the ledger to `target_seq` in 200,000-ledger chunks, bumping the
 /// TTLs of the registry instance, the issuer's trust history, and optionally
 /// the dispute token contract's instance so it is not archived before `dispute`
-/// is called. The dispute token's default max TTL (~518,400 ledgers) is less
+/// is called. When `commitment` is `Some`, `get_commitment` keeps that entry
+/// alive too. The dispute token's default max TTL (~518,400 ledgers) is less
 /// than the largest advance in these tests (64 * 10,000 = 640,000), so without
 /// this bump the cross-contract transfer inside `dispute()` would fail with
 /// HostError: Error(Storage, InternalError).
@@ -115,9 +104,12 @@ fn setup_with_arbitrator() -> (
         .register_stellar_asset_contract_v2(arbitrator.clone())
         .address();
     client.set_dispute_token(&arbitrator, &token);
-    // Mint to counterparty (the party raising disputes in these tests).
-    soroban_sdk::token::StellarAssetClient::new(&env, &token)
-        .mint(&counterparty, &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10));
+    env.as_contract(&token, || {
+        env.storage().instance().extend_ttl(
+            crate::commitments::TTL_THRESHOLD_LEDGERS,
+            crate::commitments::TTL_EXTEND_LEDGERS,
+        );
+    });
 
     (env, client, issuer, counterparty, arbitrator, token)
 }
@@ -682,8 +674,7 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
 
 #[test]
 fn test_dispute_retracts_recent_breach_from_score() {
-    let (env, client, issuer, counterparty, _arbitrator, _dispute_token) =
-        setup_with_arbitrator();
+    let (env, client, issuer, counterparty, _arbitrator, dispute_token) = setup_with_arbitrator();
 
     create_and_attest(
         &env,
@@ -697,14 +688,17 @@ fn test_dispute_retracts_recent_breach_from_score() {
 
     // Dispute within the window (no ledger advance, token not at risk of archival).
     env.ledger().with_mut(|l| l.timestamp = 1600);
+    soroban_sdk::token::StellarAssetClient::new(&env, &dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
     client.dispute(&counterparty, &1);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
 fn test_dispute_retracts_aged_breach_from_score() {
-    let (env, client, issuer, counterparty, _arbitrator, dispute_token) =
-        setup_with_arbitrator();
+    let (env, client, issuer, counterparty, _arbitrator, dispute_token) = setup_with_arbitrator();
 
     create_and_attest(
         &env,
@@ -729,14 +723,17 @@ fn test_dispute_retracts_aged_breach_from_score() {
         Some(&dispute_token),
     );
     env.ledger().with_mut(|l| l.timestamp = 1600);
+    soroban_sdk::token::StellarAssetClient::new(&env, &dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
     client.dispute(&counterparty, &1);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
 fn test_resolve_dispute_applies_final_outcome_to_score() {
-    let (env, client, issuer, counterparty, arbitrator, dispute_token) =
-        setup_with_arbitrator();
+    let (env, client, issuer, counterparty, arbitrator, dispute_token) = setup_with_arbitrator();
 
     env.ledger().with_mut(|l| {
         l.timestamp = 1000;
@@ -768,6 +765,10 @@ fn test_resolve_dispute_applies_final_outcome_to_score() {
         Some(&dispute_token),
     );
     env.ledger().with_mut(|l| l.timestamp = 1600);
+    soroban_sdk::token::StellarAssetClient::new(&env, &dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
     client.dispute(&counterparty, &1);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 

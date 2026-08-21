@@ -611,8 +611,10 @@ fn test_v2_write_path_decrements_direct_count_on_dispute() {
     force_schema_v2(&f);
 
     // Mint dispute stake tokens to the counterparty (the party raising the dispute).
-    soroban_sdk::token::StellarAssetClient::new(&f.env, &f.dispute_token)
-        .mint(&counterparty, &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10));
+    soroban_sdk::token::StellarAssetClient::new(&f.env, &f.dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
 
     f.env.ledger().with_mut(|l| l.timestamp = 1_000);
     let id = f.client.create_commitment(
