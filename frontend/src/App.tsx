@@ -44,6 +44,7 @@ import ReputationDashboard from './components/ReputationDashboard';
 import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import DecryptTermsModal from './components/DecryptTermsModal';
+import RollupStatusPanel from './components/RollupStatusPanel';
 import { useCommitments } from './hooks/useCommitments';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
@@ -1416,6 +1417,7 @@ export default function App() {
               onNavigateAddress={(addr) => handleNavigateReputation(addr)}
               onLaunchCreate={() => setActivePage('create')}
             />
+            <RollupStatusPanel demoMode />
           </section>
 
           {/* ──────────────────────────────────────────────

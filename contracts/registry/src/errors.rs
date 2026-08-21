@@ -89,4 +89,8 @@ pub enum Error {
     /// can be read or mutated.  Callers should submit a `RestoreFootprint`
     /// operation — or invoke `restore_reputation` — and retry.
     ReputationArchived = 39,
+    /// Forced inclusion was attempted before the rollup challenge window elapsed.
+    RollupChallengePending = 40,
+    /// The provided Merkle proof does not resolve to the expected batch root.
+    RollupProofInvalid = 41,
 }
