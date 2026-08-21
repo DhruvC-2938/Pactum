@@ -16,8 +16,13 @@ for i in $(seq 1 "$MAX_ATTEMPTS"); do
       -H "Content-Type: application/json" \
       -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
       | grep -q '"status":"healthy"'; then
-    echo "Sandbox RPC is healthy after ${i} attempt(s)."
-    exit 0
+    
+    # Quickstart can sometimes have RPC healthy before Friendbot is ready.
+    # We check if Friendbot returns a JSON response (like the 400 Bad Request for missing addr)
+    if curl -s "http://localhost:8000/friendbot" | grep -q '"title"'; then
+      echo "Sandbox RPC and Friendbot are healthy after ${i} attempt(s)."
+      exit 0
+    fi
   fi
   echo "  attempt ${i}/${MAX_ATTEMPTS}: not ready yet, sleeping ${SLEEP_SECONDS}s"
   sleep "$SLEEP_SECONDS"
