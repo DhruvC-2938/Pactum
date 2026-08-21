@@ -1,142 +1,44 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IPactumTrustOracle} from "./IPactumTrustOracle.sol";
+import {PactumStateProofVerifier} from "../libraries/PactumStateProofVerifier.sol";
 
 /// @title IPactumZeroTrustOracle
-/// @notice Interface for the Pactum Zero-Trust Cross-Chain Oracle with automated fault recovery,
-/// optimistic challenge periods, bonded dispute resolution, and slashing.
-interface IPactumZeroTrustOracle is IPactumTrustOracle {
-    enum BatchStatus {
-        None,
-        Proposed,
-        Challenged,
-        Finalized,
-        Reverted
+/// @notice Interface for the EVM Zero-Trust Oracle Relay.
+/// Allows any untrusted party to submit cryptographically verified Stellar state proofs.
+interface IPactumZeroTrustOracle {
+    struct TrustScoreRecord {
+        uint32 score;
+        uint32 fulfilledCount;
+        uint32 lateCount;
+        uint32 breachedCount;
+        uint32 epoch;
+        uint64 sourceLedgerSeq;
+        uint64 updatedAt;
+        bytes32 verifiedHeaderHash;
     }
 
-    struct BatchProposal {
-        uint64 batchNonce;
-        uint64 proposedAt;
-        uint64 challengeDeadline;
-        address relayer;
-        bytes32 stateRoot;
-        BatchStatus status;
-        uint256 entryCount;
-        uint256 lockedBond;
-    }
-
-    struct Challenge {
-        address challenger;
-        uint256 bond;
-        uint64 challengedAt;
-        bytes fraudProof;
-        string reason;
-        bool resolved;
-    }
-
-    struct RelayerStake {
-        uint256 bondedAmount;
-        uint256 lockedAmount;
-        uint64 activeProposals;
-    }
-
-    // -------------------------------------------------------------------------
-    // View Functions
-    // -------------------------------------------------------------------------
-
-    function getBatchProposal(uint64 batchNonce) external view returns (BatchProposal memory);
-
-    function getBatchChallenge(uint64 batchNonce) external view returns (Challenge memory);
-
-    function getRelayerStake(address relayer) external view returns (RelayerStake memory);
-
-    function challengePeriodDuration() external view returns (uint256);
-
-    function minRelayerBond() external view returns (uint256);
-
-    function minChallengerBond() external view returns (uint256);
-
-    // -------------------------------------------------------------------------
-    // State Transitions & Challenge-Response
-    // -------------------------------------------------------------------------
-
-    function challengeBatch(
-        uint64 batchNonce,
-        bytes calldata fraudProof,
-        string calldata reason
-    ) external payable;
-
-    function finalizeBatch(uint64 batchNonce) external;
-
-    function resolveChallengeWithOverride(
-        uint64 batchNonce,
-        bytes calldata overrideProof,
-        bytes calldata correctedPayload
-    ) external;
-
-    function adjudicateChallenge(uint64 batchNonce, bool fraudConfirmed) external;
-
-    function depositRelayerBond() external payable;
-
-    function withdrawRelayerBond(uint256 amount) external;
-
-    // -------------------------------------------------------------------------
-    // Events
-    // -------------------------------------------------------------------------
-
-    event BatchProposed(
-        bytes32 indexed registryId,
-        uint64 indexed batchNonce,
-        address indexed relayer,
-        uint256 entryCount,
-        uint256 challengeDeadline
+    event StateProofVerified(
+        bytes32 indexed stellarAddress,
+        uint32 score,
+        uint64 indexed ledgerSeq,
+        bytes32 indexed ledgerHeaderHash,
+        address submitter
     );
 
-    event BatchChallenged(
-        uint64 indexed batchNonce,
-        address indexed challenger,
-        uint256 bond,
-        string reason,
-        bytes fraudProof
-    );
+    event TrustedLedgerHeaderUpdated(uint64 indexed ledgerSeq, bytes32 indexed headerHash);
+    event RegistryContractIdUpdated(bytes32 indexed contractId);
 
-    event BatchFinalized(
-        bytes32 indexed registryId,
-        uint64 indexed batchNonce,
-        uint256 entryCount
-    );
+    /// @notice Submits and verifies a zero-trust Stellar state proof.
+    /// @dev Reverts if cryptographic proof verification fails or header is untrusted.
+    function submitStateProof(PactumStateProofVerifier.StateProof calldata proof) external returns (bool);
 
-    event BatchReverted(
-        bytes32 indexed registryId,
-        uint64 indexed batchNonce,
-        string reason
-    );
+    /// @notice Queries the verified trust score record for a given Stellar address.
+    function getVerifiedTrustScore(bytes32 stellarAddress) external view returns (TrustScoreRecord memory);
 
-    event ChallengeResolved(
-        uint64 indexed batchNonce,
-        bool relayerVindicated,
-        address winner,
-        uint256 reward
-    );
+    /// @notice Checks if a specific Stellar ledger header hash is recorded as trusted.
+    function isHeaderTrusted(uint64 ledgerSeq, bytes32 headerHash) external view returns (bool);
 
-    event RelayerSlashed(
-        address indexed relayer,
-        uint256 amount,
-        address indexed recipient
-    );
-
-    event ChallengerSlashed(
-        address indexed challenger,
-        uint256 amount,
-        address indexed recipient
-    );
-
-    event RelayerBondDeposited(address indexed relayer, uint256 amount);
-
-    event RelayerBondWithdrawn(address indexed relayer, uint256 amount);
-
-    event ChallengePeriodDurationUpdated(uint256 newPeriod);
-
-    event BondRequirementsUpdated(uint256 minRelayerBond, uint256 minChallengerBond);
+    /// @notice Checks if the cached score for an address is older than maxAge seconds.
+    function isScoreStale(bytes32 stellarAddress, uint256 maxAge) external view returns (bool);
 }

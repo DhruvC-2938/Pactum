@@ -1,136 +1,198 @@
-import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { isConnected as checkIsConnected, requestAccess, getAddress } from '@stellar/freighter-api';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from 'react';
+import {
+  connectWallet as connectWithProvider,
+  getFreighterAddress,
+  isFreighterInstalled,
+  isFreighterConnected,
+  WalletConnectionError,
+  type WalletErrorCode,
+  type WalletProvider as WalletProviderName,
+} from '../lib/wallet';
 
 export interface WalletContextType {
   address: string | null;
+  provider: WalletProviderName | null;
   isConnected: boolean;
   isInstalled: boolean;
   isConnecting: boolean;
   error: string | null;
-  connectWallet: () => Promise<void>;
+  errorCode: WalletErrorCode | null;
+  connectWallet: (provider?: WalletProviderName) => Promise<void>;
   disconnectWallet: () => void;
   clearError: () => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'pactum_freighter_connected';
+const LOCAL_STORAGE_KEY = 'pactum_wallet_state';
+
+interface PersistedWalletState {
+  provider: WalletProviderName | null;
+  address: string;
+}
+
+function loadPersistedState(): PersistedWalletState | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedWalletState;
+    if (
+      !parsed ||
+      (parsed.provider !== 'freighter' &&
+        parsed.provider !== 'albedo' &&
+        parsed.provider !== 'ledger') ||
+      !parsed.address
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    console.warn('[WalletContext] Failed to parse persisted state:', err);
+    return null;
+  }
+}
+
+function persistState(provider: WalletProviderName, address: string): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ provider, address }));
+  } catch (err) {
+    console.warn('[WalletContext] Failed to persist wallet state:', err);
+  }
+}
+
+function clearPersistedState(): void {
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+  } catch (err) {
+    console.warn('[WalletContext] Failed to clear persisted state:', err);
+  }
+}
 
 export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [address, setAddress] = useState<string | null>(null);
+  const [provider, setProvider] = useState<WalletProviderName | null>(null);
   const [isInstalled, setIsInstalled] = useState<boolean>(true);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<WalletErrorCode | null>(null);
 
-  // Auto-connect check on mount
+  const applyError = useCallback((err: unknown) => {
+    if (err instanceof WalletConnectionError) {
+      setErrorCode(err.code);
+      setError(err.message);
+    } else {
+      setErrorCode('UNKNOWN');
+      setError(err instanceof Error ? err.message : 'Failed to connect with wallet.');
+    }
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
+    setErrorCode(null);
+  }, []);
+
+  // Auto-connect check on mount: restore persisted session (public key only, no signatures).
+  // Ledger/hardware sessions are never auto-restored since they require a fresh
+  // device connection prompt each time.
   useEffect(() => {
     let isMounted = true;
 
-    const checkAutoConnect = async () => {
+    const restoreSession = async () => {
+      const persisted = loadPersistedState();
+      if (!persisted) return;
+
+      if (persisted.provider === 'albedo') {
+        // Albedo is web-based; the public key is public info, safe to restore.
+        if (isMounted) {
+          setAddress(persisted.address);
+          setProvider('albedo');
+        }
+        return;
+      }
+
+      if (persisted.provider === 'ledger') {
+        // Hardware wallets require an explicit reconnect (USB/BLE prompt).
+        return;
+      }
+
+      // Freighter: verify the extension is still installed & the account is still accessible.
+      const installed = isFreighterInstalled();
+      setIsInstalled(installed);
+      if (!installed) return;
+
       try {
-        const wasConnected = localStorage.getItem(LOCAL_STORAGE_KEY) === 'true';
-        if (wasConnected) {
-          const addrResult = await getAddress();
-          if (isMounted && addrResult?.address && !addrResult.error) {
-            setAddress(addrResult.address);
-          }
+        const connected = await isFreighterConnected();
+        if (!connected) return;
+
+        const addrRes = await getFreighterAddress();
+        if (isMounted && addrRes?.address && !addrRes.error) {
+          setAddress(addrRes.address);
+          setProvider('freighter');
         }
       } catch (err) {
         console.warn('[WalletContext] Auto-connect error:', err);
       }
     };
 
-    checkAutoConnect();
+    restoreSession();
 
     return () => {
       isMounted = false;
     };
   }, []);
 
-  const connectWallet = async () => {
-    setIsConnecting(true);
-    setError(null);
+  const connectWallet = useCallback(
+    async (walletProvider: WalletProviderName = 'freighter') => {
+      setIsConnecting(true);
+      setError(null);
+      setErrorCode(null);
 
-    try {
-      // 1. Verify extension presence
-      let installed = false;
       try {
-        const connRes = await checkIsConnected();
-        installed = Boolean(connRes && connRes.isConnected);
-      } catch (e) {
-        installed = Boolean(typeof window !== 'undefined' && (window as any).freighter);
-      }
+        if (walletProvider === 'freighter') {
+          setIsInstalled(isFreighterInstalled());
+        }
 
-      if (!installed && typeof window !== 'undefined' && (window as any).freighter) {
-        installed = true;
-      }
+        const result = await connectWithProvider(walletProvider);
 
-      if (!installed) {
-        setIsInstalled(false);
-        setError('Freighter browser extension was not detected. Please install Freighter from freighter.app.');
+        setAddress(result.address);
+        setProvider(result.provider);
+        persistState(result.provider, result.address);
+      } catch (err) {
+        console.error(`[WalletContext] Connection error (${walletProvider}):`, err);
+        applyError(err);
+      } finally {
         setIsConnecting(false);
-        return;
       }
+    },
+    [applyError],
+  );
 
-      setIsInstalled(true);
-
-      // 2. Trigger Freighter requestAccess pop-up & retrieve Stellar address
-      let userAddr = '';
-      const accessRes = await requestAccess();
-
-      if (accessRes && accessRes.address) {
-        userAddr = accessRes.address;
-      } else if (accessRes && accessRes.error) {
-        // Fallback to getAddress if already allowed
-        const addrRes = await getAddress();
-        if (addrRes && addrRes.address && !addrRes.error) {
-          userAddr = addrRes.address;
-        } else {
-          setError(typeof accessRes.error === 'string' ? accessRes.error : 'Connection request denied in Freighter.');
-          setIsConnecting(false);
-          return;
-        }
-      } else {
-        const addrRes = await getAddress();
-        if (addrRes && addrRes.address && !addrRes.error) {
-          userAddr = addrRes.address;
-        }
-      }
-
-      if (userAddr) {
-        setAddress(userAddr);
-        localStorage.setItem(LOCAL_STORAGE_KEY, 'true');
-      } else {
-        setError('Unable to retrieve account address from Freighter.');
-      }
-    } catch (err: any) {
-      console.error('[WalletContext] Connection error:', err);
-      setError(err?.message || 'Failed to connect with Freighter wallet.');
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const disconnectWallet = () => {
+  const disconnectWallet = useCallback(() => {
     setAddress(null);
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
-  };
-
-  const clearError = () => {
-    setError(null);
-  };
+    setProvider(null);
+    clearPersistedState();
+  }, []);
 
   return (
     <WalletContext.Provider
       value={{
         address,
+        provider,
         isConnected: Boolean(address),
         isInstalled,
         isConnecting,
         error,
+        errorCode,
         connectWallet,
         disconnectWallet,
-        clearError
+        clearError,
       }}
     >
       {children}
