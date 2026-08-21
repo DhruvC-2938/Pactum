@@ -122,14 +122,30 @@ export class CrossChainRelayer {
     const encoded = this.encodeBatch(batch);
     await this.batchStore.saveBatch(batch);
 
+    let tx: any;
     try {
-      const tx = await this.oracleContract.proposeBatch(encoded);
-      const receipt = await tx.wait();
-      return receipt ? receipt.hash : tx.hash;
-    } catch (error) {
+      tx = await this.oracleContract.proposeBatch(encoded);
+    } catch (broadcastError) {
+      // Broadcast failed before transaction was dispatched to network
       await this.batchStore.deleteBatch(batchNonce);
       this.currentNonce -= 1n;
-      throw error;
+      throw broadcastError;
+    }
+
+    try {
+      const receipt = await tx.wait();
+      if (receipt && receipt.status === 0) {
+        // Transaction mined but reverted on-chain
+        await this.batchStore.deleteBatch(batchNonce);
+        this.currentNonce -= 1n;
+        throw new Error(`proposeBatch transaction reverted: ${receipt.hash}`);
+      }
+      return receipt ? receipt.hash : tx.hash;
+    } catch (waitError) {
+      // Post-broadcast confirmation error: retain persisted payload in store
+      // so recovery remains possible if the transaction was included in a block.
+      console.warn(`[Relayer] Confirmation error for batch ${batchNonce}, retaining persisted payload:`, waitError);
+      throw waitError;
     }
   }
 
