@@ -213,7 +213,7 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
-  await page.click('#hero-launch-btn');
+  await page.getByRole('button', { name: 'Launch App' }).first().click();
   await page.click('#nav-create');
 
   // Try to continue without filling counterparty

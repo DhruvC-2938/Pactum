@@ -218,7 +218,8 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        # playwright.config.ts (testDir: ./e2e) runs both a chromium and a firefox project.
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Run frontend e2e tests
         working-directory: frontend
