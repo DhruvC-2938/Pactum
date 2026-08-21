@@ -210,24 +210,16 @@ interface IPactumTrustOracle {
 (`MockMessagingEndpoint`), so the security model above can be exercised without depending on a
 live Chainlink or LayerZero deployment:
 
-- `evm/contracts/PactumTrustOracle.sol` — the Oracle: decodes a `TrustScoreBatch`, applies every
-  layer-2 check from §5, updates the packed `TrustScore` mapping, and emits the batch/per-entry
-  events from §6.
+- `evm/contracts/PactumZeroTrustOracle.sol` — the Zero-Trust Oracle with optimistic challenge
+  periods, bonded fraud proof submission, automated fault recovery, and slashing.
+- `evm/contracts/PactumTrustOracle.sol` — the direct-apply baseline Oracle implementation.
 - `evm/contracts/mocks/MockMessagingEndpoint.sol` — stands in for a verified LayerZero/CCIP
   endpoint: only *it* is allowed to call the Oracle's receive function, mirroring the real
   `onlyEndpoint` restriction, while letting tests drive delivery directly instead of standing up a
   real messaging network.
-- `evm/test/PactumTrustOracle.test.js` — exercises the happy path plus every rejection in §5:
-  untrusted sender, unknown registry id, stale/replayed nonce, out-of-order ledger sequence, and
-  oversized batches.
+- `evm/test/PactumZeroTrustOracle.test.js` — exercises challenge periods, bonded challenges, fraud
+  proof verification, relayer/challenger slashing, reorg fault recovery, and stake management.
+- `backend/src/workers/crossChainRelayer.ts` — off-chain relayer service with automated challenge
+  detection, cryptographic overriding state proof generation, and reorg recovery.
 
-See [`evm/README.md`](../evm/README.md) for how to run it, and how a real provider (LayerZero
-`OApp` / CCIP `CCIPReceiver`) would replace the mock without changing `PactumTrustOracle.sol`'s
-application-level logic.
-
-## 10. What this is not
-
-This is a design + PoC, not a production bridge. Before mainnet use it needs: a concrete choice of
-messaging provider (with its real endpoint/security parameters, not a mock), a funded relayer
-service (extending `backend/`), an audited implementation of the Oracle, and a governance process
-for updating `registryId`/`supportedVersions`/staleness parameters post-deployment.
+See [`evm/README.md`](../evm/README.md) for how to run tests and deployment instructions.
