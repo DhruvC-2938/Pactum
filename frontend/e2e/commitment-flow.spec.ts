@@ -165,10 +165,10 @@ test.beforeEach(async ({ page }) => {
   });
 
   await page.goto('/');
-  const launchBtn = page.getByRole('button', { name: /launch app/i }).first();
-  if (await launchBtn.isVisible()) {
-    await launchBtn.click();
-  }
+  // `isVisible()` doesn't auto-wait, so it can read the DOM before the landing page has
+  // hydrated and race to false on a slower load — `click()`'s own actionability wait is the
+  // reliable way to land on this always-present button.
+  await page.getByRole('button', { name: /launch app/i }).first().click();
 });
 
 test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
@@ -177,18 +177,19 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   // 1. Connect the wallet from the landing page
   await page.getByRole('button', { name: 'Connect Wallet' }).click();
   await page.getByRole('button', { name: /Freighter/ }).click();
+  // The connected-wallet button (above) is WalletConnectButton's own indicator of connected
+  // state — it never renders literal "Connected" text, so that assertion never matched anything.
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
-
-  await expect(page.getByText('Connected')).toBeVisible();
 
   // 2. Create Commitment
   await page.getByRole('button', { name: 'Create Commitment' }).click();
 
   // Step 1: Counterparty
   await expect(page.getByLabel('Counterparty Address')).toBeVisible();
-  await page
-    .getByLabel('Counterparty Address')
-    .fill('GCV7GCOUNTERPARTY123456789012345678901234567890');
+  // The wizard's real client-side StrKey validation requires a well-formed 56-char address;
+  // the placeholder previously here ('GCV7GCOUNTERPARTY...', 47 chars) failed that check and
+  // silently blocked the Continue button.
+  await page.getByLabel('Counterparty Address').fill(COUNTERPARTY);
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 2: Terms
@@ -196,24 +197,26 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.getByLabel('Terms / Description').fill('Test commitment terms');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  // Step 3: Due Date
+  // Step 3: Due Date + Review — the final step is a review screen, not another form to
+  // Continue past; it submits via "Create Commitment", scoped to #page-create the same way as
+  // the encrypted-commitment test (the sidebar nav item shares that accessible name).
   await expect(page.getByLabel('Due Date')).toBeVisible();
   await page.getByLabel('Due Date').fill('2026-12-31T12:00');
-  await page.locator('#wizard-terms').fill('Deliver 500 widgets by end of Q3');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.locator('#page-create').getByRole('button', { name: 'Create Commitment' }).click();
 
   // Verify success
-  await expect(page.getByText('Commitment created successfully')).toBeVisible();
+  await expect(page.getByText('Commitment Created On-Chain!')).toBeVisible();
 
   // 3. View Dashboard
-  await page.getByRole('link', { name: 'Dashboard' }).click();
+  await page.locator('#nav-dashboard').click();
 
   await expect(page.locator('.commitment-list')).toBeVisible();
   await expect(page.getByText('mock_hash')).toBeVisible();
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
-  await page.getByRole('button', { name: 'Launch App' }).first().click();
+  // beforeEach already lands on the dashboard (via its own Launch App click), so there's no
+  // landing page left to launch from here.
   await page.click('#nav-create');
 
   // Try to continue without filling counterparty
@@ -239,7 +242,12 @@ test('loading spinners display during network requests', async ({ page }) => {
     });
   });
 
-  await page.getByRole('link', { name: 'Dashboard' }).click();
+  // beforeEach's own Launch App click already lands on the dashboard and fetches reputation
+  // before this route mock existed — and the dashboard nav item just toggles a CSS class
+  // (App.tsx), it doesn't remount/refetch on a repeat visit. Reload for a fresh mount that
+  // actually goes through this mocked, artificially-delayed route.
+  await page.reload();
+  await page.getByRole('button', { name: /launch app/i }).first().click();
 
   await expect(page.locator('div[style*="animation: pulse"]')).toBeVisible();
   await expect(page.locator('div[style*="animation: pulse"]')).not.toBeVisible({ timeout: 5000 });
@@ -322,7 +330,9 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
   // Step 3: Due date
   await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
-  await page.getByRole('button', { name: /Create Commitment/i }).click();
+  // Scoped to #page-create: the unscoped locator also matches the sidebar's #nav-create button,
+  // which carries the same accessible name.
+  await page.locator('#page-create').getByRole('button', { name: 'Create Commitment' }).click();
 
   // Encryption consent modal should appear
   await expect(page.locator('#encrypt-modal-confirm')).toBeVisible({ timeout: 5000 });
