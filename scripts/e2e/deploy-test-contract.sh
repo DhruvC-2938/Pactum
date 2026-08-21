@@ -65,10 +65,11 @@ for id in "${IDENTITIES[@]}"; do
 done
 
 echo "== Building contract (stellar contract build, wasm32v1-none) =="
-# Package name confirmed as "registry" via contracts/registry/Cargo.toml's
-# [package] name field -- scoping the build to it skips building
-# timelock/mock_resolver/upgrade-fixture/validation, which aren't needed here.
-(cd "$CONTRACT_DIR" && $CLI contract build -p registry)
+# `-p`/`--package` is NOT a valid flag for `stellar contract build` in this
+# CLI version (confirmed by a real CI failure: "error: unexpected argument
+# '-p' found"). The correct way to scope a build to one workspace member is
+# --manifest-path pointing directly at that package's Cargo.toml.
+$CLI contract build --manifest-path "${CONTRACT_DIR}/registry/Cargo.toml"
 
 if [ ! -f "$WASM_PATH" ]; then
   echo "ERROR: expected wasm not found at ${WASM_PATH}" >&2
