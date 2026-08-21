@@ -18,6 +18,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # deploy-test-contract.sh runs `stellar contract build` which compiles
+      # to the wasm32v1-none target. GitHub's ubuntu-latest runner ships Rust
+      # with only the default host target installed -- wasm32v1-none has to
+      # be added explicitly, or the build fails with:
+      #   error[E0463]: can't find crate for `core`
+      #   = note: the wasm32v1-none target may not be installed
+      - name: Install Rust wasm32v1-none target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
       - name: Install Stellar CLI
         run: |
           curl -sSLO https://github.com/stellar/stellar-cli/releases/download/v27.1.0/stellar-cli-27.1.0-x86_64-unknown-linux-gnu.tar.gz
