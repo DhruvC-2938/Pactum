@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { xdr } from '@stellar/stellar-sdk';
 import { AntiEntropyManager } from '../antiEntropy.ts';
 import type { SorobanIndexedEvent, AntiEntropyReqMessage } from '../types.ts';
 
@@ -16,7 +17,7 @@ describe('AntiEntropyManager', () => {
       id: 'e1',
       contractId: 'C1',
       topic: 'test',
-      xdrPayload: btoa('test'),
+      xdrPayload: xdr.ScVal.scvSymbol('test1').toXDR('base64'),
       ledgerSeq: 100,
       txHash: '0x1',
       timestamp: Date.now(),
@@ -27,7 +28,7 @@ describe('AntiEntropyManager', () => {
       id: 'e2',
       contractId: 'C1',
       topic: 'test',
-      xdrPayload: btoa('test'),
+      xdrPayload: xdr.ScVal.scvSymbol('test2').toXDR('base64'),
       ledgerSeq: 102,
       txHash: '0x2',
       timestamp: Date.now(),

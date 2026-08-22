@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { xdr } from '@stellar/stellar-sdk';
 import { PlumtreeEngine } from '../plumtreeEngine.ts';
 import { PeerScoringManager } from '../peerScoring.ts';
 import type { MeshProtocolMessage, SorobanIndexedEvent, GossipDataMessage } from '../types.ts';
@@ -24,7 +25,7 @@ describe('PlumtreeEngine', () => {
       id,
       contractId: 'CA3D...PACTUM',
       topic: 'contract_invoked',
-      xdrPayload: btoa('test-payload'),
+      xdrPayload: xdr.ScVal.scvSymbol('invoked').toXDR('base64'),
       ledgerSeq: 104520,
       txHash: '0xdeadbeef',
       timestamp: Date.now(),

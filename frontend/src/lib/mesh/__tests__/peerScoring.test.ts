@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { xdr } from '@stellar/stellar-sdk';
 import { PeerScoringManager } from '../peerScoring.ts';
 import type { SorobanIndexedEvent } from '../types.ts';
 
@@ -54,11 +55,13 @@ describe('PeerScoringManager', () => {
   it('validates Soroban events correctly', () => {
     const manager = new PeerScoringManager();
 
+    const realXdrPayload = xdr.ScVal.scvSymbol('transfer').toXDR('base64');
+
     const validEvent: SorobanIndexedEvent = {
       id: 'valid-123',
       contractId: 'C123',
       topic: 'transfer',
-      xdrPayload: btoa('valid-xdr-binary-data'),
+      xdrPayload: realXdrPayload,
       ledgerSeq: 100500,
       txHash: '0xabc',
       timestamp: Date.now(),
@@ -67,6 +70,15 @@ describe('PeerScoringManager', () => {
 
     const validResult = manager.validateSorobanEvent(validEvent);
     expect(validResult.isValid).toBe(true);
+
+    // Test Base64-compatible non-XDR payload (should be rejected as Byzantine)
+    const nonXdrBase64Event: SorobanIndexedEvent = {
+      ...validEvent,
+      xdrPayload: btoa('valid-base64-string-but-not-valid-soroban-xdr'),
+    };
+    const nonXdrResult = manager.validateSorobanEvent(nonXdrBase64Event);
+    expect(nonXdrResult.isValid).toBe(false);
+    expect(nonXdrResult.isByzantine).toBe(true);
 
     const invalidSeqEvent: SorobanIndexedEvent = {
       ...validEvent,

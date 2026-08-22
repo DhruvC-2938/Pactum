@@ -1,4 +1,5 @@
 import type { PeerReputation, SorobanIndexedEvent } from './types.ts';
+import { xdr } from '@stellar/stellar-sdk';
 
 export interface PeerScoringConfig {
   initialScore?: number;
@@ -117,14 +118,15 @@ export class PeerScoringManager {
       return { isValid: false, isByzantine: true, reason: 'Event timestamp skewed beyond acceptable boundary' };
     }
 
-    // Basic Base64 verification of XDR payload
+    // Verify valid Soroban XDR structure (either ScVal or ContractEvent)
     try {
-      const decoded = atob(event.xdrPayload);
-      if (decoded.length === 0) {
-        return { isValid: false, isByzantine: true, reason: 'Empty XDR payload' };
-      }
+      xdr.ScVal.fromXDR(event.xdrPayload, 'base64');
     } catch {
-      return { isValid: false, isByzantine: true, reason: 'Malformed Base64 XDR payload' };
+      try {
+        xdr.ContractEvent.fromXDR(event.xdrPayload, 'base64');
+      } catch {
+        return { isValid: false, isByzantine: true, reason: 'Malformed or invalid Soroban XDR structure' };
+      }
     }
 
     return { isValid: true, isByzantine: false };
