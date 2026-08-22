@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import commitmentsRouter from './routes/commitments';
 import reputationRouter from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
+import heReputationRouter from './routes/he_reputation';
 import { startSnapshotCron } from './indexer/cron';
 import { closeCache, initCache, isCacheAvailable } from './indexer/cache';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
@@ -77,6 +78,9 @@ app.use('/reputation', reputationRouter);
 // Also mounted here because that is where the placeholder handler used to live.
 app.use('/api/reputation', reputationRouter);
 app.use('/api/analytics', analyticsRoutes);
+// Homomorphic encryption layer — Issue #190
+app.use('/reputation', heReputationRouter);
+app.use('/api/reputation', heReputationRouter);
 
 if (process.env.REPUTATION_SNAPSHOT_CRON !== 'off') {
   startSnapshotCron();

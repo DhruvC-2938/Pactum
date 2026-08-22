@@ -5,6 +5,7 @@ pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+pub mod he_reputation;
 mod reentrancy;
 pub mod reputation;
 pub mod trust_gate;
@@ -422,5 +423,59 @@ impl RegistryContract {
     /// * `u32` - The trust score in the range 0..=100 (50 = neutral baseline).
     pub fn get_trust_score(env: Env, address: Address) -> u32 {
         trust_score::get_trust_score(&env, address)
+    }
+
+    // -----------------------------------------------------------------------
+    // Homomorphic Encryption Layer — Issue #190
+    // -----------------------------------------------------------------------
+
+    /// Accumulates an encrypted outcome rating into `address`'s private
+    /// reputation store.
+    ///
+    /// The caller submits a Paillier ciphertext `enc_outcome` and a
+    /// Bulletproof-style zero-knowledge range proof asserting that the
+    /// hidden plaintext rating is within `[1, 5]`. The contract verifies
+    /// the range proof on-chain and homomorphically folds the ciphertext
+    /// into the running encrypted aggregate for the given outcome kind —
+    /// **without ever decrypting any individual rating**.
+    ///
+    /// # Arguments
+    /// * `address` — Address whose encrypted reputation is being updated.
+    /// * `enc_outcome` — Paillier ciphertext of the plaintext outcome value.
+    /// * `outcome_kind` — Outcome bucket: `0` = fulfilled, `1` = late, `2` = breached.
+    /// * `proof` — Zero-knowledge range proof (`commitment`, `witness_a`, `witness_b`).
+    /// * `pk_n` — The 64-bit compact Paillier public-key modulus.
+    ///
+    /// # Panics
+    /// * Panics with `Error::InvalidRangeProof` if the range proof fails verification.
+    pub fn submit_encrypted_outcome(
+        env: Env,
+        address: Address,
+        enc_outcome: he_reputation::EncryptedScore,
+        outcome_kind: u32,
+        proof: he_reputation::RangeProof,
+        pk_n: u64,
+    ) {
+        he_reputation::accumulate_encrypted_outcome(
+            &env,
+            &address,
+            enc_outcome,
+            outcome_kind,
+            proof,
+            pk_n,
+        );
+    }
+
+    /// Returns the homomorphically aggregated encrypted trust score for `address`.
+    ///
+    /// The result is a Paillier ciphertext encoding the linear score formula
+    /// evaluated over the encrypted outcome counts. Only a holder of the
+    /// corresponding Paillier private key can decrypt it to obtain the
+    /// plaintext score, preserving full privacy of individual ratings.
+    ///
+    /// # Returns
+    /// * `EncryptedScore` — The encrypted score ciphertext (lo/hi limbs + count).
+    pub fn get_encrypted_trust_score(env: Env, address: Address) -> he_reputation::EncryptedScore {
+        he_reputation::get_encrypted_score(&env, &address)
     }
 }

@@ -44,5 +44,6 @@ pub enum Error {
     MigrationNotEnabled = 18,
     /// The requested migration batch exceeds the maximum batch size.
     BatchTooLarge = 19,
+    /// The submitted zero-knowledge range proof did not verify.
+    InvalidRangeProof = 20,
 }
-

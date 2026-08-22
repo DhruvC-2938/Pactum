@@ -8,8 +8,9 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc && npm run copy:migrations",
     "copy:migrations": "node -e \"require('fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
-    "test": "npm run test:indexer",
+    "test": "npm run test:indexer && npm run test:crypto",
     "test:indexer": "tsc -p tsconfig.indexer-test.json && find dist-indexer-test/src/indexer -type f -name '*.test.js' -exec node --test {} +",
+    "test:crypto": "tsc -p tsconfig.crypto-test.json && find dist-crypto-test/src/crypto -type f -name '*.test.js' -exec node --test {} +",
     "analytics:worker": "node dist/workers/analyticsWorker.js",
     "migrate:timescale": "node dist/db/migrate.js"
   },
