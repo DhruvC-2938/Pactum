@@ -439,8 +439,11 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.getByLabel('Due Date').fill(futureDueDate());
   await page.locator('#page-create').getByRole('button', { name: 'Create Commitment' }).click();
 
-  // Verify success
-  await expect(page.getByText('Commitment Created On-Chain!')).toBeVisible();
+  // Verify success & transition to Reputation Dashboard — App.tsx's onSuccess navigates away
+  // (setActivePage('reputation')) in the same commit the wizard sets its own success state, so
+  // the wizard's "Commitment Created On-Chain!" view is written to the DOM but never actually
+  // painted while #page-create is active; asserting on it directly is a false negative.
+  await expect(page.locator('#page-reputation')).toHaveClass(/active/, { timeout: 10000 });
 
   // 3. View Commitments — #commitments-list-page only exists on the Commitments page, not the
   // Dashboard's own (unrelated, id-less) "Recent Commitments" card.
