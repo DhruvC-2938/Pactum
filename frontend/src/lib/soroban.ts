@@ -12,6 +12,7 @@ import {
   scValToNative,
 } from '@stellar/stellar-sdk';
 import type { Reputation } from './api';
+import { Buffer } from 'buffer';
 import { signTransaction } from '@stellar/freighter-api';
 import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
 import type { WalletProvider } from './wallet';
@@ -253,7 +254,7 @@ export async function submitCreateCommitment({
   const issuerScVal = Address.fromString(issuerAddress).toScVal();
   const counterpartyScVal = Address.fromString(counterpartyAddress).toScVal();
   const termsHashBytes = hexToBytes(termsHashHex);
-  const termsHashScVal = xdr.ScVal.scvBytes(termsHashBytes as any);
+  const termsHashScVal = xdr.ScVal.scvBytes(Buffer.from(termsHashBytes));
   const dueAtScVal = xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString()));
 
   // 3. Build Transaction Envelope
@@ -330,7 +331,11 @@ export async function submitCreateCommitment({
       if ((signResult as any).error) {
         throw new Error(`Freighter signing rejected: ${(signResult as any).error}`);
       }
-      signedXdr = (signResult as any).signedTxXdr || (signResult as any).signedXdr || '';
+      signedXdr =
+        (signResult as any).signedTxXdr ||
+        (signResult as any).signedXdr ||
+        (signResult as any).signedTransaction ||
+        '';
     }
   }
 

@@ -82,7 +82,12 @@ export async function installSigningFreighterMock(
             const signedTransaction = await (window as any).__e2eSignWithTestKeypair(
               data.transactionXdr,
             );
-            response = { signedTransaction, signerAddress: mockAddress };
+            response = {
+              signedTransaction,
+              signedTxXdr: signedTransaction,
+              signedXdr: signedTransaction,
+              signerAddress: mockAddress,
+            };
             break;
           }
           default:
