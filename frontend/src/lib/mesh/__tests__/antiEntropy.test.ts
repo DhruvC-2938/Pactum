@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { AntiEntropyManager } from '../antiEntropy.ts';
 import type { SorobanIndexedEvent, AntiEntropyReqMessage } from '../types.ts';
 
@@ -47,9 +46,9 @@ describe('AntiEntropyManager', () => {
     };
 
     const resp = manager.handleSyncRequest(req);
-    assert.equal(resp.events.length, 2);
-    assert.equal(resp.events[0].id, 'e1');
-    assert.equal(resp.events[1].id, 'e2');
+    expect(resp.events.length).toBe(2);
+    expect(resp.events[0].id).toBe('e1');
+    expect(resp.events[1].id).toBe('e2');
 
     // Test invalid range bounds
     const invalidReq: AntiEntropyReqMessage = {
@@ -60,14 +59,14 @@ describe('AntiEntropyManager', () => {
       timestamp: Date.now(),
     };
     const invalidResp = manager.handleSyncRequest(invalidReq);
-    assert.equal(invalidResp.events.length, 0);
+    expect(invalidResp.events.length).toBe(0);
 
     // Test maxEventsPerSync cap
     const smallCapManager = new AntiEntropyManager(mockTransport, { maxEventsPerSync: 1 });
     smallCapManager.recordEvent(event1);
     smallCapManager.recordEvent(event2);
     const cappedResp = smallCapManager.handleSyncRequest(req);
-    assert.equal(cappedResp.events.length, 1);
+    expect(cappedResp.events.length).toBe(1);
 
     manager.destroy();
     smallCapManager.destroy();

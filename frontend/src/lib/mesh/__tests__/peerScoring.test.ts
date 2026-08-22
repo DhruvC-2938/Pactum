@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { PeerScoringManager } from '../peerScoring.ts';
 import type { SorobanIndexedEvent } from '../types.ts';
 
@@ -10,13 +9,13 @@ describe('PeerScoringManager', () => {
 
     manager.recordValidMessage(peerId);
     let rep = manager.getReputation(peerId);
-    assert.equal(rep.score, 5);
-    assert.equal(rep.validMessagesDelivered, 1);
+    expect(rep.score).toBe(5);
+    expect(rep.validMessagesDelivered).toBe(1);
 
     manager.recordValidMessage(peerId);
     rep = manager.getReputation(peerId);
-    assert.equal(rep.score, 10);
-    assert.equal(rep.validMessagesDelivered, 2);
+    expect(rep.score).toBe(10);
+    expect(rep.validMessagesDelivered).toBe(2);
   });
 
   it('penalizes duplicate messages and updates duplicate count', () => {
@@ -25,8 +24,8 @@ describe('PeerScoringManager', () => {
 
     manager.recordDuplicateMessage(peerId);
     const rep = manager.getReputation(peerId);
-    assert.equal(rep.score, -2);
-    assert.equal(rep.duplicateMessages, 1);
+    expect(rep.score).toBe(-2);
+    expect(rep.duplicateMessages).toBe(1);
   });
 
   it('quarantines and bans peers broadcasting invalid or Byzantine state', () => {
@@ -39,17 +38,17 @@ describe('PeerScoringManager', () => {
     // Invalid message (-40)
     manager.recordInvalidMessage(peerId, false);
     let rep = manager.getReputation(peerId);
-    assert.equal(rep.score, -40);
-    assert.equal(rep.isQuarantined, true);
-    assert.equal(rep.isBanned, false);
-    assert.equal(manager.isPeerEligibleForEagerGossip(peerId), false);
+    expect(rep.score).toBe(-40);
+    expect(rep.isQuarantined).toBe(true);
+    expect(rep.isBanned).toBe(false);
+    expect(manager.isPeerEligibleForEagerGossip(peerId)).toBe(false);
 
     // Byzantine attack (-80) -> crosses ban threshold (-50)
     manager.recordInvalidMessage(peerId, true);
     rep = manager.getReputation(peerId);
-    assert.equal(rep.score, -100);
-    assert.equal(rep.isBanned, true);
-    assert.equal(manager.isPeerBanned(peerId), true);
+    expect(rep.score).toBe(-100);
+    expect(rep.isBanned).toBe(true);
+    expect(manager.isPeerBanned(peerId)).toBe(true);
   });
 
   it('validates Soroban events correctly', () => {
@@ -67,15 +66,15 @@ describe('PeerScoringManager', () => {
     };
 
     const validResult = manager.validateSorobanEvent(validEvent);
-    assert.equal(validResult.isValid, true);
+    expect(validResult.isValid).toBe(true);
 
     const invalidSeqEvent: SorobanIndexedEvent = {
       ...validEvent,
       ledgerSeq: -1,
     };
     const invalidResult = manager.validateSorobanEvent(invalidSeqEvent);
-    assert.equal(invalidResult.isValid, false);
-    assert.equal(invalidResult.isByzantine, true);
+    expect(invalidResult.isValid).toBe(false);
+    expect(invalidResult.isByzantine).toBe(true);
   });
 
   it('decays scores periodically towards neutral baseline', () => {
@@ -87,6 +86,6 @@ describe('PeerScoringManager', () => {
 
     manager.decayScores();
     const rep = manager.getReputation(peerId);
-    assert.equal(rep.score, 5);
+    expect(rep.score).toBe(5);
   });
 });

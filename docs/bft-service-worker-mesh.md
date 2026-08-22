@@ -4,7 +4,7 @@
 
 The **Pactum Service Worker Mesh** provides an in-browser, decentralized Peer-to-Peer (P2P) event dissemination layer over WebRTC Data Channels. By interconnecting client-side Service Workers into an epidemic gossip topology, newly indexed Soroban smart contract events are propagated instantly across user nodes, drastically reducing load on public Stellar RPC endpoints.
 
-```
+```text
                   ┌─────────────────────────────────────────┐
                   │          Soroban RPC Node               │
                   └────────────────────┬────────────────────┘
@@ -41,7 +41,7 @@ The mesh uses a hybrid **Plumtree-style dual overlay**:
 - **Lazy Graph (`lazyNeighbors`)**: Passive graph where message IDs are batched into periodic `IHAVE` announcements. If a node detects a missing message from an `IHAVE` announcement, a timer triggers a `GRAFT` message to promote that link and fetch the payload.
 - **Dynamic Optimization (`PRUNE`)**: If a node receives duplicate `GOSSIP_DATA` on an eager link, it sends a `PRUNE` message to demote the redundant link into the lazy graph, keeping tree depth and message amplification optimal.
 
-### 2. Sybil Resistance & Byzantine Peer Scoring
+### 2. Local Byzantine-Abuse Mitigation
 
 Every node runs an autonomous `PeerScoringManager` maintaining local reputation across `[-100, +100]`:
 - **Novel Valid Event**: `+5` points
@@ -49,7 +49,7 @@ Every node runs an autonomous `PeerScoringManager` maintaining local reputation 
 - **Malformed / Bad Schema Payload**: `-40` points
 - **Byzantine Attack (Invalid XDR, negative ledger seq, skewed timestamps)**: `-80` points
 - **Quarantine Threshold (`< -25`)**: Excluded from eager spanning tree.
-- **Ban Threshold (`< -50`)**: Immediate WebRTC channel closure and IP/PeerID ban for 5 minutes.
+- **Ban Threshold (`< -50`)**: Immediate WebRTC channel closure and local peer ban for 5 minutes (enforced in-memory locally without global ban propagation).
 - **Score Decay**: Periodic decay (half-life) allows recovered peers to restore neutrality.
 
 ### 3. In-Browser WebRTC Mesh Transport

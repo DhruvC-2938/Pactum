@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import { PlumtreeEngine } from '../plumtreeEngine.ts';
 import { PeerScoringManager } from '../peerScoring.ts';
 import type { MeshProtocolMessage, SorobanIndexedEvent, GossipDataMessage } from '../types.ts';
@@ -40,8 +39,8 @@ describe('PlumtreeEngine', () => {
     engine.addPeer('node-c');
     engine.addPeer('node-d'); // exceeds targetEagerFanout of 2 -> added to lazy
 
-    assert.deepEqual(engine.getEagerNeighbors(), ['node-b', 'node-c']);
-    assert.deepEqual(engine.getLazyNeighbors(), ['node-d']);
+    expect(engine.getEagerNeighbors()).toEqual(['node-b', 'node-c']);
+    expect(engine.getLazyNeighbors()).toEqual(['node-d']);
 
     engine.destroy();
   });
@@ -64,13 +63,13 @@ describe('PlumtreeEngine', () => {
 
     engine.handleMessage('node-b', msg);
 
-    assert.equal(deliveredEvents.length, 1);
-    assert.equal(deliveredEvents[0].event.id, 'msg-unique-1');
+    expect(deliveredEvents.length).toBe(1);
+    expect(deliveredEvents[0].event.id).toBe('msg-unique-1');
 
     // Should forward to node-c (other eager peer)
     const forwarded = sentMessages.filter((s) => s.targetPeerId === 'node-c');
-    assert.equal(forwarded.length, 1);
-    assert.equal(forwarded[0].message.type, 'GOSSIP_DATA');
+    expect(forwarded.length).toBe(1);
+    expect(forwarded[0].message.type).toBe('GOSSIP_DATA');
 
     engine.destroy();
   });
@@ -96,10 +95,10 @@ describe('PlumtreeEngine', () => {
     // Second arrival (duplicate)
     engine.handleMessage('node-b', msg);
 
-    assert.equal(engine.duplicatesPrunedCount, 1);
+    expect(engine.duplicatesPrunedCount).toBe(1);
     const pruneMsgs = sentMessages.filter((s) => s.targetPeerId === 'node-b' && s.message.type === 'PRUNE');
-    assert.equal(pruneMsgs.length, 1);
-    assert.ok(engine.getLazyNeighbors().includes('node-b'));
+    expect(pruneMsgs.length).toBe(1);
+    expect(engine.getLazyNeighbors().includes('node-b')).toBe(true);
 
     engine.destroy();
   });
@@ -131,8 +130,8 @@ describe('PlumtreeEngine', () => {
 
     engine.handleMessage('node-b', msg);
 
-    assert.equal(deliveredEvents.length, 0);
-    assert.equal(engine.byzantineDroppedCount, 1);
+    expect(deliveredEvents.length).toBe(0);
+    expect(engine.byzantineDroppedCount).toBe(1);
 
     engine.destroy();
   });
