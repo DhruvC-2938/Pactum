@@ -225,6 +225,20 @@ test('form validation errors appear on bad input', async ({ page }) => {
 });
 
 test('loading spinners display during network requests', async ({ page }) => {
+  // Delay the commitments API so the loading indicator is visible long enough to assert
+  await page.route('**/commitments*', async (route) => {
+    if (route.request().method() === 'GET') {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
   await page.route('**/reputation/**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await route.fulfill({
@@ -244,7 +258,7 @@ test('loading spinners display during network requests', async ({ page }) => {
   await page.locator('#nav-dashboard').click();
 
   await expect(page.getByText('Loading commitments...')).toBeVisible();
-  await expect(page.getByText('Loading commitments...')).not.toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('Loading commitments...')).not.toBeVisible({ timeout: 10000 });
 });
 
 test('WASM validation failure blocks transaction simulation and wallet submission', async ({
