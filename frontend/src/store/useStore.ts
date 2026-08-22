@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import type { CommitmentStatus } from '@/lib/api';
+import { useSyncExternalStore, useRef } from 'react';
+import type { CommitmentStatus } from '../lib/api';
 
 export type CommitmentOutcomeName = 'fulfilled' | 'late' | 'breached';
 
@@ -12,12 +12,12 @@ export interface ContractEvent {
   outcome?: CommitmentOutcomeName;
 }
 
-interface RealtimeCommitmentState {
+export interface RealtimeCommitmentState {
   status?: CommitmentStatus;
   outcome?: CommitmentStatus | null;
 }
 
-interface StoreState {
+export interface StoreState {
   // commitmentId -> RealtimeCommitmentState
   realtimeCommitments: Record<string, RealtimeCommitmentState>;
   // track last processed sequence to deduplicate events
@@ -36,18 +36,41 @@ const mapOutcomeToStatus = (outcome?: CommitmentOutcomeName): CommitmentStatus |
   }
 };
 
-export const useStore = create<StoreState>((set, get) => ({
+let state: StoreState;
+const listeners = new Set<() => void>();
+
+function subscribe(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  return () => {
+    listeners.delete(onStoreChange);
+  };
+}
+
+function setState(updater: (prev: StoreState) => Partial<StoreState> | null | undefined) {
+  const partial = updater(state);
+  if (!partial || partial === state) {
+    return;
+  }
+  state = { ...state, ...partial };
+  listeners.forEach((l) => l());
+}
+
+function getState(): StoreState {
+  return state;
+}
+
+state = {
   realtimeCommitments: {},
   lastProcessedSequence: 0,
   
-  applyEvent: (event) => set((state) => {
-    if (event.sequence && event.sequence <= state.lastProcessedSequence) {
-      // Deduplicate old events or repeat events
-      return state;
+  applyEvent: (event) => setState((prev) => {
+    if (event.sequence && event.sequence <= prev.lastProcessedSequence) {
+      // Deduplicate old events or repeat events — signal no change
+      return null;
     }
     
     const commitmentIdStr = event.commitmentId.toString();
-    const current = state.realtimeCommitments[commitmentIdStr] || {};
+    const current = prev.realtimeCommitments[commitmentIdStr] || {};
     
     let nextStatus = current.status;
     let nextOutcome = current.outcome;
@@ -62,23 +85,40 @@ export const useStore = create<StoreState>((set, get) => ({
         nextOutcome = nextStatus;
         break;
       case 'disputed':
-        nextStatus = 'Pending'; // 'Disputed' isn't explicitly in CommitmentStatus enum based on current UI, wait, api.ts says 'Pending' | 'Fulfilled' | 'Late' | 'Breached'
-        // Actually, status could be something else if disputed, but we'll leave it
+        nextStatus = 'Disputed';
         break;
     }
     
     return {
       realtimeCommitments: {
-        ...state.realtimeCommitments,
+        ...prev.realtimeCommitments,
         [commitmentIdStr]: {
           ...current,
           status: nextStatus,
           outcome: nextOutcome,
         }
       },
-      lastProcessedSequence: event.sequence ? Math.max(state.lastProcessedSequence, event.sequence) : state.lastProcessedSequence,
+      lastProcessedSequence: event.sequence ? Math.max(prev.lastProcessedSequence, event.sequence) : prev.lastProcessedSequence,
     };
   }),
 
-  getRealtimeCommitment: (id) => get().realtimeCommitments[id.toString()],
-}));
+  getRealtimeCommitment: (id) => state.realtimeCommitments[id.toString()],
+};
+
+export function useStore<T = StoreState>(selector: (s: StoreState) => T = (s) => s as unknown as T): T {
+  const lastStateRef = useRef(state);
+  const lastSelectedRef = useRef<T>(selector(state));
+
+  const getSnapshot = () => {
+    if (state !== lastStateRef.current) {
+      lastStateRef.current = state;
+      lastSelectedRef.current = selector(state);
+    }
+    return lastSelectedRef.current;
+  };
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+useStore.getState = getState;
+useStore.subscribe = subscribe;

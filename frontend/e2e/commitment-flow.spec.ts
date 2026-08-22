@@ -165,6 +165,7 @@ test.beforeEach(async ({ page }) => {
   });
 
   await page.goto('/');
+  // If landing page is shown, launch the app first
   const launchBtn = page.getByRole('button', { name: /launch app/i }).first();
   if (await launchBtn.isVisible()) {
     await launchBtn.click();
@@ -175,14 +176,15 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   page,
 }) => {
   // 1. Connect the wallet from the landing page
-  await page.getByRole('button', { name: 'Connect Wallet' }).click();
+  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
 
-  await expect(page.getByText('Connected')).toBeVisible();
+  // The sr-only "Connected" span in WalletConnectButton confirms wallet connection
+  await expect(page.getByText('Connected').first()).toBeVisible();
 
-  // 2. Create Commitment
-  await page.getByRole('button', { name: 'Create Commitment' }).click();
+  // 2. Create Commitment — use the nav button by its id to avoid strict mode violation
+  await page.locator('#nav-create').click();
 
   // Step 1: Counterparty
   await expect(page.getByLabel('Counterparty Address')).toBeVisible();
@@ -205,16 +207,16 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   // Verify success
   await expect(page.getByText('Commitment created successfully')).toBeVisible();
 
-  // 3. View Dashboard
-  await page.getByRole('link', { name: 'Dashboard' }).click();
+  // 3. View Dashboard — use nav button id, not role=link (it's a button)
+  await page.locator('#nav-dashboard').click();
 
   await expect(page.locator('.commitment-list')).toBeVisible();
   await expect(page.getByText('mock_hash')).toBeVisible();
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
-  await page.click('#hero-launch-btn');
-  await page.click('#nav-create');
+  // Landing page is already dismissed in beforeEach; navigate directly to create
+  await page.locator('#nav-create').click();
 
   // Try to continue without filling counterparty
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -239,7 +241,8 @@ test('loading spinners display during network requests', async ({ page }) => {
     });
   });
 
-  await page.getByRole('link', { name: 'Dashboard' }).click();
+  // Navigate to Dashboard using nav button id (not role=link)
+  await page.locator('#nav-dashboard').click();
 
   await expect(page.locator('div[style*="animation: pulse"]')).toBeVisible();
   await expect(page.locator('div[style*="animation: pulse"]')).not.toBeVisible({ timeout: 5000 });
@@ -270,7 +273,8 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
 
   // Step 2: Deadline - Fill past date to trigger WASM contract validation error
   await page.locator('#wizard-dueat').fill('2020-01-01T00:00');
-  await page.getByRole('button', { name: /create commitment/i }).click();
+  // Use the specific submit button id to avoid strict mode violation
+  await page.locator('#wizard-submit-btn').click();
 
   // WASM validation error should appear and stop submit flow
   await expect(page.getByText(/Due date must be set in the future|Contract validation failed/i)).toBeVisible();
@@ -279,6 +283,7 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   const signCalled = await page.evaluate(() => (window as any).__signCalled);
   expect(signCalled).toBeFalsy();
 });
+
 test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend, not plaintext', async ({
   page,
 }) => {
@@ -299,12 +304,12 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   });
 
   // Connect Freighter wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).click();
+  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
 
-  // Navigate to Create Commitment
-  await page.getByRole('button', { name: 'Create Commitment' }).click();
+  // Navigate to Create Commitment — use nav id to avoid strict mode violation
+  await page.locator('#nav-create').click();
 
   // Step 1: Counterparty
   await page.locator('#wizard-counterparty').fill(COUNTERPARTY);
@@ -322,7 +327,8 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
   // Step 3: Due date
   await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
-  await page.getByRole('button', { name: /Create Commitment/i }).click();
+  // Use the specific submit button id to avoid strict mode violation
+  await page.locator('#wizard-submit-btn').click();
 
   // Encryption consent modal should appear
   await expect(page.locator('#encrypt-modal-confirm')).toBeVisible({ timeout: 5000 });
@@ -341,17 +347,12 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
 test('dashboard: encrypted commitment shows lock badge and decrypt button', async ({ page }) => {
   // Connect wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).click();
+  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
 
-  // Navigate to dashboard
-  const dashboardLink = page.getByRole('link', { name: 'Dashboard' }).first();
-  if (await dashboardLink.isVisible()) {
-    await dashboardLink.click();
-  } else {
-    await page.locator('#nav-dashboard').click();
-  }
+  // Navigate to dashboard using nav button id
+  await page.locator('#nav-dashboard').click();
 
   // The second commitment (id=2) is encrypted — its lock badge should be visible
   await expect(page.getByText('E2E Encrypted').first()).toBeVisible({ timeout: 5000 });

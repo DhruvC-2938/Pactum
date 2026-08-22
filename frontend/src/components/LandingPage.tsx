@@ -77,7 +77,7 @@ export default function LandingPage({ onLaunchApp, onOpenDocs }: LandingPageProp
             reputation.
           </p>
           <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-            <button className="lp-btn-primary lp-btn-lg" onClick={onLaunchApp}>
+            <button id="hero-launch-btn" className="lp-btn-primary lp-btn-lg" onClick={onLaunchApp}>
               Get Started
             </button>
             <button className="lp-btn-secondary lp-btn-lg" onClick={onOpenDocs}>

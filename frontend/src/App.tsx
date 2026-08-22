@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 
 import './App.css';
@@ -9,10 +10,10 @@ import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import DecryptTermsModal from './components/DecryptTermsModal';
 import { useCommitments } from './hooks/useCommitments';
+import { useSyncCache } from './hooks/useSyncCache';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
-import { useSyncCache } from './hooks/useSyncCache';
 import { wsClient } from './lib/wsClient';
 import type { WalletProvider } from './lib/wallet';
 import {
@@ -346,6 +347,7 @@ export default function App() {
             <button
               className={`nav-item ${activePage === 'create' ? 'active' : ''}`}
               id="nav-create"
+              aria-label="Create Commitment navigation"
               onClick={() => {
                 setActivePage('create');
                 setIsMobileMenuOpen(false);
