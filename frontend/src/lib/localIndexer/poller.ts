@@ -2,7 +2,7 @@ import type { rpc } from '@stellar/stellar-sdk';
 
 import type { Commitment, CommitmentStatus } from '@/lib/api';
 
-import { getMeta, patchCommitmentStatus, setMeta, upsertCommitment } from './db';
+import { clearCommitments, getMeta, patchCommitmentStatus, setMeta, upsertCommitment } from './db';
 import { parseContractEvent, type CommitmentOutcomeName, type RawContractEvent } from './events';
 
 /** Dependency-injected Soroban RPC surface the poller needs — see rpcClient.ts for the real implementation. */
@@ -152,6 +152,10 @@ export async function pollOnce(
   } catch (error) {
     if (!isRetentionError(error)) throw error;
     retentionGapDetected = true;
+    // Records already stored may have changed status during the un-indexed gap between the old
+    // cursor and the new window — drop them rather than risk showing stale state indefinitely.
+    // See db.ts::clearCommitments.
+    await clearCommitments();
     response = await fetchFromScratch();
   }
 

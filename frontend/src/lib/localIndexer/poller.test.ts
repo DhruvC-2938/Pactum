@@ -149,15 +149,15 @@ describe('pollOnce', () => {
     expect(commitment).toMatchObject({ id: 1, status: 'Disputed', outcome: null });
   });
 
-  it('recovers from a retention-window error by resetting to latest - lookback', async () => {
-    // Seed a stale cursor.
+  it('recovers from a retention-window error by resetting to latest - lookback, dropping stale local records', async () => {
+    // Seed an indexed commitment and a stale cursor, as if a previous poll already ran.
     await pollOnce(
-      fakeClient({ getEvents: async () => ({ events: [], cursor: 'stale-cursor' }) }),
-      {
-        contractId: CONTRACT_ID,
-        lookbackLedgers: 500,
-      },
+      fakeClient({
+        getEvents: async () => ({ events: [createdEvent(1)], cursor: 'stale-cursor' }),
+      }),
+      { contractId: CONTRACT_ID, lookbackLedgers: 500 },
     );
+    expect(await listCommitments()).toHaveLength(1);
 
     let calls = 0;
     const client = fakeClient({
@@ -181,6 +181,10 @@ describe('pollOnce', () => {
 
     expect(calls).toBe(2);
     expect(result.retentionGapDetected).toBe(true);
+    // Commitment #1 may have changed status during the un-indexed gap — it's dropped rather than
+    // shown with potentially-stale data. It would be re-discovered by a fresh `created` event if
+    // still inside the new window; this poll's window had none.
+    expect(await listCommitments()).toEqual([]);
     expect(await getMeta()).toMatchObject({
       cursor: 'fresh-cursor',
       lastLedgerSeq: 2_000_000 - 500,

@@ -111,6 +111,18 @@ export async function setMeta(meta: LocalIndexerMeta): Promise<void> {
   await db.put(META_STORE, meta, META_KEY);
 }
 
+/**
+ * Wipes only the indexed commitments, leaving the poll cursor/meta alone. Used when a retention
+ * gap forces the poller to resume from a later ledger than its old cursor: records already in the
+ * store may have changed status during the un-indexed gap, so they're dropped rather than left
+ * stale — the poll that follows re-discovers whatever `created` events still fall inside the new,
+ * narrower window and fetches their current on-chain state fresh via `get_commitment`.
+ */
+export async function clearCommitments(): Promise<void> {
+  const db = await getDb();
+  await db.clear(COMMITMENTS_STORE);
+}
+
 /** Wipes all locally-indexed data and the poll cursor — a "reset local index" affordance. */
 export async function clearAll(): Promise<void> {
   const db = await getDb();

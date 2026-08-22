@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Commitment } from '@/lib/api';
 import {
   clearAll,
+  clearCommitments,
   getMeta,
   listCommitments,
   patchCommitmentStatus,
@@ -90,6 +91,18 @@ describe('patchCommitmentStatus', () => {
   it('is a no-op when the commitment has not been indexed yet', async () => {
     await patchCommitmentStatus(99, { status: 'Fulfilled', outcome: 'Fulfilled' });
     expect(await listCommitments()).toEqual([]);
+  });
+});
+
+describe('clearCommitments', () => {
+  it('wipes commitments but leaves meta alone', async () => {
+    await upsertCommitment(commitment(1));
+    await setMeta({ cursor: 'abc', lastLedgerSeq: 123, lastPolledAt: 456 });
+
+    await clearCommitments();
+
+    expect(await listCommitments()).toEqual([]);
+    expect(await getMeta()).toEqual({ cursor: 'abc', lastLedgerSeq: 123, lastPolledAt: 456 });
   });
 });
 

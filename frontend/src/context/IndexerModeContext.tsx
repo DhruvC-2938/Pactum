@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { indexerWorkerClient } from '../lib/indexerWorkerClient';
+import { queryClient } from '../lib/queryClient';
+import { commitmentKeys } from '../lib/queryKeys';
 import {
   DEFAULT_CONTRACT_ID,
   DEFAULT_NETWORK_PASSPHRASE,
@@ -51,6 +53,12 @@ export function IndexerModeProvider({ children }: { children: ReactNode }) {
           setLastPolledAt(status.lastPolledAt);
           setLastError(null);
           setRetentionGapDetected(status.retentionGapDetected);
+          // The worker writes straight to IndexedDB, invisible to TanStack Query's cache — without
+          // this, a local-mode query that resolved empty (or stale) before this poll landed would
+          // never re-read the store on its own.
+          if (status.changed) {
+            void queryClient.invalidateQueries({ queryKey: commitmentKeys.localAll });
+          }
         } else {
           setSyncState('error');
           setLastError(status.error);
