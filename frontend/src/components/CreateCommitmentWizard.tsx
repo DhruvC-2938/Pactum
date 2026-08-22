@@ -315,6 +315,7 @@ export default function CreateCommitmentWizard({
 
         if (!preview.success) {
           // Simulation failed — modal shows error, do not proceed to Freighter
+          showErrorToast(decodeRegistryContractError(preview.error));
           return;
         }
 
