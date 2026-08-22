@@ -304,7 +304,7 @@ export default function CreateCommitmentWizard({
             'create_commitment',
             Address.fromString(connectedAddress).toScVal(),
             Address.fromString(data.counterparty).toScVal(),
-            xdr.ScVal.scvBytes(termsHashBytes),
+            xdr.ScVal.scvBytes(termsHashBytes as any),
             xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString())),
           ))
           .setTimeout(60)
