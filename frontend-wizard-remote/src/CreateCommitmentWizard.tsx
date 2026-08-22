@@ -117,7 +117,13 @@ export default function CreateCommitmentWizard({
   // above. Also used by the e2e suite to prove this remote shares the exact same Provider
   // instance as the host, by comparing `contextModuleId` to window.__PACTUM_WALLET_PROVIDER_MODULE_ID__.
   const wallet = useWallet();
-  const { address: connectedAddress, isConnected, connectWallet, provider, contextModuleId } = wallet;
+  const {
+    address: connectedAddress,
+    isConnected,
+    connectWallet,
+    provider,
+    contextModuleId,
+  } = wallet;
   const { validateCommitmentWithWasm } = useWasmValidation();
 
   // Dynamic, governance-controlled validation rules (downloaded as a JSON AST,
@@ -153,7 +159,8 @@ export default function CreateCommitmentWizard({
     // VITE_E2E_DIAGNOSTICS, not DEV: needs to be readable from a real production build served
     // via `vite preview` too. See frontend/src/contexts/WalletContext.tsx for the full rationale.
     if (import.meta.env.VITE_E2E_DIAGNOSTICS === 'true') {
-      (window as unknown as Record<string, unknown>).__PACTUM_WIZARD_SEEN_WALLET_MODULE_ID__ = contextModuleId;
+      (window as unknown as Record<string, unknown>).__PACTUM_WIZARD_SEEN_WALLET_MODULE_ID__ =
+        contextModuleId;
     }
   }, [contextModuleId]);
 
@@ -314,7 +321,7 @@ export default function CreateCommitmentWizard({
           // Non-fatal: on-chain commitment is already confirmed
           showErrorToast(
             'On-chain commitment created, but the encrypted terms could not be stored. ' +
-            'Please retry uploading later.',
+              'Please retry uploading later.',
           );
         }
       }
@@ -373,7 +380,12 @@ export default function CreateCommitmentWizard({
       <div
         id="wizard-remote-wallet-status"
         data-connected={wallet.isConnected}
-        style={{ fontSize: '12px', color: 'var(--text-secondary, #64748b)', marginBottom: '10px', fontFamily: 'monospace' }}
+        style={{
+          fontSize: '12px',
+          color: 'var(--text-secondary, #64748b)',
+          marginBottom: '10px',
+          fontFamily: 'monospace',
+        }}
       >
         {wallet.isConnected ? `Issuing as: ${wallet.address}` : 'Wallet: not connected'}
       </div>
@@ -736,12 +748,14 @@ export default function CreateCommitmentWizard({
                       >
                         {encryptEnabled ? 'E2E Encrypted' : 'Encryption Off'}
                       </div>
-                      <div style={{ fontSize: '11px', color: encryptEnabled ? '#4338ca' : '#94a3b8' }}>
+                      <div
+                        style={{ fontSize: '11px', color: encryptEnabled ? '#4338ca' : '#94a3b8' }}
+                      >
                         {encryptEnabled
                           ? 'Only you & counterparty can read the terms'
                           : isFreighter
-                          ? 'Enable to encrypt terms with your wallet key'
-                          : 'Requires Freighter wallet'}
+                            ? 'Enable to encrypt terms with your wallet key'
+                            : 'Requires Freighter wallet'}
                       </div>
                     </div>
                   </div>
@@ -928,6 +942,7 @@ export default function CreateCommitmentWizard({
 
               {isLastStep ? (
                 <button
+                  id="wizard-submit-btn"
                   type="button"
                   className="btn btn-primary"
                   style={{ flex: '1' }}

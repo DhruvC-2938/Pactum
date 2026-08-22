@@ -82,9 +82,12 @@ export function verifyAttestation(attestation: Attestation, now = Date.now()): b
       attestation.expiresAt,
     );
     const pub = Keypair.fromPublicKey(attestation.address);
-    // `verifyMessage` (SEP-53) accepts any Uint8Array at runtime — it does its own
-    // `Buffer.from(data)` internally — the `Buffer` param type is just its TS signature.
-    return pub.verifyMessage(payload, attestation.walletSignature as any);
+    // `verifyMessage` (SEP-53) accepts Uint8Array data and signature at runtime.
+    // The typed adapter isolates the BufferSource -> SDK parameter compatibility.
+    const signature = attestation.walletSignature as unknown as Parameters<
+      typeof pub.verifyMessage
+    >[1];
+    return pub.verifyMessage(payload, signature);
   } catch {
     return false;
   }
@@ -101,7 +104,7 @@ export async function importSessionPublicKey(raw: Uint8Array): Promise<CryptoKey
 
 /** Signs one outgoing sync frame with the tab's fast session key. */
 export async function signFrame(privateKey: CryptoKey, bytes: Uint8Array): Promise<Uint8Array> {
-  const sig = await crypto.subtle.sign(SIGN_ALGO, privateKey, bytes as unknown as BufferSource);
+  const sig = await crypto.subtle.sign(SIGN_ALGO, privateKey, bytes as BufferSource);
   return new Uint8Array(sig);
 }
 
@@ -115,8 +118,8 @@ export async function verifyFrame(
     return await crypto.subtle.verify(
       SIGN_ALGO,
       publicKey,
-      signature as unknown as BufferSource,
-      bytes as unknown as BufferSource,
+      signature as BufferSource,
+      bytes as BufferSource,
     );
   } catch {
     return false;

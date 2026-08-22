@@ -9,10 +9,10 @@ import WalletConnectButton from './components/WalletConnectButton';
 import DecryptTermsModal from './components/DecryptTermsModal';
 import { useCommitments } from './hooks/useCommitments';
 import { useSyncCache } from './hooks/useSyncCache';
-import { wsClient } from './lib/wsClient';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
+import { wsClient } from './lib/wsClient';
 import type { WalletProvider } from './lib/wallet';
 import {
   submitAttest,
@@ -22,6 +22,7 @@ import {
 } from './lib/sorobanTxHelpers';
 import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
+import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
 
 interface CommitmentItemProps {
   commitment: Commitment;
@@ -273,7 +274,6 @@ export default function App() {
       <div className="app-shell">
         {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
         <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-          <ThemeSelector />
           <div
             className="sidebar-logo"
             onClick={() => {
@@ -354,6 +354,7 @@ export default function App() {
             <button
               className={`nav-item ${activePage === 'create' ? 'active' : ''}`}
               id="nav-create"
+              aria-label="Create Commitment navigation"
               onClick={() => {
                 setActivePage('create');
                 setIsMobileMenuOpen(false);
@@ -527,6 +528,30 @@ export default function App() {
             </button>
 
             <button
+              className={`nav-item ${activePage === 'mesh' ? 'active' : ''}`}
+              id="nav-mesh"
+              onClick={() => {
+                setActivePage('mesh');
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <span className="nav-icon">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M2 8h12M8 2a10 10 0 010 12M8 2a10 10 0 000 12" />
+                </svg>
+              </span>
+              BFT Mesh Network
+            </button>
+
+            <button
               className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`}
               id="nav-initialize"
               onClick={() => {
@@ -627,15 +652,18 @@ export default function App() {
                             ? 'Resolve Dispute'
                             : activePage === 'lookup'
                               ? 'Get Commitment'
-                              : activePage === 'initialize'
-                                ? 'Initialize'
-                                : 'Dashboard'}
+                              : activePage === 'mesh'
+                                ? 'BFT Mesh Network'
+                                : activePage === 'initialize'
+                                  ? 'Initialize'
+                                  : 'Dashboard'}
               </span>
             </div>
             <div
               className="topbar-actions"
               style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
             >
+              <ThemeSelector />
               <div className="search-bar">
                 <svg
                   viewBox="0 0 16 16"
@@ -1707,6 +1735,13 @@ export default function App() {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* ──────────────────────────────────────────────
+               PAGE: BFT Mesh Network
+               ────────────────────────────────────────────── */}
+          <section className={`page ${activePage === 'mesh' ? 'active' : ''}`} id="page-mesh">
+            <MeshNetworkMonitor />
           </section>
         </main>
       </div>

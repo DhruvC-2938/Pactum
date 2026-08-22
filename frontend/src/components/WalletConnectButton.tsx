@@ -33,7 +33,7 @@ const variantStyles: Record<'dark' | 'light', React.CSSProperties> = {
     backdropFilter: 'blur(12px)',
     WebkitBackdropFilter: 'blur(12px)',
     border: '1px solid rgba(0, 0, 0, 0.08)',
-    borderRadius: '9999px', /* Pill shape */
+    borderRadius: '9999px' /* Pill shape */,
     padding: '8px 18px',
     fontSize: '13px',
     fontWeight: '500',
@@ -81,6 +81,21 @@ export const WalletConnectButton: React.FC<WalletConnectButtonProps> = ({
           title="Click to view wallet details"
         >
           <CheckCircle2 size={14} color="#22c55e" />
+          <span
+            style={{
+              position: 'absolute',
+              width: '1px',
+              height: '1px',
+              padding: 0,
+              margin: '-1px',
+              overflow: 'hidden',
+              clip: 'rect(0,0,0,0)',
+              whiteSpace: 'nowrap',
+              border: 0,
+            }}
+          >
+            Connected
+          </span>
           {truncateAddress(address)}
         </button>
       ) : (

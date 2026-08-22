@@ -3,10 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   // e2e/sandbox/** needs a live local Soroban sandbox with CONTRACT_ID set (see
-  // e2e-sandbox.yml, which targets it explicitly via `playwright test e2e/sandbox`) --
-  // excluded here so the plain `npm run test:e2e` webServer-driven run doesn't try to hit a
-  // chain that was never deployed.
-  testIgnore: '**/sandbox/**',
+  // e2e-sandbox.yml, which sets E2E_SANDBOX=true and targets it explicitly via
+  // `playwright test e2e/sandbox`) -- excluded here so the plain `npm run test:e2e`
+  // webServer-driven run doesn't try to hit a chain that was never deployed.
+  testIgnore: process.env.E2E_SANDBOX ? undefined : '**/sandbox/**',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
