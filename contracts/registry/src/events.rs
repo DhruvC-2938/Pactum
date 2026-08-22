@@ -184,3 +184,9 @@ pub fn forced_inclusion(
         (leaf_hash.clone(), included_at),
     );
 }
+
+/// Publishes an event when the fee oracle updates its recommendation.
+pub fn fee_oracle_updated(env: &Env, recommended_fee: i128, ledger: u32) {
+    env.events()
+        .publish((symbol_short!("fee_upd"), ledger), recommended_fee);
+}

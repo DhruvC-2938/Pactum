@@ -9,6 +9,7 @@ pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+pub mod fee_oracle;
 mod pausable;
 mod reentrancy;
 pub mod reputation;
@@ -915,5 +916,21 @@ impl RegistryContract {
     /// Returns a forced-inclusion record for `leaf_hash`, if any.
     pub fn get_forced_inclusion(env: Env, leaf_hash: BytesN<32>) -> Option<ForcedInclusionRecord> {
         rollup::get_forced_inclusion(&env, leaf_hash)
+    }
+
+    /// Records a new fee observation and updates the PID controller state.
+    /// Anyone may call this; the oracle is permissionless by design.
+    pub fn update_fee_oracle(env: Env, observed_fee: i128) -> fee_oracle::OracleState {
+        reentrancy::enter(&env);
+        let state = fee_oracle::update_oracle(&env, observed_fee);
+        events::fee_oracle_updated(&env, state.recommended_fee, env.ledger().sequence());
+        reentrancy::exit(&env);
+        state
+    }
+
+    /// Returns the current recommended fee from the PID oracle.
+    /// Returns OracleNotInitialized if no observations have been recorded yet.
+    pub fn get_recommended_fee(env: Env) -> i128 {
+        fee_oracle::get_recommended_fee(&env).unwrap_or_else(|e| panic_with_error!(&env, e))
     }
 }

@@ -110,7 +110,7 @@ export async function resolveIdentity(address: string): Promise<StellarIdentity>
         return identity;
       }
     }
-  } catch (err) {
+  } catch {
     // Network query optional fallback
   }
 

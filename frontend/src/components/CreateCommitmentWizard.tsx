@@ -897,6 +897,7 @@ export default function CreateCommitmentWizard({
 
               {isLastStep ? (
                 <button
+                  id="wizard-submit-btn"
                   type="button"
                   className="btn btn-primary"
                   style={{ flex: '1' }}

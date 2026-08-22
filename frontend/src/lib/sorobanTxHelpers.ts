@@ -34,7 +34,7 @@ export async function submitGenericSorobanTx({
   let account: any = null;
   try {
     account = await server.getAccount(signerAddress);
-  } catch (err: any) {
+  } catch {
     throw new Error(
       `Connected account (${signerAddress.substring(0, 8)}...) is not funded on Stellar Testnet.`,
     );

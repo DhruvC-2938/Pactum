@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build:wasm": "node -e \"const fs=require('fs'); const p='../contracts/validation/Cargo.toml'; fs.writeFileSync(p, fs.readFileSync(p,'utf8').replace('crate-type = [\\\"rlib\\\"]', 'crate-type = [\\\"cdylib\\\", \\\"rlib\\\"]'));\" && npx wasm-pack build ../contracts/validation --target web --out-dir ../../frontend/src/wasm/pactum-validation -- --features wasm && node -e \"const fs=require('fs'); const p='../contracts/validation/Cargo.toml'; fs.writeFileSync(p, fs.readFileSync(p,'utf8').replace('crate-type = [\\\"cdylib\\\", \\\"rlib\\\"]', 'crate-type = [\\\"rlib\\\"]'));\"",
-    "build": "npm run build:wasm && tsc -b && vite build",
+    "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview",
@@ -27,6 +27,7 @@
     "@stellar/stellar-sdk": "^16.2.0",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-virtual": "^3.14.10",
+    "buffer": "^6.0.3",
     "clsx": "^2.1.1",
     "lib0": "^0.2.117",
     "lucide-react": "^1.32.0",

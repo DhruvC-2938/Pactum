@@ -1,7 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { Buffer } from 'buffer';
 import './index.css';
+
+if (typeof window !== 'undefined') {
+  (window as any).Buffer = Buffer;
+}
 import App from './App.tsx';
 import { queryClient } from './lib/queryClient';
 import { WalletProvider } from './context/WalletContext';

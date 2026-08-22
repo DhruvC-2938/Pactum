@@ -12,7 +12,7 @@ html = html.replace(/class="/g, 'className="');
 // Convert for to htmlFor
 html = html.replace(/for="/g, 'htmlFor="');
 // Close input tags
-html = html.replace(/<input([^>]*?[^\/])>/g, '<input$1 />');
+html = html.replace(/<input([^>]*?[^/])>/g, '<input$1 />');
 // Fix inline styles
 html = html.replace(/style="([^"]+)"/g, (match, styleStr) => {
   const styles = styleStr.split(';').filter(s => s.trim()).map(s => {
