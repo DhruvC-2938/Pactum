@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 
 import './App.css';
@@ -267,7 +266,6 @@ export default function App() {
       <div className="app-shell">
         {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
         <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-          <ThemeSelector />
           <div
             className="sidebar-logo"
             onClick={() => {
@@ -657,6 +655,7 @@ export default function App() {
               className="topbar-actions"
               style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
             >
+              <ThemeSelector />
               <div className="search-bar">
                 <svg
                   viewBox="0 0 16 16"
