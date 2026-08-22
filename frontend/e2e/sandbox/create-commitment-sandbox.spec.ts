@@ -86,6 +86,13 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
     await submitBtn.click();
 
+    // Check if an immediate contract or signing error toast appears
+    const errorToast = page.locator('#toast-container .toast.error');
+    if (await errorToast.isVisible({ timeout: 2000 }).catch(() => false)) {
+      const msg = await errorToast.innerText();
+      throw new Error(`Commitment creation failed with toast error: ${msg}`);
+    }
+
     // The real signing + RPC round-trip takes longer than the mocked-route
     // tests; on success App.tsx's onSuccess handler transitions to the Reputation page.
     await expect(page.locator('#page-reputation')).toHaveClass(/active/, {

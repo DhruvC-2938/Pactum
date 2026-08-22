@@ -243,7 +243,11 @@ export async function submitCreateCommitment({
       if ((signResult as any).error) {
         throw new Error(`Freighter signing rejected: ${(signResult as any).error}`);
       }
-      signedXdr = (signResult as any).signedTxXdr || (signResult as any).signedXdr || '';
+      signedXdr =
+        (signResult as any).signedTxXdr ||
+        (signResult as any).signedXdr ||
+        (signResult as any).signedTransaction ||
+        '';
     }
   }
 
