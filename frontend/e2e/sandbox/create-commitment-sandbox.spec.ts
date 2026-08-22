@@ -57,10 +57,13 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
     await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
 
-    // Launch the create wizard. Selectors below match the real
-    // CreateCommitmentWizard.tsx markup (#wizard-counterparty etc, same ids
-    // used by frontend/e2e/contract-errors.spec.ts's fillWizardAndSubmit).
-    await page.getByRole('button', { name: 'Create Commitment' }).click();
+    // Enter the app shell (landing page gates the nav behind "Launch App"),
+    // then open the create wizard via its stable nav id.
+    const launchBtn = page.locator('#hero-launch-btn');
+    if (await launchBtn.isVisible()) {
+      await launchBtn.click();
+    }
+    await page.locator('#nav-create').click();
 
     await page.locator('#wizard-counterparty').fill(E2E_COUNTERPARTY_ADDRESS);
     await page.getByRole('button', { name: 'Continue' }).click();
@@ -75,12 +78,14 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
 
     // This actually calls submitCreateCommitment() against the real sandbox
     // RPC and waits for our mocked Freighter to sign it -- no mocked
-    // network responses standing in for the real flow.
-    await page.getByRole('button', { name: 'Create Commitment' }).click();
+    // network responses standing in for the real flow. The final step's
+    // primary button is #wizard-submit-btn (labelled "Continue").
+    await expect(page.locator('#wizard-submit-btn')).toBeVisible();
+    await page.locator('#wizard-submit-btn').click();
 
     // The real signing + RPC round-trip takes longer than the mocked-route
     // tests; give it real headroom rather than the default 5s.
-    await expect(page.getByText('Commitment Created On-Chain!')).toBeVisible({
+    await expect(page.getByText('Commitment created successfully')).toBeVisible({
       timeout: 30_000,
     });
 
@@ -104,10 +109,14 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     // own state) picks up the same commitment as Pending. This is the part
     // that actually catches indexer/backend desync bugs -- the wizard
     // succeeding doesn't guarantee the dashboard's separate read path agrees.
-    await page.getByRole('link', { name: 'Dashboard' }).click();
+    //
+    // Dashboard is reached through the app shell's nav BUTTON (#nav-dashboard);
+    // items render as .commitment-item cards ("Commitment #<id>") with a
+    // .badge status chip -- confirmed against App.tsx markup.
+    await page.locator('#nav-dashboard').click();
 
-    const row = page.locator('table tbody tr', { hasText: `#${commitmentId}` });
+    const row = page.locator('.commitment-item', { hasText: `Commitment #${commitmentId}` });
     await expect(row).toBeVisible({ timeout: 20_000 }); // indexer poll latency
-    await expect(row.getByText('Pending')).toBeVisible();
+    await expect(row.locator('.badge')).toHaveText(/Pending/i);
   });
 });

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { installSuccessfulSorobanRpc } from './mock-soroban-success';
 
 const MOCK_ADDRESS = 'GASV7ZZOPNYYFEPJ6N3GX4VINJELUQQDRX6UWWOO43F55CV6OBQUEGVK';
 const COUNTERPARTY = 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB';
@@ -45,11 +46,23 @@ async function installFreighterMock(page: Page) {
           case 'REQUEST_ALLOWED_STATUS':
             response = { isAllowed: true };
             break;
-          // Simulate signMessage: returns a deterministic 64-byte base64 signature
-          case 'REQUEST_SIGN_MESSAGE': {
-            // Deterministic mock: base64 of 64 zero bytes (sufficient for HKDF key derivation test)
+          // Sign by echoing the unsigned envelope back: sendTransaction /
+          // getTransaction are fully mocked (mock-soroban-success.ts), so the
+          // signature is never verified -- only its presence matters.
+          case 'SUBMIT_TRANSACTION': {
+            response = {
+              signedTransaction: data.transactionXdr,
+              signerAddress: mockAddress,
+            };
+            break;
+          }
+          // Simulate signMessage: returns a deterministic 64-byte base64 signature.
+          // CONFIRMED against @stellar/freighter-api v6 (index.min.js):
+          // signMessage() posts type=SUBMIT_BLOB carrying {blob} and expects
+          // {signedBlob, signerAddress} back (NOT 'REQUEST_SIGN_MESSAGE').
+          case 'SUBMIT_BLOB': {
             const mockSig = btoa(String.fromCharCode(...new Array(64).fill(42)));
-            response = { signedMessage: mockSig, signerAddress: mockAddress };
+            response = { signedBlob: mockSig, signerAddress: mockAddress };
             break;
           }
           default:
@@ -73,6 +86,10 @@ async function installFreighterMock(page: Page) {
 test.beforeEach(async ({ page }) => {
   await installFreighterMock(page);
 
+  // Offline Soroban RPC mock: account lookup, simulation, submission and
+  // confirmation all succeed; create_commitment returns commitment id 42.
+  await installSuccessfulSorobanRpc(page, { commitmentId: 42 });
+
   // Mock API responses
   await page.route('**/reputation/**', async (route) => {
     await route.fulfill({
@@ -88,8 +105,49 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
-  await page.route('**/commitments*', async (route) => {
-    if (route.request().method() === 'GET') {
+  // Consolidated commitments API mock. NOTE: a '**/commitments*' glob would
+  // NOT match subpaths -- Playwright's '*' never crosses '/', so
+  // /commitments/2/encrypted would silently fall through to the network.
+  // A regex avoids that trap entirely.
+  await page.route(/\/commitments/, async (route) => {
+    const req = route.request();
+    const method = req.method();
+    const path = new URL(req.url()).pathname;
+
+    if (method === 'POST' && path.endsWith('/commitments')) {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 2, status: 'Created' }),
+      });
+      return;
+    }
+
+    if (method === 'POST' && path.endsWith('/commitments/encrypted')) {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'Encrypted terms stored successfully.' }),
+      });
+      return;
+    }
+
+    if (method === 'GET' && /\/commitments\/\d+\/encrypted$/.test(path)) {
+      // Return a mock ciphertext blob (valid base64url-encoded bytes)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ciphertext: 'AAAAAAAAAAAAAAAA_mock_ciphertext_blob',
+          issuer: MOCK_ADDRESS,
+          counterparty: COUNTERPARTY,
+          createdAt: new Date().toISOString(),
+        }),
+      });
+      return;
+    }
+
+    if (method === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -97,7 +155,7 @@ test.beforeEach(async ({ page }) => {
           {
             id: 1,
             issuer: MOCK_ADDRESS,
-            counterparty: 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB',
+            counterparty: COUNTERPARTY,
             terms_hash: 'mock_hash',
             due_at: Date.now() / 1000 + 86400,
             status: 'Pending',
@@ -116,52 +174,10 @@ test.beforeEach(async ({ page }) => {
           },
         ]),
       });
-    } else {
-      await route.continue();
+      return;
     }
-  });
 
-  await page.route('**/commitments', async (route) => {
-    if (route.request().method() === 'POST') {
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify({ id: 2, status: 'Created' }),
-      });
-    } else {
-      await route.continue();
-    }
-  });
-
-  // Mock encrypted terms endpoints
-  await page.route('**/commitments/encrypted', async (route) => {
-    if (route.request().method() === 'POST') {
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: 'Encrypted terms stored successfully.' }),
-      });
-    } else {
-      await route.continue();
-    }
-  });
-
-  await page.route('**/commitments/*/encrypted', async (route) => {
-    if (route.request().method() === 'GET') {
-      // Return a mock ciphertext blob (valid base64url-encoded bytes)
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ciphertext: 'AAAAAAAAAAAAAAAA_mock_ciphertext_blob',
-          issuer: MOCK_ADDRESS,
-          counterparty: COUNTERPARTY,
-          createdAt: new Date().toISOString(),
-        }),
-      });
-    } else {
-      await route.continue();
-    }
+    await route.continue();
   });
 
   await page.goto('/');
@@ -203,14 +219,28 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  // Verify success
-  await expect(page.getByText('Commitment created successfully')).toBeVisible();
+  // Submitting runs the full mocked chain round-trip (simulate -> sign ->
+  // send -> confirm); on confirmation App.onSuccess auto-navigates to
+  // Reputation (/reputation/<address>).
+  await page.waitForURL(/\/reputation\//, { timeout: 30_000 });
 
-  // 3. View Dashboard — use nav button id, not role=link (it's a button)
+  // Re-open Create -- the wizard retains the confirmed result view.
+  await page.locator('#nav-create').click();
+  await expect(page.getByText('Commitment created successfully')).toBeVisible();
+  await expect(page.getByText('confirmed on Stellar Testnet')).toBeVisible();
+  // Commitment ID comes from the mocked create_commitment return value
+  // (mock-soroban-success.ts), proving the RPC round-trip happened.
+  await expect(page.getByText('#42', { exact: true })).toBeVisible();
+
+  // 3. View Dashboard -- lists commitments from the (mocked) backend API.
+  // Scope to #commitments-list-page: '.commitment-list' alone is ambiguous
+  // (the overview sidebar uses it too).
   await page.locator('#nav-dashboard').click();
 
-  await expect(page.locator('.commitment-list')).toBeVisible();
-  await expect(page.getByText('mock_hash')).toBeVisible();
+  const pageList = page.locator('#commitments-list-page');
+  await expect(pageList).toBeVisible({ timeout: 10_000 });
+  await expect(pageList.getByText('Commitment #1')).toBeVisible();
+  await expect(pageList.getByText('Commitment #2')).toBeVisible();
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
@@ -225,40 +255,46 @@ test('form validation errors appear on bad input', async ({ page }) => {
 });
 
 test('loading spinners display during network requests', async ({ page }) => {
-  // Delay the commitments API so the loading indicator is visible long enough to assert
+  // useCommitments seeds queries with CRDT-cached records via placeholderData,
+  // which masks isLoading for any query backed by an existing cache. To see
+  // the real loading state we need a genuinely cold load: gate every
+  // commitments GET before remounting, and wipe the persisted cache.
+  let releaseCommitments!: () => void;
+  const commitmentsGate = new Promise<void>((resolve) => {
+    releaseCommitments = resolve;
+  });
+
   await page.route('**/commitments*', async (route) => {
     if (route.request().method() === 'GET') {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await commitmentsGate;
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([]),
       });
-    } else {
-      await route.continue();
+      return;
     }
+    await route.continue();
   });
 
-  await page.route('**/reputation/**', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        address: MOCK_ADDRESS,
-        fulfilled: 0,
-        late: 0,
-        breached: 0,
-        total: 0,
-      }),
-    });
+  // Drop the CRDT cache seeded by the initial mount, then remount with the
+  // gate up. Issued as an init script so the delete lands BEFORE the app
+  // opens its own connection (a live connection would block deletion).
+  await page.addInitScript(() => {
+    indexedDB.deleteDatabase('pactum-cache-v1');
   });
+  await page.reload();
+  const launchBtn = page.locator('#hero-launch-btn');
+  if (await launchBtn.isVisible()) {
+    await launchBtn.click();
+  }
 
   // Navigate to Dashboard using nav button id (not role=link)
   await page.locator('#nav-dashboard').click();
 
-  await expect(page.getByText('Loading commitments...')).toBeVisible();
-  await expect(page.getByText('Loading commitments...')).not.toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Loading commitments...')).toBeVisible({ timeout: 10_000 });
+  releaseCommitments();
+  await expect(page.getByText('Loading commitments...')).not.toBeVisible({ timeout: 10_000 });
 });
 
 test('WASM validation failure blocks transaction simulation and wallet submission', async ({
@@ -356,9 +392,13 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   await expect(page.locator('#encrypt-modal-confirm')).toBeVisible({ timeout: 5000 });
   await page.locator('#encrypt-modal-confirm').click();
 
-  await page.waitForTimeout(2000);
+  // Wait until the upload actually happened (sign -> submit -> confirm ->
+  // store-encrypted), then assert on its body.
+  await expect
+    .poll(() => encryptedRequests.length, { timeout: 30_000 })
+    .toBeGreaterThan(0);
 
-  // Assert: if any encrypted request was captured, it has ciphertext not plaintext
+  // Assert: the encrypted request has ciphertext not plaintext
   for (const req of encryptedRequests) {
     expect(req.body).toHaveProperty('ciphertext');
     expect(req.body).not.toHaveProperty('terms');
@@ -376,9 +416,10 @@ test('dashboard: encrypted commitment shows lock badge and decrypt button', asyn
   // Navigate to dashboard using nav button id
   await page.locator('#nav-dashboard').click();
 
-  // The second commitment (id=2) is encrypted — its lock badge should be visible
-  await page.waitForLoadState('networkidle');
-  await expect(page.getByText('E2E Encrypted').first()).toBeVisible({ timeout: 10000 });
+  // The second commitment (id=2) is encrypted — its lock badge should be
+  // visible. Assert on elements directly instead of waitForLoadState:
+  // background polling keeps the network from ever going idle.
+  await expect(page.getByText('E2E Encrypted').first()).toBeVisible({ timeout: 15000 });
 
   // The "Decrypt Terms" button should be present for the encrypted commitment
   const decryptBtn = page.locator('[id^="decrypt-btn-"]').first();

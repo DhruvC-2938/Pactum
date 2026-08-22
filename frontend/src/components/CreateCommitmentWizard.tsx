@@ -130,7 +130,6 @@ export default function CreateCommitmentWizard({
   const [fundMessage, setFundMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<CreateCommitmentResult | null>(null);
-  const [backendCreated, setBackendCreated] = useState(false);
   const [previewHash, setPreviewHash] = useState<string | null>(null);
 
   // ── Encryption state ───────────────────────────────────────────────────
@@ -274,8 +273,9 @@ export default function CreateCommitmentWizard({
         dueAt: dueAtSeconds,
       });
 
-      // Register commitment with backend first (optimistic — before on-chain confirmation).
-      // This provides immediate success feedback and is what E2E tests verify.
+      // Best-effort registration with the backend so the dashboard can list
+      // the commitment before the indexer observes the chain event. Never
+      // masks on-chain failures below.
       try {
         setStatusMessage('Registering commitment...');
         await createCommitment({
@@ -284,54 +284,44 @@ export default function CreateCommitmentWizard({
           termsHash: termsHashHex,
           dueAt: dueAtSeconds,
         });
-        setBackendCreated(true);
       } catch (backendErr) {
         console.warn('[CreateCommitmentWizard] Backend registration failed:', backendErr);
         // Non-fatal: continue to Soroban submission even if backend is unavailable
       }
 
-      // Submit Soroban transaction to Stellar Testnet via the connected wallet
-      if (isConnected) {
+      // Submit Soroban transaction to Stellar Testnet via the connected wallet.
+      // Errors propagate to the outer catch so users always see on-chain failures.
+      const result = await submitCreateCommitment({
+        issuerAddress: connectedAddress,
+        counterpartyAddress: data.counterparty,
+        termsHashHex,
+        dueAtSeconds,
+        walletProvider: provider ?? 'freighter',
+        onStatusUpdate: (msg: string) => setStatusMessage(msg),
+      });
+
+      // After on-chain confirmation: upload encrypted blob to backend (encrypted path only)
+      if (encryptResult && result.commitmentId !== undefined) {
+        setStatusMessage('Storing encrypted terms on backend...');
         try {
-          const result = await submitCreateCommitment({
-            issuerAddress: connectedAddress,
-            counterpartyAddress: data.counterparty,
-            termsHashHex,
-            dueAtSeconds,
-            walletProvider: provider ?? 'freighter',
-            onStatusUpdate: (msg: string) => setStatusMessage(msg),
+          await postEncryptedTerms({
+            commitmentId: String(result.commitmentId),
+            issuer: connectedAddress,
+            counterparty: data.counterparty,
+            ciphertext: encryptResult.ciphertext,
           });
-
-          // After on-chain confirmation: upload encrypted blob to backend (encrypted path only)
-          if (encryptResult && result.commitmentId !== undefined) {
-            setStatusMessage('Storing encrypted terms on backend...');
-            try {
-              await postEncryptedTerms({
-                commitmentId: String(result.commitmentId),
-                issuer: connectedAddress,
-                counterparty: data.counterparty,
-                ciphertext: encryptResult.ciphertext,
-              });
-            } catch (uploadErr) {
-              console.warn('[CreateCommitmentWizard] Encrypted payload upload failed:', uploadErr);
-              // Non-fatal: on-chain commitment is already confirmed
-              showErrorToast(
-                'On-chain commitment created, but the encrypted terms could not be stored. ' +
-                'Please retry uploading later.',
-              );
-            }
-          }
-
-          setTxResult(result);
-          onSuccess?.(result);
-        } catch (sorobanErr: unknown) {
-          console.warn('[CreateCommitmentWizard] Soroban submission:', sorobanErr);
-          // If backend already registered the commitment, swallow the Soroban error gracefully
-          if (!backendCreated) {
-            throw sorobanErr;
-          }
+        } catch (uploadErr) {
+          console.warn('[CreateCommitmentWizard] Encrypted payload upload failed:', uploadErr);
+          // Non-fatal: on-chain commitment is already confirmed
+          showErrorToast(
+            'On-chain commitment created, but the encrypted terms could not be stored. ' +
+            'Please retry uploading later.',
+          );
         }
       }
+
+      setTxResult(result);
+      onSuccess?.(result);
     } catch (err: unknown) {
       console.error('[CreateCommitmentWizard] Soroban error:', err);
       showErrorToast(decodeRegistryContractError(err));
@@ -345,7 +335,6 @@ export default function CreateCommitmentWizard({
     reset();
     setStep(0);
     setTxResult(null);
-    setBackendCreated(false);
     clearErrorToasts();
     setPreviewHash(null);
     setStatusMessage(null);
@@ -396,7 +385,7 @@ export default function CreateCommitmentWizard({
       </div>
 
       {/* Success View */}
-      {(txResult || backendCreated) ? (
+      {txResult ? (
         <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
           <div
             style={{
