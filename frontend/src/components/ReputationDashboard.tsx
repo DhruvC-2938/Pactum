@@ -120,10 +120,47 @@ const DEMO_COMMITMENTS: CommitmentItem[] = [
     description: 'Submit end-of-cycle risk assessment report to governance council.',
     notes: [
       'Delayed by 24 hours due to upstream indexer latency',
-      'Penalties waived after mutual consent',
     ],
   },
 ];
+
+function generateLargeDataset(count: number, targetAddress: string): CommitmentItem[] {
+  const statuses: CommitmentItem['status'][] = ['Fulfilled', 'Late', 'Breached', 'Pending', 'Disputed'];
+  const counterparties = [BASE_ADDRESS_1, BASE_ADDRESS_2, BASE_ADDRESS_3, BASE_ADDRESS_4];
+  const sampleDescriptions = [
+    'Deliver 500 validated oracle data points across Stellar Soroban testnet validators on time.',
+    'Provide 99.99% uptime on cross-border liquidity pool balancer during high volatility window with continuous telemetry monitoring.',
+    'Short term liquidity deposit.',
+    'Multi-party cryptographic settlement and dispute mediation protocol execution with variable delay conditions and secondary attestations required by counterparty.',
+    'Execute algorithmic token swap on DEX aggregator.',
+    'Provide 24/7 technical on-call response for bridge relayer architecture including emergency pause key rotation and key recovery protocol verification.',
+  ];
+
+  const now = Math.floor(Date.now() / 1000);
+  const items: CommitmentItem[] = [];
+
+  for (let i = 1; i <= count; i++) {
+    const isIssuer = i % 2 === 0;
+    const status = statuses[i % statuses.length];
+    const cp = counterparties[i % counterparties.length];
+    const desc = sampleDescriptions[i % sampleDescriptions.length];
+
+    items.push({
+      id: 1000 + i,
+      issuer: isIssuer ? targetAddress : cp,
+      counterparty: isIssuer ? cp : targetAddress,
+      terms_hash: `hash_${i.toString().padStart(6, '0')}_${(i * 31337).toString(16).padEnd(32, '0')}`,
+      due_at: now - (count - i) * 3600,
+      status,
+      created_at: now - (count - i) * 7200,
+      attested_at: status !== 'Pending' ? now - (count - i) * 1800 : null,
+      description: `[#${1000 + i}] ${desc}`,
+      notes: i % 3 === 0 ? [`Audit trail verified for batch ${i}`, `Ledger index #${50000 + i}`] : undefined,
+    });
+  }
+
+  return items;
+}
 
 const PRESETS = [
   {
@@ -156,6 +193,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [reputation, setReputation] = useState<Reputation | null>(null);
   const [reputationIntegrity, setReputationIntegrity] = useState<ReputationIntegrity | null>(null);
   const [securityWarning, setSecurityWarning] = useState<string | null>(null);
@@ -1530,6 +1568,11 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                 );
               })}
             </div>
+            {fetchError && (
+              <div style={{ textAlign: 'center', color: '#ef4444', padding: '16px', fontSize: '13px' }}>
+                {fetchError}
+              </div>
+            )}
           </div>
         )}
       </div>

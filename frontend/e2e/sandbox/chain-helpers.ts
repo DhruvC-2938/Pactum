@@ -1,4 +1,4 @@
-import { Contract, rpc, TransactionBuilder, scValToNative, Address } from '@stellar/stellar-sdk';
+import { Contract, rpc, TransactionBuilder, scValToNative } from '@stellar/stellar-sdk';
 
 const RPC_URL = process.env.SOROBAN_RPC_URL ?? 'http://localhost:8000/soroban/rpc';
 const NETWORK_PASSPHRASE =
