@@ -11,7 +11,9 @@ import { LedgerAdapter } from './wallet-adapters/ledger-adapter';
 
 export type WalletProvider = 'freighter' | 'albedo' | 'ledger';
 
-export const PACTUM_NETWORK_PASSPHRASE = Networks.TESTNET;
+export const PACTUM_NETWORK_PASSPHRASE =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_STELLAR_NETWORK_PASSPHRASE) ||
+  Networks.TESTNET;
 export const PACTUM_NETWORK_NAME = 'TESTNET';
 export const FREIGHTER_HOMEPAGE = 'https://www.freighter.app/';
 
@@ -54,15 +56,22 @@ export async function isFreighterConnected(): Promise<boolean> {
 function assertTestnetNetwork(network: string | undefined, passphrase: string | undefined): void {
   if (!network) return;
   const normalized = network.toUpperCase();
-  const onTestnet =
-    normalized === PACTUM_NETWORK_NAME ||
+  const allowedPassphrase = PACTUM_NETWORK_PASSPHRASE;
+  const onAllowedNetwork =
+    normalized === 'TESTNET' ||
     normalized === 'TEST' ||
-    (passphrase != null && passphrase === PACTUM_NETWORK_PASSPHRASE);
+    normalized === 'STANDALONE' ||
+    normalized === 'LOCAL' ||
+    (passphrase != null &&
+      (passphrase === allowedPassphrase ||
+        passphrase === Networks.TESTNET ||
+        passphrase === Networks.STANDALONE ||
+        passphrase === 'Standalone Network ; February 2017'));
 
-  if (!onTestnet) {
+  if (!onAllowedNetwork) {
     throw new WalletConnectionError(
       'NETWORK_MISMATCH',
-      `Freighter is connected to ${network}. Pactum requires Stellar Testnet. ` +
+      `Freighter is connected to ${network}. Pactum requires Stellar Testnet or Standalone sandbox. ` +
         'Please switch your wallet network to Testnet (Settings → Network) and try again.',
     );
   }

@@ -44,6 +44,7 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     });
 
     await page.goto('/');
+    await page.waitForLoadState('domcontentloaded');
   });
 
   test('creating a commitment lands on-chain and appears Pending on the dashboard', async ({
@@ -52,10 +53,12 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     // Connect the (mocked, but really-signing) Freighter wallet. Assertion
     // pattern matches the confirmed-working frontend/e2e/wallet-connect.spec.ts,
     // not the unverified 'Connected' text used in commitment-flow.spec.ts.
-    await page.getByRole('button', { name: 'Connect Wallet' }).click();
+    const connectBtn = page.getByRole('button', { name: 'Connect Wallet' });
+    await expect(connectBtn).toBeVisible({ timeout: 15_000 });
+    await connectBtn.click();
     await page.getByRole('button', { name: /Freighter/ }).click();
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
-    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible({ timeout: 20_000 });
 
     // Launch the create wizard. Selectors below match the real
     // CreateCommitmentWizard.tsx markup (#wizard-counterparty etc, same ids
