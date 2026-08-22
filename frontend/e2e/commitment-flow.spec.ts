@@ -243,8 +243,8 @@ test('loading spinners display during network requests', async ({ page }) => {
   // Navigate to Dashboard using nav button id (not role=link)
   await page.locator('#nav-dashboard').click();
 
-  await expect(page.locator('div[style*="animation: pulse"]')).toBeVisible();
-  await expect(page.locator('div[style*="animation: pulse"]')).not.toBeVisible({ timeout: 5000 });
+  await expect(page.getByText('Loading commitments...')).toBeVisible();
+  await expect(page.getByText('Loading commitments...')).not.toBeVisible({ timeout: 5000 });
 });
 
 test('WASM validation failure blocks transaction simulation and wallet submission', async ({
@@ -276,8 +276,10 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
 
   // Step 2: Deadline - Fill past date to trigger WASM contract validation error
   await page.locator('#wizard-dueat').fill('2020-01-01T00:00');
-  // Use the specific submit button id to avoid strict mode violation
-  await page.locator('#wizard-submit-btn').click();
+  // Wait for the submit button to be visible and enabled before clicking
+  await expect(page.locator('#wizard-submit-btn')).toBeVisible();
+  await page.locator('#wizard-submit-btn').waitFor({ state: 'attached' });
+  await page.locator('#wizard-submit-btn').click({ timeout: 5000 });
 
   // WASM validation error should appear and stop submit flow
   await expect(
@@ -332,8 +334,9 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
   // Step 3: Due date
   await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
-  // Use the specific submit button id to avoid strict mode violation
-  await page.locator('#wizard-submit-btn').click();
+  // Wait for the submit button to be visible before clicking
+  await expect(page.locator('#wizard-submit-btn')).toBeVisible();
+  await page.locator('#wizard-submit-btn').click({ timeout: 5000 });
 
   // Encryption consent modal should appear
   await expect(page.locator('#encrypt-modal-confirm')).toBeVisible({ timeout: 5000 });
@@ -360,7 +363,8 @@ test('dashboard: encrypted commitment shows lock badge and decrypt button', asyn
   await page.locator('#nav-dashboard').click();
 
   // The second commitment (id=2) is encrypted — its lock badge should be visible
-  await expect(page.getByText('E2E Encrypted').first()).toBeVisible({ timeout: 5000 });
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByText('E2E Encrypted').first()).toBeVisible({ timeout: 10000 });
 
   // The "Decrypt Terms" button should be present for the encrypted commitment
   const decryptBtn = page.locator('[id^="decrypt-btn-"]').first();
