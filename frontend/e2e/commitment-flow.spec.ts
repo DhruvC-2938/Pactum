@@ -97,7 +97,7 @@ test.beforeEach(async ({ page }) => {
           {
             id: 1,
             issuer: MOCK_ADDRESS,
-            counterparty: 'GCV7GCOUNTERPARTY123456789012345678901234567890',
+            counterparty: 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB',
             terms_hash: 'mock_hash',
             due_at: Date.now() / 1000 + 86400,
             status: 'Pending',
@@ -187,21 +187,20 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.locator('#nav-create').click();
 
   // Step 1: Counterparty
-  await expect(page.getByLabel('Counterparty Address')).toBeVisible();
+  await expect(page.locator('#wizard-counterparty')).toBeVisible();
   await page
-    .getByLabel('Counterparty Address')
-    .fill('GCV7GCOUNTERPARTY123456789012345678901234567890');
+    .locator('#wizard-counterparty')
+    .fill('GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB');
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 2: Terms
-  await expect(page.getByLabel('Terms / Description')).toBeVisible();
-  await page.getByLabel('Terms / Description').fill('Test commitment terms');
+  await expect(page.locator('#wizard-terms')).toBeVisible();
+  await page.locator('#wizard-terms').fill('Test commitment terms');
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 3: Due Date
-  await expect(page.getByLabel('Due Date')).toBeVisible();
-  await page.getByLabel('Due Date').fill('2026-12-31T12:00');
-  await page.locator('#wizard-terms').fill('Deliver 500 widgets by end of Q3');
+  await expect(page.locator('#wizard-dueat')).toBeVisible();
+  await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Verify success
@@ -248,7 +247,9 @@ test('loading spinners display during network requests', async ({ page }) => {
   await expect(page.locator('div[style*="animation: pulse"]')).not.toBeVisible({ timeout: 5000 });
 });
 
-test('WASM validation failure blocks transaction simulation and wallet submission', async ({ page }) => {
+test('WASM validation failure blocks transaction simulation and wallet submission', async ({
+  page,
+}) => {
   await page.addInitScript(() => {
     (window as any).__signCalled = false;
     const originalSign = (window as any).freighter?.signTransaction;
@@ -264,7 +265,9 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   await page.locator('#nav-create').click();
 
   // Step 0: Counterparty
-  await page.locator('#wizard-counterparty').fill('GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7');
+  await page
+    .locator('#wizard-counterparty')
+    .fill('GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7');
   await page.getByRole('button', { name: /continue/i }).click();
 
   // Step 1: Terms
@@ -277,7 +280,9 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   await page.locator('#wizard-submit-btn').click();
 
   // WASM validation error should appear and stop submit flow
-  await expect(page.getByText(/Due date must be set in the future|Contract validation failed/i)).toBeVisible();
+  await expect(
+    page.getByText(/Due date must be set in the future|Contract validation failed/i),
+  ).toBeVisible();
 
   // Verify wallet signTransaction was NEVER called
   const signCalled = await page.evaluate(() => (window as any).__signCalled);
