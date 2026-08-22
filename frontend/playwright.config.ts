@@ -41,6 +41,13 @@ export default defineConfig({
       url: 'http://localhost:5174/remoteEntry.js',
       reuseExistingServer: !process.env.CI,
       timeout: 300 * 1000,
+      // Playwright silently discards webServer stdout/stderr by default -- when one of these
+      // three fails to start (seen in e2e-sandbox.yml's much heavier environment: 5 Docker
+      // containers running alongside these builds, vs. none in the plain frontend-checks run),
+      // the CI log otherwise shows nothing but "Process from config.webServer was not able to
+      // start. Exit code: 1" with no way to tell which app or why. Pipe it through instead.
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
     {
       command: 'npm run build && npm run preview',
@@ -48,6 +55,8 @@ export default defineConfig({
       url: 'http://localhost:5175/remoteEntry.js',
       reuseExistingServer: !process.env.CI,
       timeout: 300 * 1000,
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
     {
       // Not `npm run build`: see frontend/vite.config.ts's own bypass of build:wasm for why —
@@ -56,6 +65,8 @@ export default defineConfig({
       url: 'http://localhost:5173',
       reuseExistingServer: !process.env.CI,
       timeout: 300 * 1000,
+      stdout: 'pipe',
+      stderr: 'pipe',
     },
   ],
 });
