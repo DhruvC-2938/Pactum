@@ -49,9 +49,13 @@ async function installFreighterMock(page: Page) {
           // Sign by echoing the unsigned envelope back: sendTransaction /
           // getTransaction are fully mocked (mock-soroban-success.ts), so the
           // signature is never verified -- only its presence matters.
-          case 'SUBMIT_TRANSACTION': {
+          // Legacy 'REQUEST_SIGN_*' type names kept as fallbacks.
+          case 'SUBMIT_TRANSACTION':
+          case 'REQUEST_SIGN_TRANSACTION': {
+            const txXdr = data.transactionXdr ?? data.transaction ?? '';
             response = {
-              signedTransaction: data.transactionXdr,
+              signedTransaction: txXdr,
+              signedTxXdr: txXdr,
               signerAddress: mockAddress,
             };
             break;
@@ -59,10 +63,15 @@ async function installFreighterMock(page: Page) {
           // Simulate signMessage: returns a deterministic 64-byte base64 signature.
           // CONFIRMED against @stellar/freighter-api v6 (index.min.js):
           // signMessage() posts type=SUBMIT_BLOB carrying {blob} and expects
-          // {signedBlob, signerAddress} back (NOT 'REQUEST_SIGN_MESSAGE').
-          case 'SUBMIT_BLOB': {
+          // {signedBlob, signerAddress} back.
+          case 'SUBMIT_BLOB':
+          case 'REQUEST_SIGN_MESSAGE': {
             const mockSig = btoa(String.fromCharCode(...new Array(64).fill(42)));
-            response = { signedBlob: mockSig, signerAddress: mockAddress };
+            response = {
+              signedBlob: mockSig,
+              signedMessage: mockSig,
+              signerAddress: mockAddress,
+            };
             break;
           }
           default:
@@ -83,8 +92,188 @@ async function installFreighterMock(page: Page) {
   );
 }
 
+const HORIZON_ACCOUNT = {
+  id: MOCK_ADDRESS,
+  account_id: MOCK_ADDRESS,
+  sequence: '123456789',
+  subentry_count: 0,
+  balances: [{ balance: '10000000000', asset_type: 'native' }],
+  flags: { auth_required: false, auth_revocable: false, auth_immutable: false },
+  thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
+  signers: [{ weight: 1, key: MOCK_ADDRESS, type: 'ed25519_public_key' }],
+  data: {},
+  _links: {},
+};
+
+const LEDGER_ENTRIES_RESULT = {
+  entries: [
+    {
+      key: 'AAAAAAAAAAAlX+cue3GCkenzdmvyqGpIukIDjf1LWc7my96KvnBhQg==',
+      xdr: 'AAAAAAAAAAAlX+cue3GCkenzdmvyqGpIukIDjf1LWc7my96KvnBhQgAAABdIdugAAEASMgAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAA',
+      lastModifiedLedgerSeq: 4198962,
+      extXdr: 'AAAAAA==',
+    },
+  ],
+  latestLedger: 4198984,
+};
+
+async function mockHorizonAccount(page: Page) {
+  await page.route('**/horizon-testnet.stellar.org/accounts/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(HORIZON_ACCOUNT),
+    });
+  });
+}
+
+async function mockSorobanRpc(page: Page) {
+  let lastEnvelopeXdr = '';
+
+  await page.route('**/soroban-testnet.stellar.org/**', async (route) => {
+    const postData = route.request().postData() ?? '';
+    let parsed: { id?: number | string; method?: string; params?: any } = {};
+    try {
+      parsed = JSON.parse(postData);
+    } catch {}
+    const id = parsed.id ?? 1;
+
+    if (parsed.method === 'getAccount') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            id: MOCK_ADDRESS,
+            sequence: '123456789',
+          },
+        }),
+      });
+      return;
+    }
+
+    if (parsed.method === 'getLatestLedger') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            id: '00'.repeat(32),
+            protocolVersion: 20,
+            sequence: LEDGER_ENTRIES_RESULT.latestLedger,
+          },
+        }),
+      });
+      return;
+    }
+
+    if (parsed.method === 'getLedgerEntries') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jsonrpc: '2.0', id, result: LEDGER_ENTRIES_RESULT }),
+      });
+      return;
+    }
+
+    if (parsed.method === 'simulateTransaction') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            minResourceFee: '100',
+            transactionData: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+            latestLedger: LEDGER_ENTRIES_RESULT.latestLedger,
+            events: [],
+            results: [
+              {
+                auth: [],
+                xdr: 'AAAAAQ==',
+              },
+            ],
+          },
+        }),
+      });
+      return;
+    }
+
+    if (parsed.method === 'sendTransaction') {
+      if (parsed.params?.transaction) {
+        lastEnvelopeXdr = parsed.params.transaction;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            status: 'PENDING',
+            hash: 'mock_tx_hash_123',
+            latestLedger: LEDGER_ENTRIES_RESULT.latestLedger,
+          },
+        }),
+      });
+      return;
+    }
+
+    if (parsed.method === 'getTransaction') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            status: 'SUCCESS',
+            latestLedger: LEDGER_ENTRIES_RESULT.latestLedger,
+            ledger: LEDGER_ENTRIES_RESULT.latestLedger,
+            createdAt: Math.floor(Date.now() / 1000),
+            applicationOrder: 1,
+            feeBump: false,
+            envelopeXdr: lastEnvelopeXdr,
+            resultXdr: 'AAAAAAAAAGQAAAAAAAAAAAAAAAA=',
+            resultMetaXdr: 'AAAAAAAAAAA=',
+            events: { contractEventsXdr: [], transactionEventsXdr: [] },
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          status: 'SUCCESS',
+          latestLedger: LEDGER_ENTRIES_RESULT.latestLedger,
+        },
+      }),
+    });
+  });
+}
+
+async function mockFriendbot(page: Page) {
+  await page.route('**/friendbot.stellar.org/**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await installFreighterMock(page);
+  await mockHorizonAccount(page);
+  await mockSorobanRpc(page);
+  await mockFriendbot(page);
 
   // Offline Soroban RPC mock: account lookup, simulation, submission and
   // confirmation all succeed; create_commitment returns commitment id 42.
@@ -101,6 +290,43 @@ test.beforeEach(async ({ page }) => {
         late: 0,
         breached: 0,
         total: 1,
+      }),
+    });
+  });
+
+  // Merkle proof endpoint consumed by the reputation page's on-chain
+  // verification panel (kept from upstream).
+  await page.route('**/api/v1/proofs/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        proof: {
+          version: '1.0.0',
+          networkPassphrase: 'Test SDF Network ; September 2015',
+          ledgerSeq: LEDGER_ENTRIES_RESULT.latestLedger,
+          ledgerHeaderHash: '00'.repeat(32),
+          stateRootHash: '00'.repeat(32),
+          contractId: 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E',
+          stellarAddress: MOCK_ADDRESS,
+          scoreData: {
+            score: 100,
+            fulfilledCount: 1,
+            lateCount: 0,
+            breachedCount: 0,
+            epoch: 1,
+            sourceLedgerSeq: LEDGER_ENTRIES_RESULT.latestLedger,
+          },
+          leafHash: '00'.repeat(32),
+          merkleProof: [],
+          headerProof: {
+            previousLedgerHash: '00'.repeat(32),
+            txSetResultHash: '00'.repeat(32),
+            bucketListHash: '00'.repeat(32),
+            ledgerVersion: 20,
+          },
+        },
       }),
     });
   });
@@ -217,7 +443,7 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   // Step 3: Due Date
   await expect(page.locator('#wizard-dueat')).toBeVisible();
   await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.locator('#wizard-submit-btn').click();
 
   // Submitting runs the full mocked chain round-trip (simulate -> sign ->
   // send -> confirm); on confirmation App.onSuccess auto-navigates to
@@ -310,6 +536,11 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
       };
     }
   });
+
+  // Connect Freighter wallet first so submit button is enabled
+  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
+  await page.getByRole('button', { name: /Freighter/ }).click();
+  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
 
   // Navigate to Create Commitment wizard page
   await page.locator('#nav-create').click();
@@ -421,9 +652,9 @@ test('dashboard: encrypted commitment shows lock badge and decrypt button', asyn
   // background polling keeps the network from ever going idle.
   await expect(page.getByText('E2E Encrypted').first()).toBeVisible({ timeout: 15000 });
 
-  // The "Decrypt Terms" button should be present for the encrypted commitment
+  // The "Decrypt Terms" button should be present for the encrypted commitment (id=2)
   const decryptBtn = page.locator('[id^="decrypt-btn-"]').first();
-  await expect(decryptBtn).toBeVisible();
+  await expect(decryptBtn).toBeVisible({ timeout: 5000 });
   await expect(decryptBtn).toContainText('Decrypt Terms');
 
   // Clicking it should open the DecryptTermsModal

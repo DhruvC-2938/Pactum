@@ -6,6 +6,7 @@ WORKDIR /app
 # Install all dependencies (including devDependencies needed for tsc)
 COPY package*.json ./
 RUN npm ci || npm install
+RUN npm install
 
 COPY . .
 RUN npm run build
