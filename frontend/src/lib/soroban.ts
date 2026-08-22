@@ -168,7 +168,7 @@ export async function submitCreateCommitment({
   const issuerScVal = Address.fromString(issuerAddress).toScVal();
   const counterpartyScVal = Address.fromString(counterpartyAddress).toScVal();
   const termsHashBytes = hexToBytes(termsHashHex);
-  const termsHashScVal = xdr.ScVal.scvBytes(termsHashBytes);
+  const termsHashScVal = xdr.ScVal.scvBytes(Buffer.from(termsHashBytes));
   const dueAtScVal = xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString()));
 
   // 3. Build Transaction Envelope

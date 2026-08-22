@@ -24,6 +24,7 @@ import {
 } from './lib/sorobanTxHelpers';
 import { ThemeSelector } from './context/ThemeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
+import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
 
 interface CommitmentItemProps {
   commitment: Commitment;
@@ -1693,6 +1694,13 @@ export default function App() {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* ──────────────────────────────────────────────
+               PAGE: BFT Mesh Network
+               ────────────────────────────────────────────── */}
+          <section className={`page ${activePage === 'mesh' ? 'active' : ''}`} id="page-mesh">
+            <MeshNetworkMonitor />
           </section>
         </main>
       </div>
