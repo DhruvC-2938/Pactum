@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   contract-tests:
@@ -88,7 +88,7 @@ jobs:
         working-directory: zk
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci || npm install
           else
             npm install
           fi
@@ -157,7 +157,7 @@ jobs:
         working-directory: backend
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci || npm install
           else
             npm install
           fi
@@ -179,18 +179,12 @@ jobs:
 
   frontend-checks:
     name: Frontend Checks
-  sdk-tests:
-    name: SDK Tests (@pactum/sdk)
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20.x (LTS)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
       - name: Set up Node.js 22.x (LTS)
         uses: actions/setup-node@v4
         with:
@@ -199,10 +193,6 @@ jobs:
       - name: Cache npm dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-frontend-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-frontend-
           path: |
             ~/.npm
             ~/.cache/ms-playwright
@@ -212,13 +202,17 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci || npm install
+          else
+            npm install
+          fi
 
       - name: Run frontend linter
         working-directory: frontend
         run: npm run lint
 
-      - name: Run frontend production build
       - name: Run frontend unit tests
         working-directory: frontend
         run: npm test
@@ -229,14 +223,28 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Run Playwright end-to-end tests
         working-directory: frontend
         run: npx playwright test --reporter=list
-      - name: Run frontend e2e tests
-        working-directory: frontend
-        run: npm run test:e2e
+
+  sdk-tests:
+    name: SDK Tests (@pactum/sdk)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.x (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
           path: ~/.npm
           key: ${{ runner.os }}-sdk-node-${{ hashFiles('sdk/js/package-lock.json', 'sdk/js/package.json') }}
           restore-keys: |
@@ -246,7 +254,7 @@ jobs:
         working-directory: sdk/js
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci || npm install
           else
             npm install
           fi

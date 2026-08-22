@@ -10,6 +10,7 @@ dist-indexer-test/
 dist-middleware-test/
 dist-relayer-test/
 .env
+.env.e2e
 .env.local
 .env.*.local
 npm-debug.log*
