@@ -16,6 +16,9 @@ pub const TTL_EXTEND_LEDGERS: u32 = 30 * 17280;
 /// The largest number of milestones a single commitment may be split into.
 pub const MAX_MILESTONES: u32 = 256;
 
+/// Amount of the dispute token required to raise a dispute (10 XLM in stroops).
+pub const DISPUTE_STAKE_AMOUNT: i128 = 100_000_000; // 10 XLM (1 XLM = 10_000_000 stroops)
+
 /// Represents the current lifecycle state of a commitment.
 ///
 /// # Variants
@@ -215,6 +218,12 @@ pub enum DataKey {
     /// Persistent storage key for the running vote tally of a disputed
     /// commitment.
     DisputeTally(u64),
+    /// Persistent storage key for the escrowed dispute stake, keyed by
+    /// commitment ID. Stores the i128 amount locked at dispute time.
+    DisputeStake(u64),
+    /// Instance storage key for the address of the token used for
+    /// dispute staking (defaults to native XLM).
+    DisputeToken,
 }
 
 /// Running tally of arbitrator votes on a single disputed commitment.

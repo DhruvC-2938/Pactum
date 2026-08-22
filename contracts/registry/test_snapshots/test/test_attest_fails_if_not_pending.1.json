@@ -150,6 +150,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "counters"
+                      },
+                      "val": {
+                        "u64": 65537
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "created_at"
                       },
                       "val": {
@@ -178,30 +186,6 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "late_milestones"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "milestone_count"
-                      },
-                      "val": {
-                        "u32": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "milestones_attested"
-                      },
-                      "val": {
-                        "u32": 1
                       }
                     },
                     {
@@ -243,14 +227,6 @@
                       "val": {
                         "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                       }
-                    },
-                    {
-                      "key": {
-                        "symbol": "vote_threshold"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
                     }
                   ]
                 }
@@ -278,7 +254,7 @@
                 }
               ]
             },
-            "durability": "persistent"
+            "durability": "temporary"
           }
         },
         [
@@ -301,7 +277,7 @@
                     }
                   ]
                 },
-                "durability": "persistent",
+                "durability": "temporary",
                 "val": {
                   "vec": [
                     {

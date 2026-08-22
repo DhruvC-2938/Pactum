@@ -59,8 +59,13 @@ const DEMO_COMMITMENTS: CommitmentItem[] = [
     status: 'Fulfilled',
     created_at: Math.floor(Date.now() / 1000) - 86400 * 20,
     attested_at: Math.floor(Date.now() / 1000) - 86400 * 4,
-    description: 'Deliver 500 validated oracle data points across Stellar Soroban testnet validators on time and verify deterministic quorum proofs.',
-    notes: ['Milestone 1 completed 10 days prior', 'Security audit signoff attached', 'Final cryptographic checksum: 0x99a4c1'],
+    description:
+      'Deliver 500 validated oracle data points across Stellar Soroban testnet validators on time and verify deterministic quorum proofs.',
+    notes: [
+      'Milestone 1 completed 10 days prior',
+      'Security audit signoff attached',
+      'Final cryptographic checksum: 0x99a4c1',
+    ],
   },
   {
     id: 2,
@@ -71,8 +76,12 @@ const DEMO_COMMITMENTS: CommitmentItem[] = [
     status: 'Breached',
     created_at: Math.floor(Date.now() / 1000) - 86400 * 30,
     attested_at: Math.floor(Date.now() / 1000) - 86400 * 8,
-    description: 'Provide 99.99% uptime on cross-border liquidity pool balancer during high volatility window.',
-    notes: ['Node downtime detected at ledger sequence 48102', 'Dispute period elapsed without counter-proof'],
+    description:
+      'Provide 99.99% uptime on cross-border liquidity pool balancer during high volatility window.',
+    notes: [
+      'Node downtime detected at ledger sequence 48102',
+      'Dispute period elapsed without counter-proof',
+    ],
   },
   {
     id: 3,
@@ -83,7 +92,8 @@ const DEMO_COMMITMENTS: CommitmentItem[] = [
     status: 'Fulfilled',
     created_at: Math.floor(Date.now() / 1000) - 86400 * 15,
     attested_at: Math.floor(Date.now() / 1000) - 86400 * 1,
-    description: 'Settle multi-sig escrow release within 48 hours of asset bridge lock notification.',
+    description:
+      'Settle multi-sig escrow release within 48 hours of asset bridge lock notification.',
     notes: ['Transaction hash confirmed on Soroban RPC'],
   },
   {
@@ -95,7 +105,8 @@ const DEMO_COMMITMENTS: CommitmentItem[] = [
     status: 'Pending',
     created_at: Math.floor(Date.now() / 1000) - 86400 * 2,
     attested_at: null,
-    description: 'Monthly protocol maintenance commitment covering Soroban smart contract upgrades and state snapshot archiving.',
+    description:
+      'Monthly protocol maintenance commitment covering Soroban smart contract upgrades and state snapshot archiving.',
   },
   {
     id: 5,
@@ -107,48 +118,12 @@ const DEMO_COMMITMENTS: CommitmentItem[] = [
     created_at: Math.floor(Date.now() / 1000) - 86400 * 12,
     attested_at: Math.floor(Date.now() / 1000),
     description: 'Submit end-of-cycle risk assessment report to governance council.',
-    notes: ['Delayed by 24 hours due to upstream indexer latency', 'Penalties waived after mutual consent'],
-  }
+    notes: [
+      'Delayed by 24 hours due to upstream indexer latency',
+      'Penalties waived after mutual consent',
+    ],
+  },
 ];
-
-// Generator for power users with hundreds or thousands of commitments
-function generateLargeDataset(count: number, targetAddress: string): CommitmentItem[] {
-  const statuses: CommitmentItem['status'][] = ['Fulfilled', 'Late', 'Breached', 'Pending', 'Disputed'];
-  const counterparties = [BASE_ADDRESS_1, BASE_ADDRESS_2, BASE_ADDRESS_3, BASE_ADDRESS_4];
-  const sampleDescriptions = [
-    'Deliver 500 validated oracle data points across Stellar Soroban testnet validators on time.',
-    'Provide 99.99% uptime on cross-border liquidity pool balancer during high volatility window with continuous telemetry monitoring.',
-    'Short term liquidity deposit.',
-    'Multi-party cryptographic settlement and dispute mediation protocol execution with variable delay conditions and secondary attestations required by counterparty.',
-    'Execute algorithmic token swap on DEX aggregator.',
-    'Provide 24/7 technical on-call response for bridge relayer architecture including emergency pause key rotation and key recovery protocol verification.',
-  ];
-
-  const now = Math.floor(Date.now() / 1000);
-  const items: CommitmentItem[] = [];
-
-  for (let i = 1; i <= count; i++) {
-    const isIssuer = i % 2 === 0;
-    const status = statuses[i % statuses.length];
-    const cp = counterparties[i % counterparties.length];
-    const desc = sampleDescriptions[i % sampleDescriptions.length];
-
-    items.push({
-      id: 1000 + i,
-      issuer: isIssuer ? targetAddress : cp,
-      counterparty: isIssuer ? cp : targetAddress,
-      terms_hash: `hash_${i.toString().padStart(6, '0')}_${(i * 31337).toString(16).padEnd(32, '0')}`,
-      due_at: now - (count - i) * 3600,
-      status,
-      created_at: now - (count - i) * 7200,
-      attested_at: status !== 'Pending' ? now - (count - i) * 1800 : null,
-      description: `[#${1000 + i}] ${desc}`,
-      notes: i % 3 === 0 ? [`Audit trail verified for batch ${i}`, `Ledger index #${50000 + i}`] : undefined,
-    });
-  }
-
-  return items;
-}
 
 const PRESETS = [
   {
@@ -169,7 +144,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   initialAddress = BASE_ADDRESS_1,
   onNavigateAddress,
   onLaunchCreate,
-  commitments: externalCommitments
+  commitments: externalCommitments,
 }) => {
   const [searchQuery, setSearchQuery] = useState(initialAddress);
   const [activeAddress, setActiveAddress] = useState(initialAddress);
@@ -184,7 +159,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
   const [reputation, setReputation] = useState<Reputation | null>(null);
   const [reputationIntegrity, setReputationIntegrity] = useState<ReputationIntegrity | null>(null);
   const [securityWarning, setSecurityWarning] = useState<string | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -400,7 +374,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
     const initializeData = async () => {
       setIsLoading(true);
-      setFetchError(null);
       try {
         // Demo addresses have no backend proof; skip verification and use placeholder reputation
         const demoAddresses = [BASE_ADDRESS_1, BASE_ADDRESS_2, BASE_ADDRESS_3, BASE_ADDRESS_4];
@@ -432,10 +405,10 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
             }
           }
         }
-      } catch (error: any) {
+      } catch (err: unknown) {
+        const error = err as Error;
         if (error.name !== 'AbortError') {
           console.error('Initialization error:', error);
-          setFetchError('Failed to initialize dashboard data.');
         }
       } finally {
         if (!signal.aborted) {
@@ -1079,31 +1052,15 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
       {/* ── Associated Commitments ── */}
       <div
         style={{
-          background: 'rgba(255, 255, 255, 0.6)',
-          backdropFilter: 'saturate(180%) blur(40px)',
-          WebkitBackdropFilter: 'saturate(180%) blur(40px)',
-          border: '1px solid rgba(255, 255, 255, 0.8)',
+          background: '#ffffff',
+          border: '1.5px solid #e2e8f0',
           borderRadius: '24px',
           overflow: 'hidden',
           boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
           marginBottom: '32px',
         }}
       >
-        {fetchError && (
-          <div
-            style={{
-              background: '#fef2f2',
-              color: '#dc2626',
-              padding: '12px 24px',
-              fontSize: '13px',
-              fontWeight: '500',
-              borderBottom: '1px solid #fee2e2',
-              textAlign: 'center',
-            }}
-          >
-            {fetchError}
-          </div>
-        )}
+        {/* Header with Title and Filter Tabs */}
         <div
           style={{
             padding: '22px 28px',
@@ -1138,7 +1095,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
               </span>
             </div>
             <p style={{ fontSize: '13px', color: '#64748b', margin: '3px 0 0 0' }}>
-              Activity history as issuer or counterparty
+              Deterministic DOM virtualization for unlimited commitment histories
             </p>
           </div>
 
@@ -1180,29 +1137,34 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
         </div>
 
         {/* Live Virtualization Metrics Bar */}
-        <div style={{
-          padding: '10px 28px',
-          background: '#f8fafc',
-          borderBottom: '1px solid #e2e8f0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px',
-          fontSize: '12px',
-          color: '#64748b'
-        }}>
+        <div
+          style={{
+            padding: '10px 28px',
+            background: '#f8fafc',
+            borderBottom: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            fontSize: '12px',
+            color: '#64748b',
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <span>
-              Total in History: <strong style={{ color: '#0f172a' }}>{filteredCommitments.length}</strong>
+              Total in History:{' '}
+              <strong style={{ color: '#0f172a' }}>{filteredCommitments.length}</strong>
             </span>
             <span style={{ color: '#cbd5e1' }}>•</span>
             <span id="virtual-dom-count">
-              Active in DOM (Viewport + Overscan): <strong style={{ color: '#16a34a' }}>{virtualItems.length} nodes</strong>
+              Active in DOM (Viewport + Overscan):{' '}
+              <strong style={{ color: '#16a34a' }}>{virtualItems.length} nodes</strong>
             </span>
             <span style={{ color: '#cbd5e1' }}>•</span>
             <span>
-              Dynamic Size Cache: <strong style={{ color: '#6366f1' }}>{cachedCount} measured</strong>
+              Dynamic Size Cache:{' '}
+              <strong style={{ color: '#6366f1' }}>{cachedCount} measured</strong>
             </span>
           </div>
         </div>
@@ -1240,8 +1202,8 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                 margin: '0 auto 22px auto',
               }}
             >
-              This account currently has no registered commitment activity on Pactum Stellar
-              Testnet.
+              This account currently has no registered commitment activity matching this filter on
+              Pactum Stellar Testnet.
             </p>
             {onLaunchCreate && (
               <button
@@ -1272,14 +1234,14 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
               overflowY: 'auto',
               position: 'relative',
               contain: 'strict',
-              padding: '0 12px'
+              padding: '0 12px',
             }}
           >
             <div
               style={{
                 height: `${rowVirtualizer.getTotalSize()}px`,
                 width: '100%',
-                position: 'relative'
+                position: 'relative',
               }}
             >
               {virtualItems.map((virtualRow) => {
@@ -1309,7 +1271,7 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                       left: 0,
                       width: '100%',
                       transform: `translateY(${virtualRow.start}px)`,
-                      padding: '8px 0'
+                      padding: '8px 0',
                     }}
                   >
                     {/* ── Virtualized Dynamic Commitment Card ── */}
@@ -1333,9 +1295,24 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                       }}
                     >
                       {/* Top Row: ID, Role, Counterparty, Status, and Controls */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '12px',
+                        }}
+                      >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span style={{ fontSize: '15px', fontWeight: '900', color: '#0f172a', fontFamily: 'monospace' }}>
+                          <span
+                            style={{
+                              fontSize: '15px',
+                              fontWeight: '900',
+                              color: '#0f172a',
+                              fontFamily: 'monospace',
+                            }}
+                          >
                             #{c.id}
                           </span>
 
@@ -1411,27 +1388,45 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
 
                       {/* Middle: Dynamic Description Text */}
                       {c.description && (
-                        <div style={{ marginTop: '12px', fontSize: '13.5px', color: '#334155', lineHeight: '1.5', fontWeight: '500' }}>
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            fontSize: '13.5px',
+                            color: '#334155',
+                            lineHeight: '1.5',
+                            fontWeight: '500',
+                          }}
+                        >
                           {c.description}
                         </div>
                       )}
 
                       {/* Bottom Info: Due Date, Terms Hash, and Async Trigger */}
-                      <div style={{
-                        marginTop: '12px',
-                        paddingTop: '10px',
-                        borderTop: '1px solid #f8fafc',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                        gap: '10px',
-                        fontSize: '12px',
-                        color: '#64748b'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                      <div
+                        style={{
+                          marginTop: '12px',
+                          paddingTop: '10px',
+                          borderTop: '1px solid #f8fafc',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '10px',
+                          fontSize: '12px',
+                          color: '#64748b',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '14px',
+                            flexWrap: 'wrap',
+                          }}
+                        >
                           <span>
-                            Due: <strong style={{ color: '#0f172a' }}>{formatDate(c.due_at)}</strong>
+                            Due:{' '}
+                            <strong style={{ color: '#0f172a' }}>{formatDate(c.due_at)}</strong>
                           </span>
                           <span>•</span>
                           <span title={c.terms_hash} style={{ fontFamily: 'monospace' }}>
@@ -1486,14 +1481,38 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                           <div style={{ fontSize: '11.5px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
                             Cryptographic Terms & Audit Log
                           </div>
-                          <div style={{ fontFamily: 'monospace', fontSize: '11.5px', color: '#64748b', wordBreak: 'break-all', marginBottom: '8px' }}>
+                          <div
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: '11.5px',
+                              color: '#64748b',
+                              wordBreak: 'break-all',
+                              marginBottom: '8px',
+                            }}
+                          >
                             Full SHA-256 Terms Hash: {c.terms_hash}
                           </div>
 
                           {c.notes && c.notes.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '6px' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                marginTop: '6px',
+                              }}
+                            >
                               {c.notes.map((note, nIdx) => (
-                                <div key={nIdx} style={{ fontSize: '12px', color: '#334155', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                                <div
+                                  key={nIdx}
+                                  style={{
+                                    fontSize: '12px',
+                                    color: '#334155',
+                                    display: 'flex',
+                                    alignItems: 'baseline',
+                                    gap: '6px',
+                                  }}
+                                >
                                   <span style={{ color: '#6366f1' }}>•</span>
                                   <span>{note}</span>
                                 </div>
@@ -1506,7 +1525,6 @@ export const ReputationDashboard: React.FC<ReputationDashboardProps> = ({
                           )}
                         </div>
                       )}
-
                     </div>
                   </div>
                 );

@@ -31,9 +31,12 @@ struct Fixture {
     contract_id: Address,
     arbitrator: Address,
     timelock: Address,
+    /// Dispute token address, configured so that `client.dispute()` calls succeed.
+    dispute_token: Address,
 }
 
-/// Registers the registry, initializes it, and installs `timelock` as upgrade admin.
+/// Registers the registry, initializes it, installs `timelock` as upgrade admin,
+/// and configures a dispute token (required since the slashing PR).
 fn setup() -> Fixture {
     let env = Env::default();
     env.mock_all_auths();
@@ -47,12 +50,20 @@ fn setup() -> Fixture {
     client.initialize(&vec![&env, arbitrator.clone()]);
     client.init_upgrade_admin(&timelock);
 
+    // Configure the dispute token required by the registry's `dispute` function
+    // (error #40 = DisputeTokenNotSet without this).
+    let dispute_token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    client.set_dispute_token(&arbitrator, &dispute_token);
+
     Fixture {
         env,
         client,
         contract_id,
         arbitrator,
         timelock,
+        dispute_token,
     }
 }
 
@@ -598,6 +609,12 @@ fn test_v2_write_path_decrements_direct_count_on_dispute() {
     let issuer = Address::generate(&f.env);
     let counterparty = Address::generate(&f.env);
     force_schema_v2(&f);
+
+    // Mint dispute stake tokens to the counterparty (the party raising the dispute).
+    soroban_sdk::token::StellarAssetClient::new(&f.env, &f.dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
 
     f.env.ledger().with_mut(|l| l.timestamp = 1_000);
     let id = f.client.create_commitment(
