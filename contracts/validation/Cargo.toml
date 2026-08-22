@@ -8,11 +8,15 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-std = []
-wasm = ["dep:wasm-bindgen"]
+std = ["serde/std", "serde_json/std", "sha2/std"]
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "std"]
 
 [dependencies]
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
 wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

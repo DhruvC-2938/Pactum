@@ -103,7 +103,7 @@ describe('Web Worker Cryptographic Engine', () => {
     };
 
     (client as any).worker = mockWorker;
-    mockWorker.onerror = (err: any) => {
+    mockWorker.onerror = () => {
       if ((client as any).worker) {
         (client as any).worker.terminate();
         (client as any).worker = null;

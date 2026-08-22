@@ -89,4 +89,11 @@ pub enum Error {
     /// can be read or mutated.  Callers should submit a `RestoreFootprint`
     /// operation — or invoke `restore_reputation` — and retry.
     ReputationArchived = 39,
+    /// No dispute token has been configured for the registry.
+    DisputeTokenNotSet = 40,
+    /// The dispute stake amount must be greater than zero.
+    InvalidDisputeStakeAmount = 41,
+    /// The fee oracle has not yet received enough observations to produce a
+    /// recommendation.
+    OracleNotInitialized = 42,
 }

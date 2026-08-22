@@ -9,6 +9,7 @@ pub mod commitments;
 pub mod disputes;
 pub mod errors;
 pub mod events;
+pub mod fee_oracle;
 mod pausable;
 mod reentrancy;
 pub mod reputation;
@@ -775,6 +776,30 @@ impl RegistryContract {
         staking::set_staking_token(&env, caller, token);
     }
 
+    /// Configures the token used for dispute staking. One-time setup by arbitrator.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `caller` must be a member of the arbitrator set.
+    ///
+    /// # Panics
+    /// * `Error::NotArbitrator` if caller is not in the arbitrator set.
+    /// * `Error::AlreadyInitialized` if a dispute token is already configured.
+    pub fn set_dispute_token(env: Env, caller: Address, token: Address) {
+        caller.require_auth();
+        let arbitrators = crate::commitments::arbitrators(&env);
+        if !arbitrators.contains(&caller) {
+            panic_with_error!(env, Error::NotArbitrator);
+        }
+        if env.storage().instance().has(&DataKey::DisputeToken) {
+            panic_with_error!(env, Error::AlreadyInitialized);
+        }
+        env.storage().instance().set(&DataKey::DisputeToken, &token);
+        env.storage().instance().extend_ttl(
+            commitments::TTL_THRESHOLD_LEDGERS,
+            commitments::TTL_EXTEND_LEDGERS,
+        );
+    }
+
     /// Locks `amount` of the staking token from the attestor into the registry vault.
     ///
     /// # Authorization
@@ -816,5 +841,21 @@ impl RegistryContract {
     /// Returns the staking record for an attestor (zeroed if it has never staked).
     pub fn get_stake_info(env: Env, attestor: Address) -> AttestorStake {
         staking::get_stake_info(&env, attestor)
+    }
+
+    /// Records a new fee observation and updates the PID controller state.
+    /// Anyone may call this; the oracle is permissionless by design.
+    pub fn update_fee_oracle(env: Env, observed_fee: i128) -> fee_oracle::OracleState {
+        reentrancy::enter(&env);
+        let state = fee_oracle::update_oracle(&env, observed_fee);
+        events::fee_oracle_updated(&env, state.recommended_fee, env.ledger().sequence());
+        reentrancy::exit(&env);
+        state
+    }
+
+    /// Returns the current recommended fee from the PID oracle.
+    /// Returns OracleNotInitialized if no observations have been recorded yet.
+    pub fn get_recommended_fee(env: Env) -> i128 {
+        fee_oracle::get_recommended_fee(&env).unwrap_or_else(|e| panic_with_error!(&env, e))
     }
 }
