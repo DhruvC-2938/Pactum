@@ -29,7 +29,7 @@ services:
         redis-cli --cluster create
         redis-node-0:6379 redis-node-1:6379 redis-node-2:6379
         redis-node-3:6379 redis-node-4:6379 redis-node-5:6379
-        --cluster-replicas 1 --cluster-yes
+        --cluster-replicas 1 --cluster-yes || true
     depends_on:
       redis-node-0: { condition: service_healthy }
       redis-node-1: { condition: service_healthy }
