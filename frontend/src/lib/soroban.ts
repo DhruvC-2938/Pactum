@@ -12,6 +12,7 @@ import {
   scValToNative,
 } from '@stellar/stellar-sdk';
 import type { Reputation } from './api';
+import { Buffer } from 'buffer';
 import { signTransaction } from '@stellar/freighter-api';
 import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
 import type { WalletProvider } from './wallet';

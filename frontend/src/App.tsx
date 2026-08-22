@@ -522,6 +522,30 @@ export default function App() {
             </button>
 
             <button
+              className={`nav-item ${activePage === 'mesh' ? 'active' : ''}`}
+              id="nav-mesh"
+              onClick={() => {
+                setActivePage('mesh');
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <span className="nav-icon">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M2 8h12M8 2a10 10 0 010 12M8 2a10 10 0 000 12" />
+                </svg>
+              </span>
+              BFT Mesh Network
+            </button>
+
+            <button
               className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`}
               id="nav-initialize"
               onClick={() => {
@@ -622,9 +646,11 @@ export default function App() {
                             ? 'Resolve Dispute'
                             : activePage === 'lookup'
                               ? 'Get Commitment'
-                              : activePage === 'initialize'
-                                ? 'Initialize'
-                                : 'Dashboard'}
+                              : activePage === 'mesh'
+                                ? 'BFT Mesh Network'
+                                : activePage === 'initialize'
+                                  ? 'Initialize'
+                                  : 'Dashboard'}
               </span>
             </div>
             <div
