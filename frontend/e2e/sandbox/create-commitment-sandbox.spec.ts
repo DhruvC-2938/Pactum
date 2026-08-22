@@ -86,18 +86,33 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
     await submitBtn.click();
 
-    // Check if an immediate contract or signing error toast appears
-    const errorToast = page.locator('#toast-container .toast.error');
-    if (await errorToast.isVisible({ timeout: 2000 }).catch(() => false)) {
-      const msg = await errorToast.innerText();
-      throw new Error(`Commitment creation failed with toast error: ${msg}`);
-    }
+    // The real signing + RPC round-trip takes longer than the mocked-route tests, and a real
+    // submission/simulation/confirmation error can surface well after the click (not just in the
+    // first couple of seconds) -- capture the first error toast's text the instant it appears,
+    // for the whole wait, so a real failure here shows up as its actual message instead of a
+    // generic "waited 45s and nothing happened" timeout with no diagnostic value.
+    let toastMessage: string | null = null;
+    const errorToast = page.locator('#toast-container .toast.error').first();
+    const toastWatcher = errorToast
+      .waitFor({ state: 'visible', timeout: 45_000 })
+      .then(async () => {
+        toastMessage = await errorToast.innerText();
+      })
+      .catch(() => {});
 
-    // The real signing + RPC round-trip takes longer than the mocked-route
-    // tests; on success App.tsx's onSuccess handler transitions to the Reputation page.
-    await expect(page.locator('#page-reputation')).toHaveClass(/active/, {
-      timeout: 45_000,
-    });
+    // On success, App.tsx's onSuccess handler transitions to the Reputation page.
+    try {
+      await expect(page.locator('#page-reputation')).toHaveClass(/active/, {
+        timeout: 45_000,
+      });
+    } catch (err) {
+      await toastWatcher;
+      if (toastMessage) {
+        throw new Error(`Commitment creation failed with toast error: ${toastMessage}`);
+      }
+      throw err;
+    }
+    await toastWatcher;
 
     const commitmentId = 1;
 
@@ -110,7 +125,9 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await page.locator('#nav-commitments').click();
     await expect(page.locator('#commitments-list-page')).toBeVisible({ timeout: 15_000 });
 
-    const commitmentCard = page.locator('.commitment-item', { hasText: `Commitment #${commitmentId}` });
+    const commitmentCard = page.locator('.commitment-item', {
+      hasText: `Commitment #${commitmentId}`,
+    });
     await expect(commitmentCard).toBeVisible({ timeout: 25_000 });
     await expect(commitmentCard.getByText('Pending')).toBeVisible();
   });
