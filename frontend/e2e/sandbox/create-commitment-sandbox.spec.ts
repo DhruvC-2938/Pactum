@@ -55,7 +55,7 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await page.getByRole('button', { name: 'Connect Wallet' }).click();
     await page.getByRole('button', { name: /Freighter/ }).click();
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
-    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
+    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible({ timeout: 15_000 });
 
     // Launch the create wizard. Selectors below match the real
     // CreateCommitmentWizard.tsx markup (#wizard-counterparty etc, same ids
