@@ -17,19 +17,23 @@ self.addEventListener('activate', (event) => {
   initMeshChannel();
 });
 
+// Re-initialize on every worker start, not only on activation.
+initMeshChannel();
+
 function initMeshChannel() {
   if (typeof BroadcastChannel !== 'undefined' && !meshBroadcastChannel) {
     meshBroadcastChannel = new BroadcastChannel(MESH_CHANNEL_NAME);
     meshBroadcastChannel.onmessage = (event) => {
-      // Forward mesh messages to all connected window clients
-      self.clients.matchAll().then((clients) => {
-        clients.forEach((client) => {
-          client.postMessage({
-            type: 'MESH_SIGNALING_EVENT',
-            payload: event.data,
+      const msg = event.data;
+      if (!msg) return;
+      // Forward disseminated Soroban events to all connected window clients
+      if (msg.type === 'SOROBAN_EVENT_DISSEMINATED' && msg.event) {
+        self.clients.matchAll().then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage(msg);
           });
         });
-      });
+      }
     };
   }
 }

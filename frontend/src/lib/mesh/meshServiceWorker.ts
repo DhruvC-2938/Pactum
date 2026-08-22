@@ -60,7 +60,7 @@ export class MeshServiceWorkerCoordinator {
   }
 
   private handleWorkerMessage(data: any): void {
-    if (data && data.type === 'SOROBAN_EVENT_DISSEMINATED') {
+    if (data && data.type === 'SOROBAN_EVENT_DISSEMINATED' && data.event) {
       this.notifyListeners(data.event);
     }
   }

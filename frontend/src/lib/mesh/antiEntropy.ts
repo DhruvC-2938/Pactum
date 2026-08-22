@@ -35,12 +35,34 @@ export class AntiEntropyManager {
    */
   public handleSyncRequest(req: AntiEntropyReqMessage): AntiEntropyRespMessage {
     const matchedEvents: SorobanIndexedEvent[] = [];
+    const from = Number(req.fromLedger);
+    const to = Number(req.toLedger);
 
-    for (let seq = req.fromLedger; seq <= req.toLedger; seq++) {
-      const events = this.ledgerSeqIndex.get(seq);
-      if (events) {
-        matchedEvents.push(...events);
-        if (matchedEvents.length >= this.maxEventsPerSync) break;
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) {
+      return {
+        type: 'ANTI_ENTROPY_RESP',
+        events: [],
+        senderId: this.transport.localPeerId,
+        timestamp: Date.now(),
+      };
+    }
+
+    const sequences = Array.from(this.ledgerSeqIndex.keys())
+      .filter((seq) => seq >= from && seq <= to)
+      .sort((a, b) => a - b);
+
+    for (const seq of sequences) {
+      const events = this.ledgerSeqIndex.get(seq) ?? [];
+      for (const event of events) {
+        if (matchedEvents.length >= this.maxEventsPerSync) {
+          return {
+            type: 'ANTI_ENTROPY_RESP',
+            events: matchedEvents,
+            senderId: this.transport.localPeerId,
+            timestamp: Date.now(),
+          };
+        }
+        matchedEvents.push(event);
       }
     }
 
@@ -79,6 +101,10 @@ export class AntiEntropyManager {
 
       this.triggerSyncWithPeer(randomPeer, minSeq, maxSeq);
     }, intervalMs);
+
+    if (this.syncInterval && typeof (this.syncInterval as any).unref === 'function') {
+      (this.syncInterval as any).unref();
+    }
   }
 
   public destroy(): void {

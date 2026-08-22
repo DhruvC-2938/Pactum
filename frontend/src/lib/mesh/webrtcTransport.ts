@@ -223,7 +223,7 @@ export class WebRtcMeshTransport {
           type: 'CANDIDATE',
           senderId: this.localPeerId,
           targetId: peerId,
-          candidate: ev.candidate,
+          candidate: ev.candidate.toJSON ? ev.candidate.toJSON() : ev.candidate,
         });
       }
     };
