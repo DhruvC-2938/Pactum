@@ -116,14 +116,20 @@ export class ByzantineHealer {
 
     // Phase 1: Hash integrity check.
     const allNodes: DAGNode[] = []
-    incoming.walkAncestry(
-      incoming.tips[0] ?? '',
-      (node) => {
-        allNodes.push(node)
-        return true
-      },
-      Infinity,
-    )
+    const visitedHashes = new Set<string>()
+    for (const tipHash of incoming.tips) {
+      incoming.walkAncestry(
+        tipHash,
+        (node) => {
+          if (!visitedHashes.has(node.hash)) {
+            visitedHashes.add(node.hash)
+            allNodes.push(node)
+          }
+          return true
+        },
+        Infinity,
+      )
+    }
 
     for (const node of allNodes) {
       if (this.quarantinedHashes.has(node.hash)) {

@@ -161,5 +161,14 @@ export function areConcurrent(
   a: Record<string, number>,
   b: Record<string, number>,
 ): boolean {
-  return !happensBefore(a, b) && !happensBefore(b, a)
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)])
+  let hasStrictlyLess = false
+  let hasStrictlyGreater = false
+  for (const key of allKeys) {
+    const va = a[key] ?? 0
+    const vb = b[key] ?? 0
+    if (va < vb) hasStrictlyLess = true
+    if (va > vb) hasStrictlyGreater = true
+  }
+  return hasStrictlyLess && hasStrictlyGreater
 }
