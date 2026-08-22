@@ -52,6 +52,16 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
   test('creating a commitment lands on-chain and appears Pending on the dashboard', async ({
     page,
   }) => {
+    // CreateCommitmentWizard's catch block does `console.error('[CreateCommitmentWizard] Soroban
+    // error:', err)` with the raw error *before* decoding it into the generic toast label
+    // (decodeRegistryContractError falls back to "Transaction Failed" for anything that isn't a
+    // recognized `Error(Contract, #N)` code) -- capture it so a real submission/RPC failure here
+    // shows its actual message instead of just "Transaction Failed".
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+
     // Connect the (mocked, but really-signing) Freighter wallet
     const connectBtn = page.getByRole('button', { name: 'Connect Wallet' }).first();
     await expect(connectBtn).toBeVisible({ timeout: 15_000 });
@@ -108,7 +118,13 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     } catch (err) {
       await toastWatcher;
       if (toastMessage) {
-        throw new Error(`Commitment creation failed with toast error: ${toastMessage}`);
+        const rawError = consoleErrors.find((line) =>
+          line.includes('[CreateCommitmentWizard] Soroban error:'),
+        );
+        throw new Error(
+          `Commitment creation failed with toast error: ${toastMessage}` +
+            (rawError ? `\nRaw console error: ${rawError}` : ''),
+        );
       }
       throw err;
     }
