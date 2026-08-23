@@ -2,8 +2,9 @@ import { Pool } from 'pg';
 import { LedgerSnapshot } from './types';
 
 // The registry publishes commitment_created with topics
-//   (symbol_short!("created"), issuer: Address, counterparty: Address)
-// and the u64 commitment id as the event data. See
+//   (symbol_short!("created"), issuer: Address, counterparty: Address, oracle: Option<Address>)
+// and (id: u64, schema_id: Option<u32>) as the event data -- a tuple, not a
+// bare id, since the oracle/schema_id fields were added. See
 // contracts/registry/src/events.rs::commitment_created.
 const CREATED_TOPIC = 'created';
 
@@ -113,7 +114,12 @@ export async function parseCommitmentCreatedEvents(
 
     const issuer = decode(topic[1]);
     const counterparty = decode(topic[2]);
-    const commitmentId = commitmentIdToString(decode(payload.value));
+    // The event value is (id, schema_id) -- a tuple, which scValToNative
+    // decodes as a JS array. Tolerate a bare id too, for events indexed
+    // before schema_id/oracle were added to commitment_created.
+    const decodedValue = decode(payload.value);
+    const rawId = Array.isArray(decodedValue) ? decodedValue[0] : decodedValue;
+    const commitmentId = commitmentIdToString(rawId);
 
     if (typeof issuer !== 'string' || !STELLAR_ADDRESS.test(issuer)) continue;
     if (typeof counterparty !== 'string' || !STELLAR_ADDRESS.test(counterparty)) continue;
@@ -175,7 +181,10 @@ export class InMemoryCommitmentIndex implements CommitmentIndex {
     }
   }
 
-  async findByAddress(address: string, options: FindByAddressOptions = {}): Promise<CommitmentPage> {
+  async findByAddress(
+    address: string,
+    options: FindByAddressOptions = {},
+  ): Promise<CommitmentPage> {
     const { limit, offset } = normalizePage(options);
     const matches = [...this.byId.values()]
       .filter((c) => c.issuer === address || c.counterparty === address)
@@ -262,7 +271,10 @@ export class PostgresCommitmentIndex implements CommitmentIndex {
     );
   }
 
-  async findByAddress(address: string, options: FindByAddressOptions = {}): Promise<CommitmentPage> {
+  async findByAddress(
+    address: string,
+    options: FindByAddressOptions = {},
+  ): Promise<CommitmentPage> {
     const { limit, offset } = normalizePage(options);
 
     // COUNT(*) OVER() returns the full match count alongside the page, so total
@@ -311,7 +323,11 @@ export async function backfillCommitmentIndex(
   let commitments = 0;
 
   for (;;) {
-    const result = await pool.query<{ sequence: string; closed_at: Date | string; events: unknown }>(
+    const result = await pool.query<{
+      sequence: string;
+      closed_at: Date | string;
+      events: unknown;
+    }>(
       `SELECT sequence, closed_at, events
          FROM ${table}
         WHERE sequence > $1
