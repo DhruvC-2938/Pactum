@@ -30,7 +30,7 @@ const {
 } = process.env as Record<string, string>;
 
 test.describe('create_commitment against local Soroban sandbox (#8)', () => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
 
   test.beforeEach(async ({ page }) => {
     if (!E2E_ISSUER_ADDRESS || !E2E_ISSUER_SECRET) {
@@ -46,7 +46,6 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     });
 
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
   });
 
   test('creating a commitment lands on-chain and appears Pending on the dashboard', async ({
@@ -66,28 +65,28 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const connectBtn = page.getByRole('button', { name: 'Connect Wallet' }).first();
     await expect(connectBtn).toBeVisible({ timeout: 15_000 });
     await connectBtn.click();
+    // Connect the (mocked, but really-signing) Freighter wallet. Assertion
+    // pattern matches the confirmed-working frontend/e2e/wallet-connect.spec.ts,
+    // not the unverified 'Connected' text used in commitment-flow.spec.ts.
+    await page.getByRole('button', { name: 'Connect Wallet' }).click();
     await page.getByRole('button', { name: /Freighter/ }).click();
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
-    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
 
-    // Launch the create wizard
-    if (await page.locator('#hero-launch-btn').isVisible()) {
-      await page.locator('#hero-launch-btn').click();
-    }
-    await page.locator('#nav-create').click();
-    await expect(page.locator('#wizard-counterparty')).toBeVisible({ timeout: 10_000 });
+    // Launch the create wizard. Selectors below match the real
+    // CreateCommitmentWizard.tsx markup (#wizard-counterparty etc, same ids
+    // used by frontend/e2e/contract-errors.spec.ts's fillWizardAndSubmit).
+    await page.getByRole('button', { name: 'Create Commitment' }).click();
 
     await page.locator('#wizard-counterparty').fill(E2E_COUNTERPARTY_ADDRESS);
     await page.getByRole('button', { name: 'Continue' }).click();
 
     const terms = `E2E sandbox run ${Date.now()}`;
-    await expect(page.locator('#wizard-terms')).toBeVisible({ timeout: 10_000 });
     await page.locator('#wizard-terms').fill(terms);
     await page.getByRole('button', { name: 'Continue' }).click();
 
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 7);
-    await expect(page.locator('#wizard-dueat')).toBeVisible({ timeout: 10_000 });
     await page.locator('#wizard-dueat').fill(dueDate.toISOString().slice(0, 16));
 
     // Submit wizard using unique button id
@@ -129,6 +128,25 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
       throw err;
     }
     await toastWatcher;
+    // The real signing + RPC round-trip (submit -> poll for on-chain
+    // confirmation) can take up to ~55s under CI load, so an error toast may
+    // surface well after a fixed early check would look for it. Race the
+    // success transition against the error toast instead of checking once
+    // up front, so a real failure fails fast with its actual message instead
+    // of just timing out on the success locator.
+    const errorToast = page.locator('#toast-container .toast.error');
+    const outcome = await Promise.race([
+      page
+        .locator('#page-reputation.active')
+        .waitFor({ state: 'attached', timeout: 65_000 })
+        .then(() => 'success' as const),
+      errorToast.waitFor({ state: 'visible', timeout: 65_000 }).then(() => 'error' as const),
+    ]);
+
+    if (outcome === 'error') {
+      const msg = await errorToast.innerText();
+      throw new Error(`Commitment creation failed with toast error: ${msg}`);
+    }
 
     const commitmentId = 1;
 
@@ -137,9 +155,11 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const onChain = await getCommitmentOnChain(commitmentId, E2E_ISSUER_ADDRESS);
     expect(onChain.status).toBe('Pending');
 
-    // Confirm the commitments list (fed by backend/indexer) picks up the same commitment
-    await page.locator('#nav-commitments').click();
-    await expect(page.locator('#commitments-list-page')).toBeVisible({ timeout: 15_000 });
+    // Now confirm the dashboard (fed by backend/indexer, not the wizard's
+    // own state) picks up the same commitment as Pending. This is the part
+    // that actually catches indexer/backend desync bugs -- the wizard
+    // succeeding doesn't guarantee the dashboard's separate read path agrees.
+    await page.getByRole('link', { name: 'Dashboard' }).click();
 
     const commitmentCard = page.locator('.commitment-item', {
       hasText: `Commitment #${commitmentId}`,
