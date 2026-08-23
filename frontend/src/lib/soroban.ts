@@ -57,12 +57,46 @@ export async function fetchLatestLedgerAnchor(
   return { hash: ledger.id, sequence: ledger.sequence };
 }
 
+/**
+ * Reads the registry's current arbitrator address. `create_commitment` requires a
+ * `resolver_address`, and this is the standard, no-custom-resolver value to pass for it: naming a
+ * current arbitrator routes disputes through the registry's committee majority vote instead of
+ * single-delegate resolution. Never default `resolver_address` to the issuer or counterparty --
+ * `resolve_dispute`'s only guard is `caller == resolver_address`, so that would let a party
+ * unilaterally resolve their own dispute.
+ */
+export async function fetchArbitrator(
+  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
+  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+): Promise<string> {
+  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const contract = new Contract(contractId);
+  const source = new Account(Keypair.random().publicKey(), '0');
+  const transaction = new TransactionBuilder(source, {
+    fee: BASE_FEE,
+    networkPassphrase,
+  })
+    .addOperation(contract.call('get_arbitrator'))
+    .setTimeout(30)
+    .build();
+
+  const simulation = await server.simulateTransaction(transaction);
+  if (rpc.Api.isSimulationError(simulation)) {
+    throw new Error(`Failed to read registry arbitrator: ${simulation.error}`);
+  }
+  if (!simulation.result) {
+    throw new Error('Direct Soroban query returned no arbitrator value');
+  }
+
+  return String(scValToNative(simulation.result.retval));
+}
+
 export async function fetchReputationFromRpc(
   address: string,
   rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
-  networkPassphrase =
-    import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
 ): Promise<Reputation> {
   const server = new rpc.Server(rpcUrl, { allowHttp: true });
   const contract = new Contract(contractId);
@@ -172,6 +206,21 @@ export async function submitCreateCommitment({
   const termsHashScVal = xdr.ScVal.scvBytes(Buffer.from(termsHashBytes));
   const dueAtScVal = xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString()));
 
+  // create_commitment requires a resolver_address; the wizard's UI has no concept of a custom
+  // dispute resolver yet, so read the registry's own arbitrator and use that (see
+  // fetchArbitrator's doc comment for why this -- not issuer/counterparty -- is the safe default).
+  onStatusUpdate?.('Fetching registry arbitrator...');
+  const arbitratorAddress = await fetchArbitrator(rpcUrl, contractId, networkPassphrase);
+  const resolverScVal = Address.fromString(arbitratorAddress).toScVal();
+  // oracle and schema_id are both genuinely optional (Option<Address>/Option<u32>) with no
+  // downstream code assuming they're populated; the wizard doesn't collect either yet.
+  const oracleScVal = xdr.ScVal.scvVoid();
+  const schemaIdScVal = xdr.ScVal.scvVoid();
+  // Empty attestors + a 0 threshold is the contract's explicitly-designed "no voting panel, use
+  // the single-resolver dispute path" state (contracts/registry/src/commitments.rs::create).
+  const attestorsScVal = xdr.ScVal.scvVec([]);
+  const voteThresholdScVal = xdr.ScVal.scvU32(0);
+
   // 3. Build Transaction Envelope
   onStatusUpdate?.('Fetching sequence number for issuer account...');
   let account: any = null;
@@ -213,6 +262,11 @@ export async function submitCreateCommitment({
         counterpartyScVal,
         termsHashScVal,
         dueAtScVal,
+        resolverScVal,
+        oracleScVal,
+        schemaIdScVal,
+        attestorsScVal,
+        voteThresholdScVal,
       ),
     )
     .setTimeout(60)

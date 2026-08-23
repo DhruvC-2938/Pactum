@@ -127,7 +127,9 @@ async function mockSorobanRpc(page: Page) {
     let parsed: { id?: number | string; method?: string; params?: any } = {};
     try {
       parsed = JSON.parse(postData);
-    } catch {}
+    } catch {
+      // Malformed/non-JSON body: fall through with the empty `parsed` default.
+    }
     const id = parsed.id ?? 1;
 
     if (parsed.method === 'getAccount') {
@@ -187,7 +189,14 @@ async function mockSorobanRpc(page: Page) {
             results: [
               {
                 auth: [],
-                xdr: 'AAAAAQ==',
+                // Every simulateTransaction call shares this one canned response regardless of
+                // which contract method is being simulated -- that now includes
+                // fetchArbitrator()'s `get_arbitrator` read (submitCreateCommitment needs it for
+                // resolver_address), which does `Address.fromString(String(scValToNative(retval)))`
+                // and throws on anything that isn't a syntactically valid G... address. Encodes
+                // MOCK_ADDRESS as an ScVal Address so that -- and get_reputation's unrelated,
+                // already-tolerant field lookups -- both decode without error.
+                xdr: 'AAAAEgAAAAAAAAAAJV/nLntxgpHp83Zr8qhqSLpCA439S1nO5sveir5wYUI=',
               },
             ],
           },
@@ -433,7 +442,9 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
 
   await expect(page.locator('#commitments-list-page')).toBeVisible();
   await expect(page.getByText('Commitment #1').first()).toBeVisible();
-  await expect(page.getByText('GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB').first()).toBeVisible();
+  await expect(
+    page.getByText('GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB').first(),
+  ).toBeVisible();
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
