@@ -23,9 +23,7 @@ pub fn slash_cut(staked: i128, percent: u64) -> Option<SlashCut> {
             remaining: staked,
         });
     }
-    let cut = staked
-        .checked_mul(percent as i128)?
-        .checked_div(100)?;
+    let cut = staked.checked_mul(percent as i128)?.checked_div(100)?;
     if cut <= 0 {
         return Some(SlashCut {
             cut: 0,
