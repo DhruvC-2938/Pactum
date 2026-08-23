@@ -46,8 +46,8 @@ mod test_voting;
 
 pub use commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
 use errors::Error;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Vec};
 pub use rollup::{BatchRootRecord, ForcedInclusionRecord, MerkleNode};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Vec};
 pub use staking::AttestorStake;
 pub use upgrade::{SCHEMA_VERSION_V1, SCHEMA_VERSION_V2};
 pub use voting::VoteTally;

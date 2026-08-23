@@ -10,9 +10,7 @@ use crate::errors::Error;
 use crate::events;
 use crate::pausable;
 use crate::reentrancy;
-use soroban_sdk::{
-    contracttype, panic_with_error, Address, Bytes, BytesN, Env, Vec,
-};
+use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, BytesN, Env, Vec};
 
 /// Default challenge window: 1 hour in seconds.
 pub const DEFAULT_CHALLENGE_WINDOW_SECS: u64 = 60 * 60;
@@ -348,36 +346,41 @@ mod test {
     use super::*;
     use soroban_sdk::{testutils::Address as _, BytesN, Env, Vec};
 
-    fn setup() -> (Env, Address) {
+    fn setup() -> (Env, Address, Address) {
         let env = Env::default();
         env.mock_all_auths();
         let arb = Address::generate(&env);
+        let contract_id = env.register(crate::RegistryContract, ());
         // Minimal arbitrator bootstrap via DataKey so configure/submit work.
-        let mut set = Vec::new(&env);
-        set.push_back(arb.clone());
-        env.storage()
-            .instance()
-            .set(&DataKey::ArbitratorSet, &set);
-        (env, arb)
+        env.as_contract(&contract_id, || {
+            let mut set = Vec::new(&env);
+            set.push_back(arb.clone());
+            env.storage().instance().set(&DataKey::ArbitratorSet, &set);
+        });
+        (env, contract_id, arb)
     }
 
     #[test]
     fn submit_batch_root_advances_sequence() {
-        let (env, arb) = setup();
+        let (env, contract_id, arb) = setup();
         let root = BytesN::from_array(&env, &[7u8; 32]);
         let signers = Vec::new(&env);
-        submit_batch_root(&env, arb.clone(), root.clone(), 1, signers);
-        assert_eq!(last_batch_seq(&env), 1);
-        let record = get_batch_root(&env, 1).expect("root stored");
-        assert_eq!(record.root, root);
-        assert_eq!(record.batch_seq, 1);
+        env.as_contract(&contract_id, || {
+            submit_batch_root(&env, arb.clone(), root.clone(), 1, signers);
+            assert_eq!(last_batch_seq(&env), 1);
+            let record = get_batch_root(&env, 1).expect("root stored");
+            assert_eq!(record.root, root);
+            assert_eq!(record.batch_seq, 1);
+        });
     }
 
     #[test]
     #[should_panic]
     fn rejects_out_of_order_batch_seq() {
-        let (env, arb) = setup();
+        let (env, contract_id, arb) = setup();
         let root = BytesN::from_array(&env, &[1u8; 32]);
-        submit_batch_root(&env, arb, root, 2, Vec::new(&env));
+        env.as_contract(&contract_id, || {
+            submit_batch_root(&env, arb, root, 2, Vec::new(&env));
+        });
     }
 }
