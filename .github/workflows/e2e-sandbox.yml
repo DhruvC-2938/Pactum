@@ -92,6 +92,11 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 7
 
+      - name: Dump backend/indexer logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs backend indexer postgres
+
       - name: Tear down
         if: always()
         run: |
