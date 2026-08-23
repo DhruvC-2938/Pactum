@@ -504,10 +504,6 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
     (window as any).__signCalled = false;
   });
 
-  // Connect Freighter wallet first so submit button is enabled
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
 
   // Navigate to Create Commitment wizard page
   await page.locator('#nav-create').click();
