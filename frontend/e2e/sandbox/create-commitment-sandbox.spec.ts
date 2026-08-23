@@ -100,7 +100,6 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await expect(page.locator('#page-reputation')).toHaveClass(/active/, {
       timeout: 45_000,
     });
-    });
 
     const commitmentId = 1;
 
