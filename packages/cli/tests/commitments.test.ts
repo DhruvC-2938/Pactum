@@ -10,13 +10,17 @@ import {
 describe('Pactum CLI Commitments Command', () => {
   let logSpy: any;
   let errSpy: any;
+  let originalExitCode: number | undefined;
 
   beforeEach(() => {
+    originalExitCode = process.exitCode;
+    process.exitCode = 0;
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    process.exitCode = originalExitCode;
     logSpy.mockRestore();
     errSpy.mockRestore();
     vi.restoreAllMocks();
@@ -69,9 +73,27 @@ describe('Pactum CLI Commitments Command', () => {
     expect(parsed.commitments[0].status).toBe('Pending');
   });
 
+  it('propagates API error when response is not ok', async () => {
+    const keypair = Keypair.random();
+    const address = keypair.publicKey();
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+    });
+    global.fetch = mockFetch;
+
+    const cmd = createCommitmentsCommand();
+    await cmd.parseAsync(['node', 'test', 'list', address, '--json']);
+
+    expect(process.exitCode).toBe(1);
+    const errOutput = errSpy.mock.calls[0][0];
+    expect(errOutput).toContain('500');
+  });
+
   it('rejects an invalid stellar public key', async () => {
     const cmd = createCommitmentsCommand();
-    process.exitCode = 0;
     await cmd.parseAsync(['node', 'test', 'list', 'INVALID_PUBLIC_KEY', '--json']);
 
     expect(process.exitCode).toBe(1);

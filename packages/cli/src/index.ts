@@ -21,4 +21,4 @@ export function createCli(): Command {
 
 // Entrypoint execution
 const program = createCli();
-program.parse(process.argv);
+await program.parseAsync(process.argv);

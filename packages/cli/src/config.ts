@@ -130,17 +130,29 @@ export function getStoredCredentials(): {
 }
 
 /**
- * Clears stored credentials from disk.
+ * Clears stored credentials while preserving unrelated configuration options (e.g. apiUrl).
  */
 export function clearCredentials(): boolean {
   const filePath = getConfigFilePath();
-  if (fs.existsSync(filePath)) {
-    try {
-      fs.unlinkSync(filePath);
-      return true;
-    } catch {
-      return false;
-    }
+  if (!fs.existsSync(filePath)) {
+    return false;
   }
-  return false;
+  try {
+    const config = loadConfig();
+    const hadCredentials = Boolean(config.secretKey || config.activeAddress);
+
+    delete config.secretKey;
+    delete config.activeAddress;
+    delete config.defaultNetwork;
+
+    const remainingKeys = Object.keys(config).filter((k) => k !== 'updatedAt');
+    if (remainingKeys.length > 0) {
+      saveConfig(config);
+    } else {
+      fs.unlinkSync(filePath);
+    }
+    return hadCredentials;
+  } catch {
+    return false;
+  }
 }

@@ -100,7 +100,7 @@ pactum commitments list
 - `-s, --status <status>`: Filter by `Pending`, `Fulfilled`, `Late`, `Breached`, or `Disputed`.
 - `-l, --limit <number>`: Limit number of returned commitments (default: 20).
 - `--api-url <url>`: Backend API endpoint (default: `http://localhost:3000`).
-- `--json`: Output as raw JSON array.
+- `--json`: Output as JSON with `address`, `count`, and `commitments` fields.
 
 **Output Example:**
 ```text

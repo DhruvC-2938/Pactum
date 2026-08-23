@@ -112,21 +112,16 @@ export function createCommitmentsCommand(): Command {
           params.set('status', options.status);
         }
 
-        // Fetch commitments
+        // Fetch commitments from backend API
         const url = `${apiBase}/commitments?${params.toString()}`;
-        let items: CommitmentRecord[] = [];
-
-        try {
-          const res = await fetch(url);
-          if (res.ok) {
-            const json = (await res.json()) as any;
-            items = Array.isArray(json) ? json : json.data || [];
-          }
-        } catch {
-          // Backend might not be running locally; fallback to empty / mock warning
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`API returned HTTP ${res.status} (${res.statusText}) for endpoint ${url}`);
         }
+        const json = (await res.json()) as any;
+        const items: CommitmentRecord[] = Array.isArray(json) ? json : json.data || [];
 
-        // Filter for the address if backend returned all
+        // Filter for the address
         const filtered = items.filter((c) => {
           const iss = (c.issuer || c.party_a || '').toUpperCase();
           const cp = (c.counterparty || c.party_b || '').toUpperCase();
@@ -134,7 +129,7 @@ export function createCommitmentsCommand(): Command {
           return iss === target || cp === target;
         });
 
-        const displayItems = filtered.length > 0 ? filtered : items;
+        const displayItems = filtered;
 
         if (options.json) {
           console.log(JSON.stringify({ address, count: displayItems.length, commitments: displayItems }, null, 2));

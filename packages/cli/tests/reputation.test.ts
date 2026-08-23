@@ -23,13 +23,17 @@ vi.mock('@pactum/sdk', () => {
 describe('Pactum CLI Reputation Command', () => {
   let logSpy: any;
   let errSpy: any;
+  let originalExitCode: number | undefined;
 
   beforeEach(() => {
+    originalExitCode = process.exitCode;
+    process.exitCode = 0;
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
+    process.exitCode = originalExitCode;
     logSpy.mockRestore();
     errSpy.mockRestore();
     vi.clearAllMocks();
@@ -66,7 +70,6 @@ describe('Pactum CLI Reputation Command', () => {
 
   it('rejects an invalid stellar public address', async () => {
     const cmd = createReputationCommand();
-    process.exitCode = 0;
     await cmd.parseAsync(['node', 'test', 'get', 'GBAD_NOT_VALID_STELLAR_ADDRESS', '--json']);
 
     expect(process.exitCode).toBe(1);

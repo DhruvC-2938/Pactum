@@ -10,8 +10,11 @@ describe('Pactum CLI Auth Command', () => {
   let testConfigDir: string;
   let logSpy: any;
   let errSpy: any;
+  let originalExitCode: number | undefined;
 
   beforeEach(() => {
+    originalExitCode = process.exitCode;
+    process.exitCode = 0;
     testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pactum-cli-auth-test-'));
     process.env.PACTUM_CONFIG_DIR = testConfigDir;
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -19,6 +22,7 @@ describe('Pactum CLI Auth Command', () => {
   });
 
   afterEach(() => {
+    process.exitCode = originalExitCode;
     logSpy.mockRestore();
     errSpy.mockRestore();
     if (fs.existsSync(testConfigDir)) {
@@ -42,7 +46,6 @@ describe('Pactum CLI Auth Command', () => {
 
   it('rejects an invalid secret key', async () => {
     const cmd = createAuthCommand();
-    process.exitCode = 0;
     await cmd.parseAsync(['node', 'test', 'INVALID_SECRET_KEY']);
 
     expect(process.exitCode).toBe(1);

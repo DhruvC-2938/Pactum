@@ -67,7 +67,7 @@ describe('Pactum CLI Config & Credentials Store', () => {
     }
   });
 
-  it('clears stored credentials', () => {
+  it('clears stored credentials and removes file if empty', () => {
     const keypair = Keypair.random();
     saveCredentials(keypair.secret());
     expect(fs.existsSync(getConfigFilePath())).toBe(true);
@@ -79,5 +79,20 @@ describe('Pactum CLI Config & Credentials Store', () => {
     const creds = getStoredCredentials();
     expect(creds.address).toBeUndefined();
     expect(creds.secretKey).toBeUndefined();
+  });
+
+  it('preserves non-credential configuration like apiUrl when clearing credentials', () => {
+    const keypair = Keypair.random();
+    saveCredentials(keypair.secret());
+    saveConfig({ ...loadConfig(), apiUrl: 'http://custom-api:8080' });
+
+    const cleared = clearCredentials();
+    expect(cleared).toBe(true);
+    expect(fs.existsSync(getConfigFilePath())).toBe(true);
+
+    const remaining = loadConfig();
+    expect(remaining.secretKey).toBeUndefined();
+    expect(remaining.activeAddress).toBeUndefined();
+    expect(remaining.apiUrl).toBe('http://custom-api:8080');
   });
 });

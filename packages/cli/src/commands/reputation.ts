@@ -26,7 +26,7 @@ export function createReputationCommand(): Command {
     .command('get')
     .description('Fetches and prints the reputation score for a Stellar address')
     .argument('[address]', 'Stellar public address (starts with G, 56 characters)')
-    .option('-n, --network <network>', 'Stellar network (testnet, standalone, mainnet)', 'testnet')
+    .option('-n, --network <network>', 'Stellar network (testnet, standalone, mainnet)')
     .option('--rpc-url <url>', 'Custom Soroban RPC URL')
     .option('--contract-id <id>', 'Custom Pactum Registry Contract ID')
     .option('--api-url <url>', 'Backend API URL for cached/extended metrics')
@@ -39,10 +39,10 @@ export function createReputationCommand(): Command {
       json?: boolean;
     }) => {
       let address = targetAddress?.trim();
+      const creds = getStoredCredentials();
 
       // If no address passed, attempt to use stored auth address
       if (!address) {
-        const creds = getStoredCredentials();
         if (creds.address) {
           address = creds.address;
         } else {
@@ -71,7 +71,7 @@ export function createReputationCommand(): Command {
         return;
       }
 
-      const network = options.network || 'testnet';
+      const network = options.network ?? creds.network ?? 'testnet';
 
       try {
         // 1. Fetch on-chain reputation data via @pactum/sdk
@@ -134,7 +134,19 @@ export function createReputationCommand(): Command {
               const score = calculateTrustScore(fulfilled, late, breached);
 
               if (options.json) {
-                console.log(JSON.stringify({ address, network, score, reputation: data, source: 'backend-api' }, null, 2));
+                console.log(
+                  JSON.stringify(
+                    {
+                      address,
+                      network,
+                      score,
+                      reputation: { ...data, fulfilled, late, breached, total },
+                      source: 'backend-api',
+                    },
+                    null,
+                    2,
+                  ),
+                );
                 return;
               }
 
