@@ -26,16 +26,42 @@ async function address(fill: number): Promise<string> {
 }
 
 // Builds a `commitment_created` event exactly as the indexer records it: topics
-// (symbol "created", issuer, counterparty) and the u64 id as the value, each a
-// base64 ScVal (see contracts/registry/src/events.rs).
+// (symbol "created", issuer, counterparty, oracle) and (id, schema_id) as the
+// value -- a tuple, not a bare id -- each a base64 ScVal (see
+// contracts/registry/src/events.rs).
 async function createdEvent(
+  id: number,
+  issuer: string,
+  counterparty: string,
+): Promise<LedgerSnapshot['events'][number]> {
+  const { nativeToScVal, xdr } = await sdk();
+  return {
+    id: `event-${id}`,
+    type: 'contract',
+    payload: {
+      topic: [
+        nativeToScVal('created', { type: 'symbol' }).toXDR('base64'),
+        nativeToScVal(issuer, { type: 'address' }).toXDR('base64'),
+        nativeToScVal(counterparty, { type: 'address' }).toXDR('base64'),
+        xdr.ScVal.scvVoid().toXDR('base64'), // oracle: Option<Address> = None
+      ],
+      value: xdr.ScVal.scvVec([nativeToScVal(id, { type: 'u64' }), xdr.ScVal.scvVoid()]).toXDR(
+        'base64',
+      ),
+    },
+  };
+}
+
+// Pre-schema_id/oracle shape: topics (created, issuer, counterparty), value a
+// bare u64 id. Covers the backward-compat path for already-indexed ledgers.
+async function legacyCreatedEvent(
   id: number,
   issuer: string,
   counterparty: string,
 ): Promise<LedgerSnapshot['events'][number]> {
   const { nativeToScVal } = await sdk();
   return {
-    id: `event-${id}`,
+    id: `legacy-event-${id}`,
     type: 'contract',
     payload: {
       topic: [
@@ -90,6 +116,20 @@ test('parseCommitmentCreatedEvents decodes issuer, counterparty and id', async (
       createdAt: new Date(7000).toISOString(),
     },
   ]);
+});
+
+test('parseCommitmentCreatedEvents decodes the legacy bare-id value shape', async () => {
+  const issuer = await address(1);
+  const counterparty = await address(2);
+
+  const created = await parseCommitmentCreatedEvents(
+    ledger(7, [await legacyCreatedEvent(42, issuer, counterparty)]),
+  );
+
+  assert.deepEqual(
+    created.map((c) => c.commitmentId),
+    ['42'],
+  );
 });
 
 test('parseCommitmentCreatedEvents skips non-created and malformed events', async () => {
@@ -236,11 +276,7 @@ test(
       ]);
       const index = new PostgresCommitmentIndex(pool, { schema });
 
-      await index.indexCreated([
-        entry('1', a, b, 1),
-        entry('2', c, a, 2),
-        entry('3', b, c, 3),
-      ]);
+      await index.indexCreated([entry('1', a, b, 1), entry('2', c, a, 2), entry('3', b, c, 3)]);
       // Overlapping re-index (as a backfill would) rewrites rather than errors.
       await index.indexCreated([entry('1', a, b, 1)]);
 

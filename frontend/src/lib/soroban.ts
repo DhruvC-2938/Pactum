@@ -61,8 +61,7 @@ export async function fetchReputationFromRpc(
   address: string,
   rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
-  networkPassphrase =
-    import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
 ): Promise<Reputation> {
   const server = new rpc.Server(rpcUrl, { allowHttp: true });
   const contract = new Contract(contractId);
@@ -172,6 +171,17 @@ export async function submitCreateCommitment({
   const termsHashScVal = xdr.ScVal.scvBytes(Buffer.from(termsHashBytes));
   const dueAtScVal = xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString()));
 
+  // The contract's create_commitment signature grew a resolver_address plus
+  // attestor-panel fields (oracle, schema_id, attestors, vote_threshold) for
+  // dispute arbitration/attestor voting, but the wizard has no UI yet to let
+  // the user pick a resolver -- default to self-resolve (the issuer is their
+  // own resolver) and an empty attestor panel until that UI exists.
+  const resolverScVal = issuerScVal;
+  const oracleScVal = xdr.ScVal.scvVoid();
+  const schemaIdScVal = xdr.ScVal.scvVoid();
+  const attestorsScVal = xdr.ScVal.scvVec([]);
+  const voteThresholdScVal = xdr.ScVal.scvU32(0);
+
   // 3. Build Transaction Envelope
   onStatusUpdate?.('Fetching sequence number for issuer account...');
   let account: any = null;
@@ -213,6 +223,11 @@ export async function submitCreateCommitment({
         counterpartyScVal,
         termsHashScVal,
         dueAtScVal,
+        resolverScVal,
+        oracleScVal,
+        schemaIdScVal,
+        attestorsScVal,
+        voteThresholdScVal,
       ),
     )
     .setTimeout(60)
@@ -272,7 +287,11 @@ export async function submitCreateCommitment({
   let txResult: rpc.Api.GetTransactionResponse | null = null;
   let attempts = 0;
 
-  while (attempts < 25) {
+  // 25 attempts (30s) was too tight against a freshly-booted local sandbox
+  // under CI load, where ledger close + RPC round-trip time can eat most of
+  // that budget before the tx is even included -- bumped to give real
+  // confirmation latency enough headroom.
+  while (attempts < 45) {
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, 1200));
     txResult = await server.getTransaction(txHash);
