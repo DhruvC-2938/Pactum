@@ -8,7 +8,9 @@ node_modules/
 dist/
 dist-indexer-test/
 dist-middleware-test/
+dist-relayer-test/
 .env
+.env.e2e
 .env.local
 .env.*.local
 npm-debug.log*
@@ -28,4 +30,10 @@ evm/typechain-types/
 # Soroban test snapshots
 test_snapshots/
 
+# ZK build artifacts & ceremony files
+zk/artifacts/
+*.ptau
 .env.e2e
+
+# PR Drafts
+PR_DESCRIPTION.md
