@@ -38,13 +38,14 @@ export async function getCommitmentOnChain(id: number, sourceAddress: string) {
     throw new Error(`get_commitment(${id}) returned no result`);
   }
 
-  // NOTE: exact scVal shape of the `Commitment` struct isn't confirmed --
-  // this assumes scValToNative produces a plain object with a `status` key
-  // whose native form is the CommitmentStatus variant name as a string
-  // (e.g. "Pending"). Verify against the real struct definition in
-  // contracts/registry/src/commitments.rs before relying on field names
-  // beyond `status`.
-  return scValToNative(sim.result.retval) as { status: string; [key: string]: unknown };
+  const native = scValToNative(sim.result.retval) as { status: unknown; [key: string]: unknown };
+
+  // CommitmentStatus (contracts/registry/src/commitments.rs) is a unit-variant
+  // Soroban contracttype enum -- scValToNative decodes it as a single-element
+  // array holding the variant name (e.g. ["Pending"]), not a plain string.
+  const status = Array.isArray(native.status) ? native.status[0] : native.status;
+
+  return { ...native, status } as { status: string; [key: string]: unknown };
 }
 
 /**
