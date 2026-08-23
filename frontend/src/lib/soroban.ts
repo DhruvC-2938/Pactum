@@ -152,7 +152,14 @@ export async function fetchArbitrator(
 
   const simulation = await server.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error(`Failed to read registry arbitrator: ${simulation.error}`);
+    const diagBlobs = extractDiagnosticEventBlobs(simulation);
+    const decoded = decodeSimulationError(simulation.error, diagBlobs, 'get_arbitrator');
+    throw new SorobanSimulationError(
+      decoded.message ?? `Failed to read registry arbitrator: ${simulation.error}`,
+      simulation.error,
+      diagBlobs,
+      'get_arbitrator',
+    );
   }
   if (!simulation.result) {
     throw new Error('Direct Soroban query returned no arbitrator value');
@@ -284,7 +291,9 @@ export async function submitCreateCommitment({
 
   // create_commitment requires a resolver_address; the wizard's UI has no concept of a custom
   // dispute resolver yet, so read the registry's own arbitrator and use that (see
-  // fetchArbitrator's doc comment for why this -- not issuer/counterparty -- is the safe default).
+  // fetchArbitrator's doc comment for why this -- NOT issuerScVal/counterpartyScVal -- is the
+  // safe default: resolve_dispute's only guard is `caller == resolver_address`, so defaulting to
+  // the issuer would let them unilaterally resolve their own dispute).
   onStatusUpdate?.('Fetching registry arbitrator...');
   const arbitratorAddress = await fetchArbitrator(rpcUrl, contractId, networkPassphrase);
   const resolverScVal = Address.fromString(arbitratorAddress).toScVal();
@@ -294,14 +303,6 @@ export async function submitCreateCommitment({
   const schemaIdScVal = xdr.ScVal.scvVoid();
   // Empty attestors + a 0 threshold is the contract's explicitly-designed "no voting panel, use
   // the single-resolver dispute path" state (contracts/registry/src/commitments.rs::create).
-  // The contract's create_commitment signature grew a resolver_address plus
-  // attestor-panel fields (oracle, schema_id, attestors, vote_threshold) for
-  // dispute arbitration/attestor voting, but the wizard has no UI yet to let
-  // the user pick a resolver -- default to self-resolve (the issuer is their
-  // own resolver) and an empty attestor panel until that UI exists.
-  const resolverScVal = issuerScVal;
-  const oracleScVal = xdr.ScVal.scvVoid();
-  const schemaIdScVal = xdr.ScVal.scvVoid();
   const attestorsScVal = xdr.ScVal.scvVec([]);
   const voteThresholdScVal = xdr.ScVal.scvU32(0);
 

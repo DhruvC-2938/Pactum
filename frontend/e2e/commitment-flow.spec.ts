@@ -101,36 +101,15 @@ async function mockSorobanRpc(page: Page) {
       return;
     }
 
-    let parsed: any;
+    let parsed: { id?: number | string; method?: string } | undefined;
     try {
-      parsed = JSON.parse(postData);
-    } catch {
-      // Malformed/non-JSON body: fall through with the empty `parsed` default.
-    }
-    const id = parsed.id ?? 1;
-
-    if (parsed.method === 'getAccount') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id,
-          result: {
-            id: MOCK_ADDRESS,
-            sequence: '123456789',
-          },
-        }),
-      });
- 
       parsed = request.postDataJSON();
     } catch {
-      await route.continue();
- 
-      return;
+      // Malformed/non-JSON body: fall through and let the "unknown method" branch continue it.
     }
 
     const method = parsed?.method;
+    const id = parsed?.id ?? 1;
 
     if (method === 'getAccount') {
       await route.fulfill({
@@ -138,7 +117,7 @@ async function mockSorobanRpc(page: Page) {
         contentType: 'application/json',
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: parsed.id,
+          id,
           result: {
             id: MOCK_ADDRESS,
             sequence: '1234567890',
@@ -149,30 +128,27 @@ async function mockSorobanRpc(page: Page) {
     }
 
     if (method === 'simulateTransaction') {
-      // Return a minimal valid simulation response
+      // Every simulateTransaction call shares this one canned response regardless of which
+      // contract method is being simulated -- that includes fetchArbitrator()'s `get_arbitrator`
+      // read (submitCreateCommitment needs it for resolver_address), which does
+      // `Address.fromString(String(scValToNative(retval)))` and throws on anything that isn't a
+      // syntactically valid G... address. Encodes MOCK_ADDRESS as an ScVal Address so that -- and
+      // get_reputation's unrelated, already-tolerant field lookups -- both decode without error.
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: parsed.id,
+          id,
           result: {
             transactionData: '',
             minResourceFee: '100',
-            results: [{ xdr: 'AAAAEAAAAAEAAAACAAAADwAAAAdjb3VudGVyAAAAABEAAAABAAAABQAAAA8AAAAGaXNzdWVyAAAAAAARAAAAAQAAAAUAAAAPAAAABXRlcm1zAAAAAAAAEAAAAAEAAAACAAAADwAAAAZkdWVfYXQAAAAAAAAFAAAAAAAAAA8AAAAGc3RhdHVzAAAAAAARAAAAAQAAAAU=' }],
             latestLedger: 4198984,
             cost: { cpuInsns: '123194', memBytes: '65536' },
             events: [],
             results: [
               {
                 auth: [],
-                // Every simulateTransaction call shares this one canned response regardless of
-                // which contract method is being simulated -- that now includes
-                // fetchArbitrator()'s `get_arbitrator` read (submitCreateCommitment needs it for
-                // resolver_address), which does `Address.fromString(String(scValToNative(retval)))`
-                // and throws on anything that isn't a syntactically valid G... address. Encodes
-                // MOCK_ADDRESS as an ScVal Address so that -- and get_reputation's unrelated,
-                // already-tolerant field lookups -- both decode without error.
                 xdr: 'AAAAEgAAAAAAAAAAJV/nLntxgpHp83Zr8qhqSLpCA439S1nO5sveir5wYUI=',
               },
             ],
@@ -188,7 +164,7 @@ async function mockSorobanRpc(page: Page) {
         contentType: 'application/json',
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: parsed.id,
+          id,
           result: {
             hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
             status: 'PENDING',
@@ -205,7 +181,7 @@ async function mockSorobanRpc(page: Page) {
         contentType: 'application/json',
         body: JSON.stringify({
           jsonrpc: '2.0',
-          id: parsed.id,
+          id,
           result: {
             status: 'SUCCESS',
             latestLedger: 4198986,
@@ -231,7 +207,6 @@ test.beforeEach(async ({ page }) => {
   await installFreighterMock(page);
 
   await mockSorobanRpc(page);
-
 
   // Mock API responses
   await page.route('**/reputation/**', async (route) => {
@@ -352,64 +327,6 @@ test.beforeEach(async ({ page }) => {
     }
   });
 
-  // Mock encrypted terms endpoints
-  await page.route('**/commitments/encrypted', async (route) => {
-    if (route.request().method() === 'POST') {
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: 'Encrypted terms stored successfully.' }),
-      });
-    } else {
-      await route.continue();
-    }
-  });
-
-  await page.route('**/commitments/*/encrypted', async (route) => {
-    if (route.request().method() === 'GET') {
-      // Return a mock ciphertext blob (valid base64url-encoded bytes)
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ciphertext: 'AAAAAAAAAAAAAAAA_mock_ciphertext_blob',
-          issuer: MOCK_ADDRESS,
-          counterparty: COUNTERPARTY,
-          createdAt: new Date().toISOString(),
-        }),
-      });
-    } else {
-      await route.continue();
-    }
-  });
-
-  // Mock Soroban RPC calls
-  await mockSorobanRpc(page);
-
-  // Mock state proof endpoint to prevent network calls
-  await page.route('**/api/v1/proofs/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        proof: {
-          version: '1.0',
-          networkPassphrase: 'Test SDF Network ; September 2015',
-          ledgerSeq: 4198984,
-          ledgerHeaderHash: 'abc123',
-          stateRootHash: 'def456',
-          contractId: 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E',
-          stellarAddress: MOCK_ADDRESS,
-          scoreData: { score: 100, fulfilledCount: 1, lateCount: 0, breachedCount: 0, epoch: 1, sourceLedgerSeq: 4198984 },
-          leafHash: 'aaa',
-          merkleProof: [],
-          headerProof: { previousLedgerHash: 'bbb', txSetResultHash: 'ccc', bucketListHash: 'ddd', ledgerVersion: 20 },
-        },
-      }),
-    });
-  });
-
   await page.goto('/');
   // If landing page is shown, launch the app first
   const launchBtn = page.getByRole('button', { name: /launch app/i }).first();
@@ -453,15 +370,15 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   // The wizard calls onSuccess which navigates to the dashboard
   await page.waitForTimeout(3000);
 
-  // 3. View Dashboard — use nav button id, not role=link (it's a button)
-  await page.locator('#nav-dashboard').click();
+  // 3. View Commitments — #commitments-list-page only exists on the Commitments page, not the
+  // Dashboard's own (unrelated, id-less) "Recent Commitments" card.
+  await page.locator('#nav-commitments').click();
 
   await expect(page.locator('#commitments-list-page')).toBeVisible();
   await expect(page.getByText('Commitment #1').first()).toBeVisible();
   await expect(
     page.getByText('GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB').first(),
   ).toBeVisible();
-  await expect(page.locator('.commitment-list').first()).toBeVisible();
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
@@ -542,7 +459,6 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   await page.evaluate(() => {
     (window as any).__signCalled = false;
   });
-
 
   // Navigate to Create Commitment wizard page
   await page.locator('#nav-create').click();

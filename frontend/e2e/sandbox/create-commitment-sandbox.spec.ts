@@ -61,14 +61,12 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
-    // Connect the (mocked, but really-signing) Freighter wallet
+    // Connect the (mocked, but really-signing) Freighter wallet. Assertion pattern matches the
+    // confirmed-working frontend/e2e/wallet-connect.spec.ts, not the unverified 'Connected' text
+    // used in commitment-flow.spec.ts.
     const connectBtn = page.getByRole('button', { name: 'Connect Wallet' }).first();
     await expect(connectBtn).toBeVisible({ timeout: 15_000 });
     await connectBtn.click();
-    // Connect the (mocked, but really-signing) Freighter wallet. Assertion
-    // pattern matches the confirmed-working frontend/e2e/wallet-connect.spec.ts,
-    // not the unverified 'Connected' text used in commitment-flow.spec.ts.
-    await page.getByRole('button', { name: 'Connect Wallet' }).click();
     await page.getByRole('button', { name: /Freighter/ }).click();
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
     await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
@@ -95,46 +93,13 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
     await submitBtn.click();
 
-    // The real signing + RPC round-trip takes longer than the mocked-route tests, and a real
-    // submission/simulation/confirmation error can surface well after the click (not just in the
-    // first couple of seconds) -- capture the first error toast's text the instant it appears,
-    // for the whole wait, so a real failure here shows up as its actual message instead of a
-    // generic "waited 45s and nothing happened" timeout with no diagnostic value.
-    let toastMessage: string | null = null;
+    // The real signing + RPC round-trip (submit -> poll for on-chain confirmation) can take up to
+    // ~55s under CI load, so a real submission/simulation/confirmation error can surface well
+    // after a fixed early check would look for it. Race the success transition against the error
+    // toast instead of checking once up front, so a real failure fails fast with its actual
+    // message -- enriched with the raw console.error CreateCommitmentWizard logs before decoding
+    // it into the generic toast label -- instead of just timing out on the success locator.
     const errorToast = page.locator('#toast-container .toast.error').first();
-    const toastWatcher = errorToast
-      .waitFor({ state: 'visible', timeout: 45_000 })
-      .then(async () => {
-        toastMessage = await errorToast.innerText();
-      })
-      .catch(() => {});
-
-    // On success, App.tsx's onSuccess handler transitions to the Reputation page.
-    try {
-      await expect(page.locator('#page-reputation')).toHaveClass(/active/, {
-        timeout: 45_000,
-      });
-    } catch (err) {
-      await toastWatcher;
-      if (toastMessage) {
-        const rawError = consoleErrors.find((line) =>
-          line.includes('[CreateCommitmentWizard] Soroban error:'),
-        );
-        throw new Error(
-          `Commitment creation failed with toast error: ${toastMessage}` +
-            (rawError ? `\nRaw console error: ${rawError}` : ''),
-        );
-      }
-      throw err;
-    }
-    await toastWatcher;
-    // The real signing + RPC round-trip (submit -> poll for on-chain
-    // confirmation) can take up to ~55s under CI load, so an error toast may
-    // surface well after a fixed early check would look for it. Race the
-    // success transition against the error toast instead of checking once
-    // up front, so a real failure fails fast with its actual message instead
-    // of just timing out on the success locator.
-    const errorToast = page.locator('#toast-container .toast.error');
     const outcome = await Promise.race([
       page
         .locator('#page-reputation.active')
@@ -144,8 +109,14 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     ]);
 
     if (outcome === 'error') {
-      const msg = await errorToast.innerText();
-      throw new Error(`Commitment creation failed with toast error: ${msg}`);
+      const toastMessage = await errorToast.innerText();
+      const rawError = consoleErrors.find((line) =>
+        line.includes('[CreateCommitmentWizard] Soroban error:'),
+      );
+      throw new Error(
+        `Commitment creation failed with toast error: ${toastMessage}` +
+          (rawError ? `\nRaw console error: ${rawError}` : ''),
+      );
     }
 
     const commitmentId = 1;
