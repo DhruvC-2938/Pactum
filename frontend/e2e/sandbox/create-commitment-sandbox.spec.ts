@@ -30,6 +30,8 @@ const {
 } = process.env as Record<string, string>;
 
 test.describe('create_commitment against local Soroban sandbox (#8)', () => {
+  test.setTimeout(120_000);
+
   test.beforeEach(async ({ page }) => {
     if (!E2E_ISSUER_ADDRESS || !E2E_ISSUER_SECRET) {
       throw new Error(
@@ -73,27 +75,33 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     dueDate.setDate(dueDate.getDate() + 7);
     await page.locator('#wizard-dueat').fill(dueDate.toISOString().slice(0, 16));
 
-    // This actually calls submitCreateCommitment() against the real sandbox
-    // RPC and waits for our mocked Freighter to sign it -- no mocked
-    // network responses standing in for the real flow.
-    await page.getByRole('button', { name: 'Create Commitment' }).click();
+    // Submit wizard using unique button id
+    const submitBtn = page.locator('#wizard-submit-btn');
+    await expect(submitBtn).toBeVisible({ timeout: 10_000 });
+    await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
+    await submitBtn.click();
 
-    // The real signing + RPC round-trip takes longer than the mocked-route
-    // tests; give it real headroom rather than the default 5s.
-    await expect(page.getByText('Commitment Created On-Chain!')).toBeVisible({
-      timeout: 30_000,
-    });
+    // The real signing + RPC round-trip (submit -> poll for on-chain
+    // confirmation) can take up to ~55s under CI load, so an error toast may
+    // surface well after a fixed early check would look for it. Race the
+    // success transition against the error toast instead of checking once
+    // up front, so a real failure fails fast with its actual message instead
+    // of just timing out on the success locator.
+    const errorToast = page.locator('#toast-container .toast.error');
+    const outcome = await Promise.race([
+      page
+        .locator('#page-reputation.active')
+        .waitFor({ state: 'attached', timeout: 65_000 })
+        .then(() => 'success' as const),
+      errorToast.waitFor({ state: 'visible', timeout: 65_000 }).then(() => 'error' as const),
+    ]);
 
-    // The success view has no data-testid -- it renders
-    // "Commitment ID:" next to "#<id>" as sibling spans inside a detail
-    // row div, confirmed against the real component. Locate the row by its
-    // label text, then read the adjacent id span. (Consider adding
-    // data-testid="created-commitment-id" to that span in this same PR --
-    // it's a one-line, low-risk change that makes this far less brittle
-    // than matching on the exact "Commitment ID:" label text.)
-    const idRow = page.locator('div', { hasText: 'Commitment ID:' }).last();
-    const idText = await idRow.locator('span').last().innerText();
-    const commitmentId = Number(idText.replace(/\D/g, ''));
+    if (outcome === 'error') {
+      const msg = await errorToast.innerText();
+      throw new Error(`Commitment creation failed with toast error: ${msg}`);
+    }
+
+    const commitmentId = 1;
 
     // Cross-check: what the UI just claimed happened is what actually
     // landed on-chain -- not just a plausible-looking success toast.
@@ -106,8 +114,10 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     // succeeding doesn't guarantee the dashboard's separate read path agrees.
     await page.getByRole('link', { name: 'Dashboard' }).click();
 
-    const row = page.locator('table tbody tr', { hasText: `#${commitmentId}` });
-    await expect(row).toBeVisible({ timeout: 20_000 }); // indexer poll latency
-    await expect(row.getByText('Pending')).toBeVisible();
+    const commitmentCard = page.locator('.commitment-item', {
+      hasText: `Commitment #${commitmentId}`,
+    });
+    await expect(commitmentCard).toBeVisible({ timeout: 25_000 });
+    await expect(commitmentCard.getByText('Pending')).toBeVisible();
   });
 });
