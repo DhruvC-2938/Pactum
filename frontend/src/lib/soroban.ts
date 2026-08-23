@@ -61,8 +61,7 @@ export async function fetchReputationFromRpc(
   address: string,
   rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
-  networkPassphrase =
-    import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
 ): Promise<Reputation> {
   const server = new rpc.Server(rpcUrl, { allowHttp: true });
   const contract = new Contract(contractId);
@@ -272,7 +271,11 @@ export async function submitCreateCommitment({
   let txResult: rpc.Api.GetTransactionResponse | null = null;
   let attempts = 0;
 
-  while (attempts < 25) {
+  // 25 attempts (30s) was too tight against a freshly-booted local sandbox
+  // under CI load, where ledger close + RPC round-trip time can eat most of
+  // that budget before the tx is even included -- bumped to give real
+  // confirmation latency enough headroom.
+  while (attempts < 45) {
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, 1200));
     txResult = await server.getTransaction(txHash);

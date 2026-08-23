@@ -30,7 +30,7 @@ const {
 } = process.env as Record<string, string>;
 
 test.describe('create_commitment against local Soroban sandbox (#8)', () => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
 
   test.beforeEach(async ({ page }) => {
     if (!E2E_ISSUER_ADDRESS || !E2E_ISSUER_SECRET) {
@@ -86,18 +86,25 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
     await submitBtn.click();
 
-    // Check if an immediate contract or signing error toast appears
+    // The real signing + RPC round-trip (submit -> poll for on-chain
+    // confirmation) can take up to ~55s under CI load, so an error toast may
+    // surface well after a fixed early check would look for it. Race the
+    // success transition against the error toast instead of checking once
+    // up front, so a real failure fails fast with its actual message instead
+    // of just timing out on the success locator.
     const errorToast = page.locator('#toast-container .toast.error');
-    if (await errorToast.isVisible({ timeout: 2000 }).catch(() => false)) {
+    const outcome = await Promise.race([
+      page
+        .locator('#page-reputation.active')
+        .waitFor({ state: 'attached', timeout: 65_000 })
+        .then(() => 'success' as const),
+      errorToast.waitFor({ state: 'visible', timeout: 65_000 }).then(() => 'error' as const),
+    ]);
+
+    if (outcome === 'error') {
       const msg = await errorToast.innerText();
       throw new Error(`Commitment creation failed with toast error: ${msg}`);
     }
-
-    // The real signing + RPC round-trip takes longer than the mocked-route
-    // tests; on success App.tsx's onSuccess handler transitions to the Reputation page.
-    await expect(page.locator('#page-reputation')).toHaveClass(/active/, {
-      timeout: 45_000,
-    });
 
     const commitmentId = 1;
 
@@ -110,7 +117,9 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await page.locator('#nav-commitments').click();
     await expect(page.locator('#commitments-list-page')).toBeVisible({ timeout: 15_000 });
 
-    const commitmentCard = page.locator('.commitment-item', { hasText: `Commitment #${commitmentId}` });
+    const commitmentCard = page.locator('.commitment-item', {
+      hasText: `Commitment #${commitmentId}`,
+    });
     await expect(commitmentCard).toBeVisible({ timeout: 25_000 });
     await expect(commitmentCard.getByText('Pending')).toBeVisible();
   });
