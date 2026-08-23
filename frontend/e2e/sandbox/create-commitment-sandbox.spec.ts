@@ -139,7 +139,8 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     // own state) picks up the same commitment as Pending. This is the part
     // that actually catches indexer/backend desync bugs -- the wizard
     // succeeding doesn't guarantee the dashboard's separate read path agrees.
-    await page.getByRole('link', { name: 'Dashboard' }).click();
+    // #nav-dashboard is a <button>, not a link -- role 'link' never matched it.
+    await page.locator('#nav-dashboard').click();
 
     const commitmentCard = page.locator('.commitment-item', {
       hasText: `Commitment #${commitmentId}`,
