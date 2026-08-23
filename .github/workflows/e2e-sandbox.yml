@@ -51,6 +51,13 @@ jobs:
       - name: Deploy test contract + write .env.e2e
         run: ./scripts/e2e/deploy-test-contract.sh
 
+      # Nothing runs `npm run migrate:timescale` automatically -- backend's Dockerfile CMD is a
+      # bare `npm start`, and no compose service applies the TimescaleDB schema. Without this,
+      # the indexer crash-loops on startup ("relation public.indexer_checkpoint does not exist"),
+      # so `/commitments` 503s for the rest of the job no matter what the contract/frontend do.
+      - name: Run backend DB migrations
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml run --rm backend npm run migrate:timescale
+
       - name: Start backend, indexer, postgres, redis
         run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend indexer
 
