@@ -22,7 +22,7 @@
 //! already written under the `Reputation` variant. The tests in
 //! `registry/src/test_upgrade.rs` assert this end to end.
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, BytesN, Env, Vec};
 
 /// Mirror of `registry::reputation::Reputation` (V1).
 #[contracttype]
@@ -86,6 +86,12 @@ pub struct Commitment {
     pub created_at: u64,
     pub attested_at: Option<u64>,
     pub resolver_address: Address,
+    pub oracle: Option<Address>,
+    pub schema_id: Option<u32>,
+    pub attestors: Vec<Address>,
+    /// Bitpacked milestone/vote counters, mirroring
+    /// `registry::commitments::Commitment::counters`.
+    pub counters: u64,
 }
 
 /// Mirror of `registry::commitments::DataKey`.
@@ -93,8 +99,11 @@ pub struct Commitment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Commitment(u64),
+    Milestone(u64, u32),
     NextId,
+    ArbitratorSet,
     Arbitrator,
+    Votes(u64),
 }
 
 /// A contract that reads Pactum registry state without being the Pactum registry.
@@ -140,12 +149,28 @@ impl UpgradeFixture {
         env.storage().persistent().get(&DataKey::Commitment(id))
     }
 
+    /// Reads a milestone outcome written by the pre-upgrade executable.
+    ///
+    /// Milestone entries live in temporary storage (matching
+    /// `registry::attestation`), so read them from there.
+    pub fn read_milestone(env: Env, id: u64, milestone_index: u32) -> Option<CommitmentStatus> {
+        env.storage()
+            .temporary()
+            .get(&DataKey::Milestone(id, milestone_index))
+    }
+
     /// Reads the commitment id counter, proving it did not reset across the upgrade.
     pub fn read_next_id(env: Env) -> Option<u64> {
         env.storage().instance().get(&DataKey::NextId)
     }
 
-    /// Reads the arbitrator recorded at initialization.
+    /// Reads the arbitrator set recorded at initialization.
+    pub fn read_arbitrators(env: Env) -> Option<Vec<Address>> {
+        env.storage().instance().get(&DataKey::ArbitratorSet)
+    }
+
+    /// Reads the legacy single-arbitrator key, if a pre-multi-arbitrator
+    /// deployment ever wrote one.
     pub fn read_arbitrator(env: Env) -> Option<Address> {
         env.storage().instance().get(&DataKey::Arbitrator)
     }

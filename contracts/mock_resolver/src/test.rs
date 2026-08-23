@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use super::*;
+use registry::commitments::DISPUTE_STAKE_AMOUNT;
 use registry::errors::Error;
 use registry::RegistryContract;
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, Vec};
 
 fn setup_env() -> (
     Env,
@@ -25,13 +26,25 @@ fn setup_env() -> (
     let resolver_client = MockResolverClient::new(&env, &resolver_id);
 
     let arbitrator = Address::generate(&env);
-    registry_client.initialize(&arbitrator);
+    registry_client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+
+    // Configure the dispute token required by the registry's `dispute` function
+    // (error #40 = DisputeTokenNotSet without this).
+    let token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    registry_client.set_dispute_token(&arbitrator, &token);
 
     let controller = Address::generate(&env);
     resolver_client.init(&controller);
 
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
+
+    // Mint enough dispute tokens to the counterparty so the stake transfer
+    // inside `registry::disputes::dispute` succeeds.
+    soroban_sdk::token::StellarAssetClient::new(&env, &token)
+        .mint(&counterparty, &(DISPUTE_STAKE_AMOUNT * 10));
 
     (
         env,
@@ -60,6 +73,10 @@ fn test_mock_resolver_cross_contract_dispute_resolution() {
         &terms_hash,
         &due_at,
         &resolver_client.address,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
     );
 
     let commitment = registry_client.get_commitment(&id);
@@ -93,12 +110,7 @@ fn test_mock_resolver_cross_contract_dispute_resolution() {
 
     // 6. Authorized controller resolving via MockResolver succeeds
     env.ledger().with_mut(|l| l.timestamp = 1700);
-    resolver_client.resolve_dispute(
-        &controller,
-        &registry_id,
-        &id,
-        &CommitmentStatus::Breached,
-    );
+    resolver_client.resolve_dispute(&controller, &registry_id, &id, &CommitmentStatus::Breached);
 
     let resolved_comm = registry_client.get_commitment(&id);
     assert_eq!(resolved_comm.status, CommitmentStatus::Breached);
@@ -125,6 +137,10 @@ fn test_mock_resolver_rejected_if_not_designated_resolver() {
         &terms_hash,
         &due_at,
         &other_resolver,
+        &None,
+        &None,
+        &Vec::new(&env),
+        &0,
     );
 
     env.ledger().with_mut(|l| l.timestamp = 1500);

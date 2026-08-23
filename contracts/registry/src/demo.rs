@@ -50,6 +50,10 @@ fn create_and_attest(
         &BytesN::from_array(env, &[terms; 32]),
         &2000,
         &resolver,
+        &None,
+        &None,
+        &Vec::new(env),
+        &0,
     );
     env.ledger().with_mut(|l| l.timestamp = 1500);
     client.attest(issuer, &id, &outcome);
@@ -70,7 +74,7 @@ fn advance_ledgers(
         let next = seq.saturating_add(CHUNK).min(target_seq);
         env.ledger().with_mut(|l| l.sequence_number = next);
         client.get_arbitrator();
-        client.get_trust_score(issuer);
+        client.get_trust_score(issuer).unwrap_or(50);
         client.get_reputation(issuer);
         seq = next;
     }
@@ -84,7 +88,7 @@ fn buckets_ledgers(buckets: u32) -> u32 {
 fn demo_time_decay_table() {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
 
     println!();
     println!("=== Pactum Registry: ledger-based time-decay trust score ===");
@@ -93,7 +97,10 @@ fn demo_time_decay_table() {
 
     println!("[1] Baseline - an address with no history scores 50:");
     let stranger = Address::generate(&env);
-    println!("    get_trust_score(no history)           = {}", client.get_trust_score(&stranger));
+    println!(
+        "    get_trust_score(no history)           = {}",
+        client.get_trust_score(&stranger).unwrap_or(50)
+    );
 
     println!();
     println!("[2] A breach just happened:");
@@ -105,8 +112,14 @@ fn demo_time_decay_table() {
         1,
         CommitmentStatus::Breached,
     );
-    println!("    get_trust_score(issuer)               = {}   (50 - 50, clamped)", client.get_trust_score(&issuer));
-    println!("    get_reputation(issuer)                = {:?}", client.get_reputation(&issuer));
+    println!(
+        "    get_trust_score(issuer)               = {}   (50 - 50, clamped)",
+        client.get_trust_score(&issuer).unwrap_or(50)
+    );
+    println!(
+        "    get_reputation(issuer)                = {:?}",
+        client.get_reputation(&issuer)
+    );
 
     println!();
     println!("[3] Ledger advances decay the breach's impact (bucket = 10,000 ledgers):");
@@ -123,7 +136,7 @@ fn demo_time_decay_table() {
         if buckets > 0 {
             advance_ledgers(&env, &client, &issuer, buckets_ledgers(buckets));
         }
-        let score = client.get_trust_score(&issuer);
+        let score = client.get_trust_score(&issuer).unwrap_or(50);
         println!(
             "    +{:>5} buckets ({:>10} ledgers) -> score {}   (expected {})",
             buckets,
@@ -135,7 +148,10 @@ fn demo_time_decay_table() {
 
     println!();
     println!("[4] The breach is never erased - reputation persists forever:");
-    println!("    get_reputation(issuer)                = {:?}", client.get_reputation(&issuer));
+    println!(
+        "    get_reputation(issuer)                = {:?}",
+        client.get_reputation(&issuer)
+    );
 
     println!();
     println!("[5] A fresh breach still tanks the score immediately:");
@@ -147,13 +163,16 @@ fn demo_time_decay_table() {
         2,
         CommitmentStatus::Breached,
     );
-    println!("    get_trust_score(issuer)               = {}", client.get_trust_score(&issuer));
+    println!(
+        "    get_trust_score(issuer)               = {}",
+        client.get_trust_score(&issuer).unwrap_or(50)
+    );
 
     println!();
     println!("[6] Mixed history (1 fulfilled + 1 breach) also recovers:");
     let (env2, client2, issuer2, counterparty2) = setup();
     let arbitrator2 = Address::generate(&env2);
-    client2.initialize(&arbitrator2);
+    client2.initialize(&soroban_sdk::vec![&env2, arbitrator2]);
     create_and_attest(
         &env2,
         &client2,
@@ -170,10 +189,19 @@ fn demo_time_decay_table() {
         2,
         CommitmentStatus::Breached,
     );
-    println!("    same bucket                          -> {}", client2.get_trust_score(&issuer2));
+    println!(
+        "    same bucket                          -> {}",
+        client2.get_trust_score(&issuer2).unwrap_or(50)
+    );
     advance_ledgers(&env2, &client2, &issuer2, buckets_ledgers(64));
-    println!("    +64 buckets (640,000 ledgers)        -> {}", client2.get_trust_score(&issuer2));
+    println!(
+        "    +64 buckets (640,000 ledgers)        -> {}",
+        client2.get_trust_score(&issuer2).unwrap_or(50)
+    );
     advance_ledgers(&env2, &client2, &issuer2, buckets_ledgers(128));
-    println!("    +128 buckets (1,280,000 ledgers)     -> {}", client2.get_trust_score(&issuer2));
+    println!(
+        "    +128 buckets (1,280,000 ledgers)     -> {}",
+        client2.get_trust_score(&issuer2).unwrap_or(50)
+    );
     println!();
 }

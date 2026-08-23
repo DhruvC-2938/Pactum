@@ -1,0 +1,67 @@
+# docker-compose.e2e.yml
+#
+# Override/extension used only for local + CI E2E test runs. Adds a local
+# Soroban sandbox (Stellar quickstart, --local mode) and repoints the
+# backend/indexer at it instead of testnet, so the full stack (frontend +
+# backend + indexer + redis + postgres) can be exercised against a
+# deterministic, disposable chain rather than shared testnet state.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d
+#
+services:
+  soroban:
+    image: stellar/quickstart:testing
+    container_name: pactum-e2e-soroban
+    command: ['--local', '--enable-soroban-rpc']
+    ports:
+      - '8000:8000'
+      - '8001:8001'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    environment:
+      SOROBAN_RPC_URL: http://soroban:8000/soroban/rpc
+      SOROBAN_NETWORK_PASSPHRASE: 'Standalone Network ; February 2017'
+      # SOROBAN_CONTRACT_ID is injected at deploy time by
+      # scripts/e2e/deploy-test-contract.sh into a generated env file
+      # (.env.e2e), which this compose file's `env_file` picks up.
+    env_file:
+      - path: .env.e2e
+        required: false
+    depends_on:
+      soroban:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis-cluster-init:
+        condition: service_completed_successfully
+
+  indexer:
+    environment:
+      SOROBAN_RPC_URL: http://soroban:8000/soroban/rpc
+      INDEXER_POLL_INTERVAL_MS: '250' # faster polling so E2E tests don't wait on the default 1s cadence
+    env_file:
+      - path: .env.e2e
+        required: false
+    depends_on:
+      soroban:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis-cluster-init:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      args:
+        VITE_API_URL: http://localhost:3000
+    depends_on:
+      backend:
+        condition: service_healthy
+      indexer:
+        condition: service_started

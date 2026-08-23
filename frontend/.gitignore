@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Playwright
+playwright-report/
+test-results/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+# Playwright test artifacts
+playwright-report/
+test-results/
+playwright/.cache/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

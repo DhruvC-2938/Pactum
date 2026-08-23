@@ -30,3 +30,30 @@ export type {
 
 /** Canonical deployed contract address on Stellar testnet. */
 export { DEFAULT_CONTRACT_ID } from './networks.js';
+
+// Zero-Trust State Proof Verifier
+export {
+  verifyPactumStateProof,
+  verifyPactumBatchedStateProof,
+  computeLeafHash,
+  computeMerkleRoot,
+  computeMerkleRootFromLeaves,
+  computeHeaderHash,
+  computeAggregationLeaf,
+  addressToBytes32,
+  bytesToHex,
+  hexToBytes,
+  normalizeHex32,
+  BATCH_PROOF_VERSION,
+} from './verifier/stateProofVerifier.js';
+
+export type {
+  PactumStateProof,
+  PactumBatchedStateProof,
+  BatchedProofEntry,
+  ScoreData,
+  MerkleProofNode,
+  HeaderProof,
+  VerificationResult,
+  BatchVerificationResult,
+} from './verifier/stateProofVerifier.js';

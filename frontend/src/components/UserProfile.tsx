@@ -17,7 +17,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
   showDomain = true,
   style,
   className,
-  avatarSize = 28
+  avatarSize = 28,
 }) => {
   const [identity, setIdentity] = useState<StellarIdentity | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -66,7 +66,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
         alignItems: 'center',
         gap: '8px',
         fontFamily: hasCustomIdentity ? 'inherit' : 'monospace',
-        ...style
+        ...style,
       }}
     >
       {/* Avatar Icon */}
@@ -86,7 +86,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             fontSize: `${Math.max(10, avatarSize * 0.45)}px`,
             fontWeight: '800',
             color: hasCustomIdentity ? '#3730a3' : '#475569',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+            boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
           }}
         >
           {isLoading ? (
@@ -112,7 +112,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           style={{
             fontWeight: hasCustomIdentity ? '700' : '600',
             color: hasCustomIdentity ? '#0f172a' : '#334155',
-            fontSize: '13px'
+            fontSize: '13px',
           }}
         >
           {isLoading ? truncateAddress(address) : displayName}
@@ -128,7 +128,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
               background: '#f1f5f9',
               color: '#64748b',
               border: '1px solid #e2e8f0',
-              textTransform: 'lowercase'
+              textTransform: 'lowercase',
             }}
           >
             {identity.domain}
@@ -148,7 +148,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'color 0.15s ease'
+            transition: 'color 0.15s ease',
           }}
           title={copied ? 'Copied address!' : 'Copy full address'}
         >

@@ -101,7 +101,10 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full breakdown.
 | Method | Kind | Description |
 |---|---|---|
 | `create_commitment(issuer, counterparty, terms_hash, due_at)` | write | Register a new commitment between two addresses |
-| `attest(commitment_id, outcome)` | write | Mark a commitment fulfilled, late, or breached |
+| `create_milestone_commitment(issuer, counterparty, terms_hash, due_at, resolver, milestone_count)` | write | Register a commitment fulfilled across several milestones |
+| `attest(commitment_id, outcome)` | write | Mark the next pending milestone fulfilled, late, or breached — resolving the commitment if it is the last one |
+| `attest_milestone(commitment_id, milestone_index, outcome)` | write | Mark one milestone of a commitment; the commitment resolves on the last one |
+| `get_milestone(commitment_id, milestone_index)` | read | Fetch a single milestone's outcome, or nothing while it is pending |
 | `dispute(commitment_id, reason)` | write | Flag a commitment as contested rather than resolved |
 | `resolve_dispute(commitment_id, outcome)` | write | Designated arbitrator/oracle settles a disputed commitment |
 | `get_commitment(commitment_id)` | read | Fetch a single commitment's details and status |
@@ -182,6 +185,7 @@ The frontend is built to call the API on its own origin, and nginx proxies `/api
 - [ ] Core registry contract — create / attest / dispute / resolve
 - [ ] Per-address reputation aggregation
 - [ ] Oracle-based auto-attestation for measurable commitments (e.g. uptime feeds)
+- [x] Milestone-based commitments — partial attestations against one commitment ID
 - [ ] Commitment templates (refund, SLA, recurring report, milestone check-in)
 - [x] Public reputation lookup API
 - [ ] JS/TS SDK (`@pactum/sdk`)
@@ -192,6 +196,19 @@ The frontend is built to call the API on its own origin, and nginx proxies `/api
       ([`docs/zk-reputation-proofs.md`](./docs/zk-reputation-proofs.md))
 
 Open an issue if you'd like to pick up any of these — contributions welcome.
+
+### Reputation cache
+
+`docker compose up --build` starts a six-node Redis Cluster (three primaries and
+three replicas), the API, and the finality-aware indexer. `GET
+/reputation/:address` uses cache-aside reads under `trust_score:<address>` and
+falls back to the latest TimescaleDB snapshot if Redis is unavailable. Finalized
+ledger commits synchronously refresh every affected address before the indexer
+advances.
+
+Run `npm run load:reputation` from `backend/` against a warmed local stack to
+enforce the 10,000 req/s and P99 <15ms SLO. Set `LOAD_TEST_URL`,
+`LOAD_TEST_CONNECTIONS`, or `LOAD_TEST_DURATION_SECONDS` to tune the run.
 
 ---
 

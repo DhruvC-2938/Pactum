@@ -1,18 +1,18 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z, ZodError } from 'zod';
+import { ReputationCache } from '../cache/reputationCache';
 import { CertificateService } from '../services/CertificateService';
 import { queryTimescale } from '../db/timescale';
-import { readCache, reputationKey, writeCache } from '../indexer/cache';
+import { SorobanClient } from '../soroban/client';
 
-const router = Router();
-
+const STELLAR_ADDRESS = /^G[A-Z2-7]{55}$/;
 const DEFAULT_HISTORY_DAYS = 30;
 const MAX_HISTORY_DAYS = 365;
 
 // Zod schema for validating the export certificate request
 const exportCertificateSchema = z.object({
-  did: z.string().min(1, "DID is required"),
-  trustScore: z.number().min(0).max(100, "Trust score must be between 0 and 100")
+  did: z.string().min(1, 'DID is required'),
+  trustScore: z.number().min(0).max(100, 'Trust score must be between 0 and 100'),
 });
 
 const validateExportRequest = (req: Request, res: Response, next: NextFunction): void => {
@@ -22,7 +22,7 @@ const validateExportRequest = (req: Request, res: Response, next: NextFunction):
     next();
   } catch (error) {
     if (error instanceof ZodError) {
-      const formattedErrors = error.errors.map(err => ({
+      const formattedErrors = error.errors.map((err) => ({
         field: err.path.join('.'),
         message: err.message,
       }));
@@ -37,144 +37,151 @@ const validateExportRequest = (req: Request, res: Response, next: NextFunction):
   }
 };
 
-// POST /export/certificate - Exports a Reputation Certificate (VC)
-router.post('/export/certificate', validateExportRequest, async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { did, trustScore } = req.body;
+export function createReputationRouter(cache: ReputationCache, sorobanClient?: SorobanClient): Router {
+  const router = Router();
 
-    // Generate the Verifiable Credential using our KMS-backed service
-    const token = await CertificateService.generateReputationCertificate(did, trustScore);
+  // POST /export/certificate - Exports a Reputation Certificate (VC)
+  router.post(
+    '/export/certificate',
+    validateExportRequest,
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const { did, trustScore } = req.body;
 
-    res.status(200).json({
-      message: 'Certificate generated successfully',
-      certificate: token
-    });
-  } catch (error) {
-    console.error('Error generating certificate:', error);
-    res.status(500).json({
-      error: 'Internal Server Error'
-    });
-  }
-});
+        // Generate the Verifiable Credential using our KMS-backed service
+        const token = await CertificateService.generateReputationCertificate(did, trustScore);
 
-export interface ReputationSnapshot {
-  date: string;
-  fulfilled: number;
-  late: number;
-  breached: number;
-}
-
-// GET /:address/history - Daily reputation snapshots for an address
-router.get('/:address/history', async (req: Request, res: Response) => {
-  const { address } = req.params;
-  const requested = parseInt(String(req.query.days ?? DEFAULT_HISTORY_DAYS), 10);
-  const days = Number.isNaN(requested)
-    ? DEFAULT_HISTORY_DAYS
-    : Math.min(Math.max(requested, 1), MAX_HISTORY_DAYS);
-
-  try {
-    // Snapshots are only written on days an address was active, so each day in
-    // the window carries the most recent snapshot at or before it forward.
-    const result = await queryTimescale(
-      `SELECT
-         to_char(series.day, 'YYYY-MM-DD') AS date,
-         COALESCE(snapshot.fulfilled, 0) AS fulfilled,
-         COALESCE(snapshot.late, 0) AS late,
-         COALESCE(snapshot.breached, 0) AS breached
-       FROM generate_series(
-              (CURRENT_DATE - ($2::int - 1))::timestamp,
-              CURRENT_DATE::timestamp,
-              INTERVAL '1 day'
-            ) AS series(day)
-       LEFT JOIN LATERAL (
-         SELECT fulfilled, late, breached
-         FROM reputation_snapshots
-         WHERE address = $1
-           AND day <= series.day::date
-         ORDER BY day DESC
-         LIMIT 1
-       ) snapshot ON TRUE
-       ORDER BY series.day`,
-      [address, days],
-    );
-
-    const history: ReputationSnapshot[] = result.rows.map((row) => ({
-      date: row.date,
-      fulfilled: Number(row.fulfilled),
-      late: Number(row.late),
-      breached: Number(row.breached),
-    }));
-
-    res.json(history);
-  } catch (error) {
-    console.error('Error fetching reputation history:', error);
-    res.status(500).json({ error: 'Failed to fetch reputation history' });
-  }
-});
-
-export interface Reputation {
-  address: string;
-  trustScore: number | null;
-  fulfilled: number;
-  late: number;
-  breached: number;
-  total: number;
-}
-
-const STELLAR_ADDRESS = /^[GC][A-Z2-7]{55}$/;
-
-// Scoped to party_a, the issuer. This mirrors the contract, where Reputation
-// only counts an address's record as the party who made the commitment.
-const loadReputation = async (address: string): Promise<Reputation> => {
-  const result = await queryTimescale(
-    `SELECT
-       COUNT(*) FILTER (WHERE outcome = 'fulfilled') AS fulfilled,
-       COUNT(*) FILTER (WHERE outcome = 'late') AS late,
-       COUNT(*) FILTER (WHERE outcome = 'breached') AS breached,
-       COUNT(*) AS total,
-       (SELECT trust_score FROM trust_score_snapshots
-         WHERE address = $1 ORDER BY time DESC LIMIT 1) AS trust_score
-     FROM commitment_outcomes
-     WHERE party_a = $1`,
-    [address],
+        res.status(200).json({
+          message: 'Certificate generated successfully',
+          certificate: token,
+        });
+      } catch (error) {
+        console.error('Error generating certificate:', error);
+        res.status(500).json({
+          error: 'Internal Server Error',
+        });
+      }
+    },
   );
 
-  const row = result.rows[0];
-  return {
-    address,
-    trustScore: row.trust_score === null ? null : Number(row.trust_score),
-    fulfilled: Number(row.fulfilled),
-    late: Number(row.late),
-    breached: Number(row.breached),
-    total: Number(row.total),
-  };
-};
+  /**
+   * GET /reputation/:address/trust-score
+   *
+   * Returns the on-chain Soroban trust score for a Stellar address.
+   * Handles the three distinct states:
+   *
+   * 200 { score: number }
+   *     The entry is live and readable.  Score is 0–100 (50 = neutral baseline).
+   *
+   * 503 { archived: true, address: string, message: string, restore_hint: string }
+   *     The trust-history entry for this address has been archived by Soroban state
+   *     expiration.  The indexer's TTL monitor will restore it proactively, or the
+   *     caller can submit a RestoreFootprint + restore_reputation(address) transaction.
+   *
+   * 404 { error: "Soroban client not configured" }
+   *     The backend was started without SOROBAN_RPC_URL / ORACLE_PRIVATE_KEY / etc.
+   *     (development mode with no live Soroban connection).
+   *
+   * 400 { error: "Invalid Stellar account address" }
+   *     The address parameter is not a valid Stellar G… address.
+   *
+   * 500 { error: string }
+   *     Unexpected error querying the Soroban RPC.
+   */
+  router.get('/:address/trust-score', async (req: Request, res: Response) => {
+    const rawAddress = req.params.address;
+    const address = (Array.isArray(rawAddress) ? rawAddress[0] : rawAddress).toUpperCase();
 
-// GET /:address - Aggregate compliance history, served from Redis when available
-router.get('/:address', async (req: Request, res: Response) => {
-  const { address } = req.params;
+    if (!STELLAR_ADDRESS.test(address)) {
+      res.status(400).json({ error: 'Invalid Stellar account address' });
+      return;
+    }
 
-  if (typeof address !== 'string' || !STELLAR_ADDRESS.test(address)) {
-    res.status(400).json({ error: 'Invalid Stellar address' });
-    return;
-  }
+    if (!sorobanClient) {
+      res.status(404).json({
+        error: 'Soroban client not configured',
+        hint: 'Set SOROBAN_RPC_URL, SOROBAN_CONTRACT_ID, ORACLE_PRIVATE_KEY, and SOROBAN_NETWORK_PASSPHRASE to enable on-chain trust score queries.',
+      });
+      return;
+    }
 
-  const key = reputationKey(address);
+    try {
+      const scoreResult = await sorobanClient.getTrustScore(address);
 
-  const cached = await readCache<Reputation>(key);
-  if (cached) {
-    res.set('X-Cache', 'HIT').json(cached);
-    return;
-  }
+      // null means the entry is archived (Option<u32> returned None from the contract).
+      if (scoreResult === null) {
+        res.status(503).json({
+          archived: true,
+          address,
+          message:
+            'The trust-score entry for this address has been archived by Soroban state ' +
+            'expiration.  The TTL monitor will restore it automatically on its next run.  ' +
+            'To restore immediately, submit a RestoreFootprint + restore_reputation transaction.',
+          restore_hint:
+            'Wait for the next TTL monitor cycle, or submit a RestoreFootprint + restore_reputation(address) transaction on-chain.',
+        });
+        return;
+      }
 
-  try {
-    const reputation = await loadReputation(address);
-    await writeCache(key, reputation);
-    res.set('X-Cache', 'MISS').json(reputation);
-  } catch (error) {
-    console.error('Error fetching reputation:', error);
-    res.status(500).json({ error: 'Failed to fetch reputation' });
-  }
-});
+      res.status(200).json({ address, score: scoreResult });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[reputation] Failed to fetch trust score for ${address}:`, message);
+      res.status(500).json({ error: 'Failed to query trust score', details: message });
+    }
+  });
 
-export default router;
+  router.get('/:address', async (req: Request, res: Response) => {
+    const rawAddress = req.params.address;
+    const address = (Array.isArray(rawAddress) ? rawAddress[0] : rawAddress).toUpperCase();
+    if (!STELLAR_ADDRESS.test(address)) {
+      res.status(400).json({ error: 'Invalid Stellar account address' });
+      return;
+    }
+
+    try {
+      const result = await cache.get(address);
+      res.setHeader('X-Cache', result.hit ? 'HIT' : 'MISS');
+      if (!result.value) {
+        res.status(404).json({ error: 'Reputation not found', address });
+        return;
+      }
+      res.status(200).json(result.value);
+    } catch (error) {
+      console.error('Failed to fetch reputation', error);
+      res.status(503).json({ error: 'Reputation service unavailable' });
+    }
+  });
+
+  // GET /:address/history - Daily reputation snapshots for an address
+  router.get('/:address/history', async (req: Request, res: Response) => {
+    const { address } = req.params;
+    const requested = parseInt(String(req.query.days ?? DEFAULT_HISTORY_DAYS), 10);
+    const days = Number.isNaN(requested)
+      ? DEFAULT_HISTORY_DAYS
+      : Math.min(Math.max(requested, 1), MAX_HISTORY_DAYS);
+
+    try {
+      // Snapshots are only written on days an address was active, so each day in
+      // the window carries the most recent snapshot at or before it forward.
+      const result = await queryTimescale(
+        `SELECT
+           to_char(bucket, 'YYYY-MM-DD') AS date,
+           COALESCE(fulfilled_count, 0) AS fulfilled,
+           COALESCE(late_count, 0) AS late,
+           COALESCE(breached_count, 0) AS breached
+         FROM reputation_snapshots_daily
+         WHERE address = $2
+           AND bucket >= CURRENT_DATE - $1::interval
+         ORDER BY bucket ASC`,
+        [`${days - 1} days`, address],
+      );
+      res.json(result.rows);
+    } catch (error) {
+      console.error('Failed to fetch reputation history', error);
+      res.status(500).json({ error: 'Database query failed' });
+    }
+  });
+
+  return router;
+}

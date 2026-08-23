@@ -3,11 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test } from 'node:test';
 import { Pool } from 'pg';
-import {
-  FinalityIndexer,
-  LedgerLinkageError,
-  NoCommonAncestorError,
-} from './listener';
+import { FinalityIndexer, LedgerLinkageError, NoCommonAncestorError } from './listener';
 import { SorobanLedgerSource } from './rpc-source';
 import { InMemoryIndexerStore, PostgresIndexerStore } from './store';
 import { LedgerSnapshot, LedgerSource } from './types';
@@ -89,6 +85,28 @@ test('limits each sync to the configured maximum batch size', async () => {
   assert.equal(result.committed, 3);
   assert.deepEqual(result.checkpoint, { sequence: 3, hash: 'main-3' });
   assert.equal(await store.getLedger(4), null);
+});
+
+test('awaits the cache projector immediately after each finalized commit', async () => {
+  const source = new SimulatedLedgerSource();
+  source.replaceChain(makeChain('main', 2));
+  const store = new InMemoryIndexerStore();
+  const projected: number[] = [];
+  const indexer = new FinalityIndexer({
+    source,
+    store,
+    finalityDepth: 0,
+    async onLedgerCommitted(ledger) {
+      assert.deepEqual(await store.getCheckpoint(), {
+        sequence: ledger.sequence,
+        hash: ledger.hash,
+      });
+      projected.push(ledger.sequence);
+    },
+  });
+
+  await indexer.sync();
+  assert.deepEqual(projected, [1, 2]);
 });
 
 test('rolls back to the last common ledger and replays the canonical fork', async () => {
@@ -277,6 +295,46 @@ test('rejects a canonical source that breaks the committed parent link', async (
   await assert.rejects(indexer.sync(), (error: unknown) => error instanceof LedgerLinkageError);
 });
 
+test('scopes getEvents to the deployed contract when configured', async () => {
+  const CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
+  const eventRequests: unknown[] = [];
+  const source = new SorobanLedgerSource(
+    {
+      async getLatestLedger() {
+        return { sequence: 2 };
+      },
+      async getLedgers() {
+        return {
+          ledgers: [
+            {
+              sequence: 2,
+              hash: 'ledger-2',
+              ledgerCloseTime: '1786838402',
+              previousHash: 'ledger-1',
+            },
+          ],
+        };
+      },
+      async getEvents(request) {
+        eventRequests.push(request);
+        return { events: [], cursor: undefined };
+      },
+    },
+    { contractId: CONTRACT_ID },
+  );
+
+  const ledger = await source.getLedger(2);
+  assert.ok(ledger);
+  assert.deepEqual(eventRequests, [
+    {
+      filters: [{ type: 'contract', contractIds: [CONTRACT_ID] }],
+      startLedger: 2,
+      endLedger: 3,
+      limit: 100,
+    },
+  ]);
+});
+
 test('maps Soroban RPC ledger headers and events into the indexer model', async () => {
   const firstPageEvents = Array.from({ length: 100 }, (_, index) => ({
     id: `event-2-${index}`,
@@ -311,13 +369,15 @@ test('maps Soroban RPC ledger headers and events into the indexer model', async 
         return { events: firstPageEvents, cursor: 'page-2' };
       }
       return {
-        events: [{
-          id: 'event-2-final',
-          type: 'contract',
-          ledger: 2,
-          value: { toXDR: () => 'value-xdr-final' },
-          ignored: undefined,
-        }],
+        events: [
+          {
+            id: 'event-2-final',
+            type: 'contract',
+            ledger: 2,
+            value: { toXDR: () => 'value-xdr-final' },
+            ignored: undefined,
+          },
+        ],
         cursor: 'page-2-final',
       };
     },

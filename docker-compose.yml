@@ -1,6 +1,47 @@
 services:
+  redis-node-0: &redis-node
+    image: redis:7.4-alpine
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --protected-mode no --bind 0.0.0.0
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+
+  redis-node-1:
+    <<: *redis-node
+  redis-node-2:
+    <<: *redis-node
+  redis-node-3:
+    <<: *redis-node
+  redis-node-4:
+    <<: *redis-node
+  redis-node-5:
+    <<: *redis-node
+
+  redis-cluster-init:
+    image: redis:7.4-alpine
+    command:
+      - sh
+      - -c
+      - >-
+        redis-cli --cluster create
+        redis-node-0:6379 redis-node-1:6379 redis-node-2:6379
+        redis-node-3:6379 redis-node-4:6379 redis-node-5:6379
+        --cluster-replicas 1 --cluster-yes || true
+    depends_on:
+      redis-node-0: { condition: service_healthy }
+      redis-node-1: { condition: service_healthy }
+      redis-node-2: { condition: service_healthy }
+      redis-node-3: { condition: service_healthy }
+      redis-node-4: { condition: service_healthy }
+      redis-node-5: { condition: service_healthy }
+    restart: "no"
+
   postgres:
     image: timescale/timescaledb:latest-pg16
+    command: ["postgres", "-c", "max_worker_processes=15", "-c", "max_parallel_workers=8", "-c", "timescaledb.max_background_workers=10"]
     environment:
       POSTGRES_USER: ${TIMESCALEDB_USER:-postgres}
       POSTGRES_PASSWORD: ${TIMESCALEDB_PASSWORD:-postgres}
@@ -32,11 +73,37 @@ services:
       SOROBAN_RPC_URL: ${SOROBAN_RPC_URL:-https://soroban-testnet.stellar.org:443}
       SOROBAN_NETWORK_PASSPHRASE: ${SOROBAN_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
       SOROBAN_CONTRACT_ID: ${SOROBAN_CONTRACT_ID:-CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E}
+      REDIS_CLUSTER_NODES: redis-node-0:6379,redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379
+      REPUTATION_CACHE_TTL_SECONDS: ${REPUTATION_CACHE_TTL_SECONDS:-300}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
+      redis-cluster-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  indexer:
+    build:
+      context: ./backend
+    command: [node, dist/workers/indexer.js]
+    environment:
+      NODE_ENV: production
+      TIMESCALEDB_HOST: postgres
+      TIMESCALEDB_PORT: 5432
+      TIMESCALEDB_DATABASE: ${TIMESCALEDB_DATABASE:-pactum_timeseries}
+      TIMESCALEDB_USER: ${TIMESCALEDB_USER:-postgres}
+      TIMESCALEDB_PASSWORD: ${TIMESCALEDB_PASSWORD:-postgres}
+      SOROBAN_RPC_URL: ${SOROBAN_RPC_URL:-https://soroban-testnet.stellar.org:443}
+      REDIS_CLUSTER_NODES: redis-node-0:6379,redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379
+      INDEXER_FINALITY_DEPTH: ${INDEXER_FINALITY_DEPTH:-2}
+      INDEXER_POLL_INTERVAL_MS: ${INDEXER_POLL_INTERVAL_MS:-1000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-cluster-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   frontend:

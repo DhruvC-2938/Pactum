@@ -1,9 +1,11 @@
 //! Dispute handling and resolution logic (Phase 3)
 
-use crate::commitments::{Commitment, CommitmentStatus, DataKey, DISPUTE_WINDOW_SECONDS};
+use crate::commitments::{
+    Commitment, CommitmentStatus, DataKey, DisputeVotes, DISPUTE_WINDOW_SECONDS,
+};
 use crate::errors::Error;
 use crate::events;
-use soroban_sdk::{panic_with_error, Address, Env};
+use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
 /// Raises a dispute on an attested commitment within the dispute window.
 ///
@@ -13,29 +15,51 @@ use soroban_sdk::{panic_with_error, Address, Env};
 /// * Why: Only the participating parties to the commitment have standing to contest
 ///   an attested outcome and initiate a dispute.
 pub fn dispute(env: &Env, caller: Address, id: u64) {
-    // 0. Enter the reentrancy guard before any external interaction (including
+    // 0. Fail fast if the protocol has been paused (emergency halt).
+    crate::pausable::require_not_paused(env);
+
+    // 1. Enter the reentrancy guard before any external interaction (including
     //    the require_auth call below, which may invoke a custom account contract).
     crate::reentrancy::enter(env);
 
-    // 1. Require authorization from the caller.
+    // 2. Require authorization from the caller.
     caller.require_auth();
 
-    // 2. Load commitment from persistent storage (with legacy record migration).
+    // 2b. Require the dispute stake transfer from caller to contract.
+    //     The token address must be configured via set_dispute_token.
+    let dispute_token: soroban_sdk::Address = env
+        .storage()
+        .instance()
+        .get(&crate::commitments::DataKey::DisputeToken)
+        .unwrap_or_else(|| panic_with_error!(env, Error::DisputeTokenNotSet));
+    let token_client = TokenClient::new(env, &dispute_token);
+    token_client.transfer(
+        &caller,
+        &env.current_contract_address(),
+        &crate::commitments::DISPUTE_STAKE_AMOUNT,
+    );
+
+    env.storage().persistent().set(
+        &crate::commitments::DataKey::DisputeStake(id),
+        &crate::commitments::DISPUTE_STAKE_AMOUNT,
+    );
+
+    // 3. Load commitment from persistent storage (with legacy record migration).
     let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 3. Verify caller is either issuer or counterparty.
+    // 4. Verify caller is either issuer or counterparty.
     if caller != commitment.issuer && caller != commitment.counterparty {
         panic_with_error!(env, Error::Unauthorized);
     }
 
-    // 4. Verify commitment is currently Fulfilled, Late, or Breached (i.e. already attested).
+    // 5. Verify commitment is currently Fulfilled, Late, or Breached (i.e. already attested).
     match commitment.status {
         CommitmentStatus::Fulfilled | CommitmentStatus::Late | CommitmentStatus::Breached => {}
         _ => panic_with_error!(env, Error::InvalidTransition),
     }
 
-    // 5. Verify the dispute is raised within the dispute window.
+    // 6. Verify the dispute is raised within the dispute window.
     let attested_at = commitment
         .attested_at
         .unwrap_or_else(|| panic_with_error!(env, Error::InvalidTransition));
@@ -46,13 +70,22 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
         panic_with_error!(env, Error::DisputeWindowExpired);
     }
 
-    // 6. Store old status for reputation adjustment.
+    // 6. Lock the stakes of every panel attestor for the duration of the
+    //    dispute; their votes back the M-of-N resolution and their stake is
+    //    forfeited (slashed) if they vote for a losing outcome.
+    if !commitment.attestors.is_empty() {
+        for attestor in commitment.attestors.iter() {
+            crate::staking::set_locked(env, &attestor, true);
+        }
+    }
+
+    // 7. Store old status for reputation adjustment.
     let old_status = commitment.status;
 
-    // 7. Transition status to Disputed.
+    // 8. Transition status to Disputed.
     commitment.status = CommitmentStatus::Disputed;
 
-    // 8. Save updated commitment to storage.
+    // 9. Save updated commitment to storage.
     env.storage()
         .persistent()
         .set(&DataKey::Commitment(id), &commitment);
@@ -62,32 +95,53 @@ pub fn dispute(env: &Env, caller: Address, id: u64) {
         crate::commitments::TTL_EXTEND_LEDGERS,
     );
 
-    // 9. Update reputation (decrement previous outcome).
+    // 10. Update reputation (decrement previous outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), old_status, false);
 
-    // 10. Update trust history (decrement previous outcome).
+    // 11. Update trust history (decrement previous outcome).
     crate::trust_score::update_trust_history(env, commitment.issuer.clone(), old_status, false);
 
-    // 11. Emit commitment_disputed event.
+    // 12. Emit commitment_disputed event.
     events::commitment_disputed(env, id);
 
-    // 12. Release the reentrancy guard.
+    // 13. Release the reentrancy guard.
     crate::reentrancy::exit(env);
 }
 
 /// Resolves a disputed commitment to a final outcome.
 ///
+/// Two authorization paths exist:
+///
+/// * **Custom resolver (plugin delegation).** A commitment created with a
+///   `resolver_address` outside the arbitrator committee is settled directly by
+///   that resolver — one call, no voting. This preserves the per-commitment
+///   delegation the plugin system provides.
+/// * **Arbitrator committee (majority vote).** Naming an arbitrator as the
+///   `resolver_address` routes the dispute through the committee instead: every
+///   call records the calling arbitrator's vote under `DataKey::Votes(id)`, and
+///   the dispute only finalizes once the votes for one outcome exceed half the
+///   size of the arbitrator set. No single arbitrator can settle the dispute
+///   alone, removing the single point of trust.
+/// * **Attestor panel (M-of-N vote).** Commitments created with an attestor
+///   panel are exempt from this entrypoint entirely: they must be settled via
+///   `cast_dispute_vote`, where the staked attestors vote and a dissenter's
+///   stake is slashed (see `crate::voting`).
+///
 /// # Authorization
-/// * Authorized caller: `caller` (via `require_auth`), which must exactly match
-///   the commitment's designated `resolver_address`.
-/// * Why: Dispute resolution authority is delegated strictly to the custom resolver
-///   address chosen for this commitment at creation time.
-pub fn resolve_dispute(
-    env: &Env,
-    caller: Address,
-    id: u64,
-    final_outcome: CommitmentStatus,
-) {
+/// * Authorized caller: `caller` (via `require_auth`), which must either be the
+///   commitment's designated custom `resolver_address`, or a member of the
+///   arbitrator committee for a committee-routed commitment.
+/// * Why: dispute resolution authority is delegated either to the resolver
+///   chosen at creation time, or — for committee-routed commitments — to the
+///   majority of the mutually trusted arbitrators.
+///
+/// # Panics
+/// * `Error::UseVotingResolution` if the commitment is governed by an attestor
+///   panel and must be settled via `cast_dispute_vote` instead.
+/// * `Error::NotArbitrator` if the caller is neither the designated custom
+///   resolver nor a committee member eligible to vote on this dispute.
+/// * `Error::AlreadyVoted` if a committee member votes twice on the same dispute.
+pub fn resolve_dispute(env: &Env, caller: Address, id: u64, final_outcome: CommitmentStatus) {
     // 0. Enter the reentrancy guard before any external interaction (including
     //    the require_auth call below, which may invoke a custom account contract).
     crate::reentrancy::enter(env);
@@ -105,9 +159,9 @@ pub fn resolve_dispute(
     let mut commitment: Commitment = crate::commitments::get_commitment_record(env, id)
         .unwrap_or_else(|| panic_with_error!(env, Error::CommitmentNotFound));
 
-    // 4. Verify caller matches the commitment's designated resolver_address exactly.
-    if caller != commitment.resolver_address {
-        panic_with_error!(env, Error::NotArbitrator);
+    // 4. Reject single-resolver resolution for panel-governed commitments.
+    if !commitment.attestors.is_empty() {
+        panic_with_error!(env, Error::UseVotingResolution);
     }
 
     // 5. Verify commitment is currently Disputed.
@@ -115,29 +169,123 @@ pub fn resolve_dispute(
         panic_with_error!(env, Error::InvalidTransition);
     }
 
-    // 6. Update status to final_outcome and clear attested_at to prevent re-dispute.
+    // 6. Resolve the caller's role. A commitment whose `resolver_address` is a
+    //    custom resolver outside the arbitrator committee is settled directly by
+    //    that resolver (plugin delegation). Naming an arbitrator as the resolver
+    //    instead routes the dispute into committee majority voting, and no one
+    //    outside the committee may act on such a dispute.
+    let arbitrators = crate::commitments::arbitrators(env);
+    let is_designated_resolver = caller == commitment.resolver_address;
+    let committee_routed = arbitrators.contains(&commitment.resolver_address);
+
+    if is_designated_resolver && !committee_routed {
+        // 6a. Direct resolution by a custom resolver (plugin delegation).
+        finalize_resolution(env, &mut commitment, id, final_outcome);
+        crate::reentrancy::exit(env);
+        return;
+    }
+
+    // A committee-routed dispute is only open to the committee itself.
+    if !committee_routed || !arbitrators.contains(&caller) {
+        panic_with_error!(env, Error::NotArbitrator);
+    }
+
+    // 6b. Committee majority vote. Load the running tally for this dispute,
+    //     record the caller's vote, and finalize only once the votes for the
+    //     outcome exceed half the committee size.
+    let mut votes: DisputeVotes = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Votes(id))
+        .unwrap_or_else(|| DisputeVotes::new(env));
+
+    // An arbitrator may only vote once per dispute.
+    if votes.voters.contains_key(caller.clone()) {
+        panic_with_error!(env, Error::AlreadyVoted);
+    }
+    votes.record(&caller, final_outcome);
+
+    // Persist the updated tally on every vote so the stored record always
+    // reflects the full dispute history, then check for a majority.
+    env.storage().persistent().set(&DataKey::Votes(id), &votes);
+    env.storage().persistent().extend_ttl(
+        &DataKey::Votes(id),
+        crate::commitments::TTL_THRESHOLD_LEDGERS,
+        crate::commitments::TTL_EXTEND_LEDGERS,
+    );
+
+    let majority = arbitrators.len() / 2; // votes must strictly exceed this
+    let tally = votes.count(final_outcome);
+
+    if tally > majority {
+        // 7a. The threshold is met: resolve with the majority outcome.
+        finalize_resolution(env, &mut commitment, id, final_outcome);
+    } else {
+        // 7b. Still short of a majority: report the vote for off-chain tracking.
+        events::arbitrator_vote_cast(env, id, &caller, final_outcome, tally, majority + 1);
+    }
+
+    // 8. Release the reentrancy guard.
+    crate::reentrancy::exit(env);
+}
+
+/// Applies a final outcome to a disputed commitment: transitions the status,
+/// clears `attested_at` (preventing a re-dispute), and rolls the outcome into
+/// reputation, the trust history, and the event log.
+fn finalize_resolution(
+    env: &Env,
+    commitment: &mut Commitment,
+    id: u64,
+    final_outcome: CommitmentStatus,
+) {
+    // 1. Update status to final_outcome and clear attested_at to prevent re-dispute.
     commitment.status = final_outcome;
     commitment.attested_at = None;
 
-    // 7. Save updated commitment to storage.
+    // 2. Save updated commitment to storage.
     env.storage()
         .persistent()
-        .set(&DataKey::Commitment(id), &commitment);
+        .set(&DataKey::Commitment(id), commitment);
     env.storage().persistent().extend_ttl(
         &DataKey::Commitment(id),
         crate::commitments::TTL_THRESHOLD_LEDGERS,
         crate::commitments::TTL_EXTEND_LEDGERS,
     );
 
-    // 8. Update reputation (increment with final outcome).
+    // 3. Update reputation (increment with final outcome).
     crate::reputation::update_reputation(env, commitment.issuer.clone(), final_outcome, true);
 
-    // 9. Update trust history (increment with final outcome).
+    // 4. Update trust history (increment with final outcome).
     crate::trust_score::update_trust_history(env, commitment.issuer.clone(), final_outcome, true);
 
-    // 10. Emit dispute_resolved event.
-    events::dispute_resolved(env, id, final_outcome);
+    // 4b. Release the escrowed dispute stake to the winning party.
+    //     Winning party = issuer if outcome is Fulfilled, counterparty otherwise.
+    if let Some(dispute_token) = env
+        .storage()
+        .instance()
+        .get::<crate::commitments::DataKey, soroban_sdk::Address>(
+            &crate::commitments::DataKey::DisputeToken,
+        )
+    {
+        if let Some(stake_amount) = env
+            .storage()
+            .persistent()
+            .get::<crate::commitments::DataKey, i128>(&crate::commitments::DataKey::DisputeStake(
+                id,
+            ))
+        {
+            let winner = match final_outcome {
+                CommitmentStatus::Fulfilled => commitment.issuer.clone(),
+                _ => commitment.counterparty.clone(),
+            };
+            let token_client = TokenClient::new(env, &dispute_token);
+            token_client.transfer(&env.current_contract_address(), &winner, &stake_amount);
+            env.storage()
+                .persistent()
+                .remove(&crate::commitments::DataKey::DisputeStake(id));
+        }
+    }
 
-    // 11. Release the reentrancy guard.
-    crate::reentrancy::exit(env);
+    // 5. Emit dispute_resolved event.
+    events::dispute_resolved(env, id, final_outcome);
 }

@@ -16,21 +16,21 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Pre-configured identities for demo testnet accounts
 const KNOWN_IDENTITIES: Record<string, { username: string; domain: string; avatarUrl: string }> = {
-  'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C': {
+  GBY54VG5G4A7DC4D6YJ6GHD4X4QW2AR43JLYZ2QVWSHKACWK3BLDR5IX: {
     username: 'alice*pactum.id',
     domain: 'pactum.id',
-    avatarUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=alice'
+    avatarUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=alice',
   },
-  'GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX': {
+  GB4UFBX57KE2RPEXB4NCPQHXL5UZL7HSFBVQ2YEZQDZ2DXR2X3CHHZX: {
     username: 'bob*pactum.id',
     domain: 'pactum.id',
-    avatarUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=bob'
+    avatarUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=bob',
   },
-  'GCJUKUMADK5PKZF7MCQBBNLRH2AIZQPK5JXBZWBZM7S4CGAJKUMA6V4': {
+  GCJUKUMADK5PKZF7MCQBBNLRH2AIZQPK5JXBZWBZM7S4CGAJKUMA6V4: {
     username: 'charlie*pactum.id',
     domain: 'pactum.id',
-    avatarUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=charlie'
-  }
+    avatarUrl: 'https://api.dicebear.com/7.x/identicon/svg?seed=charlie',
+  },
 };
 
 /**
@@ -85,7 +85,7 @@ export async function resolveIdentity(address: string): Promise<StellarIdentity>
       username: known.username,
       domain: known.domain,
       avatarUrl: known.avatarUrl,
-      resolvedAt: Date.now()
+      resolvedAt: Date.now(),
     };
     saveToCache(identity);
     return identity;
@@ -94,7 +94,7 @@ export async function resolveIdentity(address: string): Promise<StellarIdentity>
   // 3. Attempt external Stellar Expert / Federation directory query
   try {
     const res = await fetch(`https://api.stellar.expert/explorer/testnet/directory/${cleanAddr}`, {
-      signal: AbortSignal.timeout(3000)
+      signal: AbortSignal.timeout(3000),
     });
     if (res.ok) {
       const data = await res.json();
@@ -104,20 +104,20 @@ export async function resolveIdentity(address: string): Promise<StellarIdentity>
           username: data.name,
           domain: data.domain || 'stellar.expert',
           avatarUrl: `https://api.dicebear.com/7.x/identicon/svg?seed=${cleanAddr}`,
-          resolvedAt: Date.now()
+          resolvedAt: Date.now(),
         };
         saveToCache(identity);
         return identity;
       }
     }
-  } catch (err) {
+  } catch {
     // Network query optional fallback
   }
 
   // 4. Fallback: Save negative result in cache to avoid repeated failed network requests
   const fallbackIdentity: StellarIdentity = {
     address: cleanAddr,
-    resolvedAt: Date.now()
+    resolvedAt: Date.now(),
   };
   saveToCache(fallbackIdentity);
   return fallbackIdentity;

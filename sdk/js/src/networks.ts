@@ -2,8 +2,7 @@ import { Networks } from '@stellar/stellar-sdk';
 import type { Network } from './types.js';
 
 /** Canonical Pactum contract address on testnet. */
-export const DEFAULT_CONTRACT_ID =
-  'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
+export const DEFAULT_CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
 
 interface NetworkPreset {
   rpcUrl: string;
@@ -33,13 +32,15 @@ export interface ResolvedNetwork {
 /**
  * Resolves the RPC URL and network passphrase from user-supplied config.
  * Explicit values always override preset defaults.
+ * Defaults to 'testnet' if network is not explicitly provided.
  */
 export function resolveNetwork(
-  network: Network,
+  network: Network = 'testnet',
   rpcUrl?: string,
   networkPassphrase?: string,
 ): ResolvedNetwork {
-  if (network === 'custom') {
+  const targetNetwork = network || 'testnet';
+  if (targetNetwork === 'custom') {
     if (!rpcUrl || !networkPassphrase) {
       throw new Error(
         "PactumClient: 'rpcUrl' and 'networkPassphrase' are required when network is 'custom'.",
@@ -48,7 +49,7 @@ export function resolveNetwork(
     return { rpcUrl, networkPassphrase };
   }
 
-  const preset = PRESETS[network];
+  const preset = PRESETS[targetNetwork] || PRESETS.testnet;
   return {
     rpcUrl: rpcUrl ?? preset.rpcUrl,
     networkPassphrase: networkPassphrase ?? preset.networkPassphrase,

@@ -8,12 +8,11 @@
     ],
     "module": "esnext",
     "types": [
-      "vite/client"
+      "vite/client",
+      "node"
     ],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"
@@ -34,5 +33,9 @@
   },
   "include": [
     "src"
+  ],
+  "exclude": [
+    "src/**/*.selfcheck.ts",
+    "src/**/__tests__/*"
   ]
 }
