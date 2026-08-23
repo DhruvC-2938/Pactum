@@ -60,6 +60,22 @@ export function encodeAddressVec(addresses: string[]): xdr.ScVal {
   return xdr.ScVal.scvVec(addresses.map(encodeAddress));
 }
 
+/**
+ * Encode an optional address string as a ScVal Option<Address> -- `scvVoid()` for `undefined`
+ * (Soroban's `None`), the address's own ScVal otherwise (`Some`).
+ */
+export function encodeOptionAddress(address: string | undefined): xdr.ScVal {
+  return address === undefined ? xdr.ScVal.scvVoid() : encodeAddress(address);
+}
+
+/**
+ * Encode an optional u32 as a ScVal Option<u32> -- `scvVoid()` for `undefined` (Soroban's
+ * `None`), the value's own ScVal otherwise (`Some`).
+ */
+export function encodeOptionU32(value: number | undefined): xdr.ScVal {
+  return value === undefined ? xdr.ScVal.scvVoid() : encodeU32(value);
+}
+
 // ─── Decoding ────────────────────────────────────────────────────────────────
 
 /**

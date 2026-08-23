@@ -16,6 +16,8 @@ import {
   encodeAddressVec,
   encodeBytes32,
   encodeCommitmentStatus,
+  encodeOptionAddress,
+  encodeOptionU32,
   encodeU32,
   encodeU64,
   decodeCommitment,
@@ -167,11 +169,21 @@ export class PactumClient {
       throw new Error('PactumClient.createCommitment: issuerSecret does not match issuer address.');
     }
 
+    // resolver_address is required on-chain but has no on-chain default. Never fall back to
+    // issuer/counterparty here: resolve_dispute's only guard is `caller == resolverAddress`, so
+    // that would let a party unilaterally resolve their own dispute. The registry's current
+    // arbitrator is the standard, no-custom-resolver choice -- it routes disputes through
+    // committee majority vote instead of single-delegate resolution. See CreateCommitmentParams.
+    const resolverAddress = params.resolverAddress ?? (await this.getArbitrator());
+
     const txHash = await invokeContract(this.opts, params.issuerSecret, 'create_commitment', [
       encodeAddress(params.issuer),
       encodeAddress(params.counterparty),
       encodeBytes32(params.termsHash),
       encodeU64(params.dueAt),
+      encodeAddress(resolverAddress),
+      encodeOptionAddress(params.oracle),
+      encodeOptionU32(params.schemaId),
       encodeAddressVec(attestors),
       encodeU32(threshold),
     ]);

@@ -197,7 +197,14 @@ async function mockSorobanRpc(page: Page) {
             results: [
               {
                 auth: [],
-                xdr: 'AAAAAQ==',
+                // Every simulateTransaction call shares this one canned response regardless of
+                // which contract method is being simulated -- that now includes
+                // fetchArbitrator()'s `get_arbitrator` read (submitCreateCommitment needs it for
+                // resolver_address), which does `Address.fromString(String(scValToNative(retval)))`
+                // and throws on anything that isn't a syntactically valid G... address. Encodes
+                // MOCK_ADDRESS as an ScVal Address so that -- and get_reputation's unrelated,
+                // already-tolerant field lookups -- both decode without error.
+                xdr: 'AAAAEgAAAAAAAAAAJV/nLntxgpHp83Zr8qhqSLpCA439S1nO5sveir5wYUI=',
               },
             ],
           },
