@@ -69,6 +69,10 @@ export async function submitGenericSorobanTx({
   if (walletProvider === 'ledger') {
     onStatusUpdate?.('Awaiting signature on Ledger device...');
     signedXdr = await signTransactionWithLedger(unsignedXdr, networkPassphrase);
+  } else if (walletProvider === 'web3auth') {
+    onStatusUpdate?.('Signing with your social-login Stellar key...');
+    const { signTransactionWithWeb3Auth } = await import('./web3auth');
+    signedXdr = signTransactionWithWeb3Auth(unsignedXdr, networkPassphrase);
   } else {
     onStatusUpdate?.('Awaiting signature in Freighter wallet...');
     const signResult = await signTransaction(unsignedXdr, {
