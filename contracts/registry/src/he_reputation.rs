@@ -191,14 +191,31 @@ pub fn mod_pow(mut base: u128, mut exp: u128, modulus: u128) -> u128 {
     result
 }
 
-/// Computes `(a * b) mod m` without overflow for values up to 2^64.
-/// Uses u128 widening: both `a` and `b` are at most `m - 1 < 2^64`, so
-/// `a * b < 2^128`, which fits exactly in a u128.
 #[inline]
-pub fn mul_mod(a: u128, b: u128, m: u128) -> u128 {
-    // Both inputs are already < m (ensured by callers), so the full product
-    // is at most (m-1)^2 ≤ (2^64-1)^2 < 2^128, fitting in u128 without wrap.
-    (a * b) % m
+pub fn add_mod(a: u128, b: u128, m: u128) -> u128 {
+    let b = b % m;
+    let a = a % m;
+    if m - a <= b {
+        a - (m - b)
+    } else {
+        a + b
+    }
+}
+
+/// Computes `(a * b) mod m` without overflow even if m is near 2^128.
+/// Uses Russian peasant multiplication to avoid intermediate >128-bit values.
+pub fn mul_mod(mut a: u128, mut b: u128, m: u128) -> u128 {
+    let mut result: u128 = 0;
+    a %= m;
+    b %= m;
+    while b > 0 {
+        if b & 1 == 1 {
+            result = add_mod(result, a, m);
+        }
+        a = add_mod(a, a, m);
+        b >>= 1;
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -267,7 +284,7 @@ pub fn compute_encrypted_score(
 
     // Start from BASE_SCORE (encoded as a trivially-encrypted constant).
     // Enc(BASE_SCORE) = (1 + BASE_SCORE · n) mod n²  (standard Paillier).
-    let base_ct = ((1u128 + (BASE_SCORE as u128) * (PAILLIER_N as u128)) % PAILLIER_N_SQ) as u128;
+    let base_ct = (1u128 + (BASE_SCORE as u128) * (PAILLIER_N as u128)) % PAILLIER_N_SQ;
     let base_score = EncryptedScore::from_u128(base_ct, 1);
 
     // scale(Enc(F), FULFILLED_WEIGHT)
@@ -622,27 +639,34 @@ mod tests {
         // Build a valid proof for v=1, r=999.
         let proof = make_valid_proof(1, 999, pk_n);
 
-        // Accumulate a fulfilled outcome.
-        accumulate_encrypted_outcome(&env, &address, enc_one, 0, proof, pk_n);
+        let contract_id = env.register_contract(None, crate::RegistryContract);
+        env.as_contract(&contract_id, || {
+            // Accumulate a fulfilled outcome.
+            accumulate_encrypted_outcome(&env, &address, enc_one, 0, proof, pk_n);
 
-        // Should now be readable.
-        let rep = read_encrypted_reputation(&env, &address);
-        assert!(rep.is_some());
-        let rep = rep.unwrap();
-        // enc_fulfilled should have count = 1 after one addition.
-        assert_eq!(rep.enc_fulfilled.count, 1);
+            // Should now be readable.
+            let rep = read_encrypted_reputation(&env, &address);
+            assert!(rep.is_some());
+            let rep = rep.unwrap();
+            // enc_fulfilled should have count = 1 after one addition.
+            assert_eq!(rep.enc_fulfilled.count, 1);
+        });
     }
 
     #[test]
     fn get_encrypted_score_no_history_returns_base() {
         let env = Env::default();
         let address = Address::generate(&env);
-        let score = get_encrypted_score(&env, &address);
-        // Should be Enc(BASE_SCORE) = (1 + 50*n) mod n²
-        let expected = (1u128 + (crate::trust_score::BASE_SCORE as u128) * (PAILLIER_N as u128))
-            % PAILLIER_N_SQ;
-        assert_eq!(score.to_u128(), expected);
-        assert_eq!(score.count, 0);
+        
+        let contract_id = env.register_contract(None, crate::RegistryContract);
+        env.as_contract(&contract_id, || {
+            let score = get_encrypted_score(&env, &address);
+            // Should be Enc(BASE_SCORE) = (1 + 50*n) mod n²
+            let expected = (1u128 + (crate::trust_score::BASE_SCORE as u128) * (PAILLIER_N as u128))
+                % PAILLIER_N_SQ;
+            assert_eq!(score.to_u128(), expected);
+            assert_eq!(score.count, 0);
+        });
     }
 
     // ------------------------------------------------------------------
