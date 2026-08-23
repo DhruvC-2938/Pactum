@@ -121,48 +121,46 @@ export function createReputationCommand(): Command {
         console.log(`    ${chalk.gray('━ Total Volume:')}  ${chalk.bold(total)} historical commitments\n`);
       } catch (error: any) {
         // Fallback: Try backend API if Soroban RPC is unreachable / offline
-        if (options.apiUrl || process.env.PACTUM_API_URL) {
-          try {
-            const apiBase = options.apiUrl || process.env.PACTUM_API_URL || 'http://localhost:3000';
-            const res = await fetch(`${apiBase}/reputation/${address}`);
-            if (res.ok) {
-              const data = (await res.json()) as any;
-              const fulfilled = Number(data.fulfilled ?? 0);
-              const late = Number(data.late ?? 0);
-              const breached = Number(data.breached ?? 0);
-              const total = fulfilled + late + breached;
-              const score = calculateTrustScore(fulfilled, late, breached);
+        try {
+          const apiBase = options.apiUrl || process.env.PACTUM_API_URL || 'http://localhost:3000';
+          const res = await fetch(`${apiBase}/reputation/${address}`);
+          if (res.ok) {
+            const data = (await res.json()) as any;
+            const fulfilled = Number(data.fulfilled ?? 0);
+            const late = Number(data.late ?? 0);
+            const breached = Number(data.breached ?? 0);
+            const total = fulfilled + late + breached;
+            const score = calculateTrustScore(fulfilled, late, breached);
 
-              if (options.json) {
-                console.log(
-                  JSON.stringify(
-                    {
-                      address,
-                      network,
-                      score,
-                      reputation: { ...data, fulfilled, late, breached, total },
-                      source: 'backend-api',
-                    },
-                    null,
-                    2,
-                  ),
-                );
-                return;
-              }
-
-              console.log(chalk.bold.cyan('\n  Pactum Trust Layer — Reputation Scorecard (API)\n'));
-              console.log(`  ${chalk.gray('Target Address:')}   ${chalk.bold.white(address)}`);
-              console.log(`  ${chalk.gray('Trust Score:')}      ${formatTrustScoreBadge(score)}\n`);
-              console.log(chalk.bold('  Fulfillment Breakdown:'));
-              console.log(`    ${chalk.green('✔ Fulfilled:')}    ${chalk.bold(fulfilled)} commitments`);
-              console.log(`    ${chalk.yellow('▲ Late:')}         ${chalk.bold(late)} commitments`);
-              console.log(`    ${chalk.red('✖ Breached:')}     ${chalk.bold(breached)} commitments`);
-              console.log(`    ${chalk.gray('━ Total Volume:')}  ${chalk.bold(total)} historical commitments\n`);
+            if (options.json) {
+              console.log(
+                JSON.stringify(
+                  {
+                    address,
+                    network,
+                    score,
+                    reputation: { ...data, fulfilled, late, breached, total },
+                    source: 'backend-api',
+                  },
+                  null,
+                  2,
+                ),
+              );
               return;
             }
-          } catch {
-            // Ignore fallback error and throw original
+
+            console.log(chalk.bold.cyan('\n  Pactum Trust Layer — Reputation Scorecard (API)\n'));
+            console.log(`  ${chalk.gray('Target Address:')}   ${chalk.bold.white(address)}`);
+            console.log(`  ${chalk.gray('Trust Score:')}      ${formatTrustScoreBadge(score)}\n`);
+            console.log(chalk.bold('  Fulfillment Breakdown:'));
+            console.log(`    ${chalk.green('✔ Fulfilled:')}    ${chalk.bold(fulfilled)} commitments`);
+            console.log(`    ${chalk.yellow('▲ Late:')}         ${chalk.bold(late)} commitments`);
+            console.log(`    ${chalk.red('✖ Breached:')}     ${chalk.bold(breached)} commitments`);
+            console.log(`    ${chalk.gray('━ Total Volume:')}  ${chalk.bold(total)} historical commitments\n`);
+            return;
           }
+        } catch {
+          // Ignore fallback error and report original error below
         }
 
         const msg = error?.message || String(error);

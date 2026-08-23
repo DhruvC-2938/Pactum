@@ -41,9 +41,10 @@ export function truncateAddress(addr: string | undefined): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-export function formatDueDate(dueAt: number | string | undefined): string {
-  if (!dueAt) return '—';
+export function formatDueDate(dueAt: number | string | undefined | null): string {
+  if (dueAt == null) return '—';
   const num = typeof dueAt === 'string' ? Number(dueAt) : dueAt;
+  if (isNaN(num)) return String(dueAt);
   const ms = num > 1e11 ? num : num * 1000;
   const d = new Date(ms);
   if (isNaN(d.getTime())) return String(dueAt);
@@ -105,21 +106,20 @@ export function createCommitmentsCommand(): Command {
 
       try {
         const apiBase = options.apiUrl.replace(/\/$/, '');
-        // Query commitments where address is issuer or counterparty
+        // Query commitments from backend API
         const params = new URLSearchParams();
-        params.set('limit', String(limit));
+        params.set('limit', String(limit * 2));
         if (options.status) {
           params.set('status', options.status);
         }
 
-        // Fetch commitments from backend API
         const url = `${apiBase}/commitments?${params.toString()}`;
         const res = await fetch(url);
         if (!res.ok) {
           throw new Error(`API returned HTTP ${res.status} (${res.statusText}) for endpoint ${url}`);
         }
         const json = (await res.json()) as any;
-        const items: CommitmentRecord[] = Array.isArray(json) ? json : json.data || [];
+        const items: CommitmentRecord[] = Array.isArray(json) ? json : json.items || json.data || [];
 
         // Filter for the address
         const filtered = items.filter((c) => {
@@ -129,7 +129,7 @@ export function createCommitmentsCommand(): Command {
           return iss === target || cp === target;
         });
 
-        const displayItems = filtered;
+        const displayItems = filtered.slice(0, limit);
 
         if (options.json) {
           console.log(JSON.stringify({ address, count: displayItems.length, commitments: displayItems }, null, 2));

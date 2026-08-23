@@ -11,9 +11,11 @@ describe('Pactum CLI Auth Command', () => {
   let logSpy: any;
   let errSpy: any;
   let originalExitCode: number | undefined;
+  let originalConfigDir: string | undefined;
 
   beforeEach(() => {
     originalExitCode = process.exitCode;
+    originalConfigDir = process.env.PACTUM_CONFIG_DIR;
     process.exitCode = 0;
     testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pactum-cli-auth-test-'));
     process.env.PACTUM_CONFIG_DIR = testConfigDir;
@@ -23,6 +25,11 @@ describe('Pactum CLI Auth Command', () => {
 
   afterEach(() => {
     process.exitCode = originalExitCode;
+    if (originalConfigDir === undefined) {
+      delete process.env.PACTUM_CONFIG_DIR;
+    } else {
+      process.env.PACTUM_CONFIG_DIR = originalConfigDir;
+    }
     logSpy.mockRestore();
     errSpy.mockRestore();
     if (fs.existsSync(testConfigDir)) {
