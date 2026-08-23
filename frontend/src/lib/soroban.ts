@@ -171,6 +171,17 @@ export async function submitCreateCommitment({
   const termsHashScVal = xdr.ScVal.scvBytes(Buffer.from(termsHashBytes));
   const dueAtScVal = xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString()));
 
+  // The contract's create_commitment signature grew a resolver_address plus
+  // attestor-panel fields (oracle, schema_id, attestors, vote_threshold) for
+  // dispute arbitration/attestor voting, but the wizard has no UI yet to let
+  // the user pick a resolver -- default to self-resolve (the issuer is their
+  // own resolver) and an empty attestor panel until that UI exists.
+  const resolverScVal = issuerScVal;
+  const oracleScVal = xdr.ScVal.scvVoid();
+  const schemaIdScVal = xdr.ScVal.scvVoid();
+  const attestorsScVal = xdr.ScVal.scvVec([]);
+  const voteThresholdScVal = xdr.ScVal.scvU32(0);
+
   // 3. Build Transaction Envelope
   onStatusUpdate?.('Fetching sequence number for issuer account...');
   let account: any = null;
@@ -212,6 +223,11 @@ export async function submitCreateCommitment({
         counterpartyScVal,
         termsHashScVal,
         dueAtScVal,
+        resolverScVal,
+        oracleScVal,
+        schemaIdScVal,
+        attestorsScVal,
+        voteThresholdScVal,
       ),
     )
     .setTimeout(60)
