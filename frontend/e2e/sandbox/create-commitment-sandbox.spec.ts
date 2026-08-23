@@ -135,14 +135,15 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const onChain = await getCommitmentOnChain(commitmentId, E2E_ISSUER_ADDRESS);
     expect(onChain.status).toBe('Pending');
 
-    // Now confirm the dashboard (fed by backend/indexer, not the wizard's
-    // own state) picks up the same commitment as Pending. This is the part
-    // that actually catches indexer/backend desync bugs -- the wizard
-    // succeeding doesn't guarantee the dashboard's separate read path agrees.
-    // #nav-dashboard is a <button>, not a link -- role 'link' never matched it.
-    await page.locator('#nav-dashboard').click();
+    // Now confirm the Commitments page (fed by backend/indexer, not the wizard's
+    // own state) picks up the same commitment as Pending. This is the part that
+    // actually catches indexer/backend desync bugs -- the wizard succeeding doesn't
+    // guarantee the separate read path agrees. Deliberately not the Dashboard's
+    // "Recent Commitments" card: that widget is static placeholder markup (hardcoded
+    // "Commitment #4" etc, not commitmentsQuery-backed) and would never show this.
+    await page.locator('#nav-commitments').click();
 
-    const commitmentCard = page.locator('.commitment-item', {
+    const commitmentCard = page.locator('#commitments-list-page .commitment-item', {
       hasText: `Commitment #${commitmentId}`,
     });
     await expect(commitmentCard).toBeVisible({ timeout: 25_000 });
