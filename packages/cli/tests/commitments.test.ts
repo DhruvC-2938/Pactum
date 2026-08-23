@@ -92,6 +92,32 @@ describe('Pactum CLI Commitments Command', () => {
     expect(errOutput).toContain('500');
   });
 
+  it('rejects non-positive and non-integer limits', async () => {
+    const keypair = Keypair.random();
+    const address = keypair.publicKey();
+
+    const cmdZero = createCommitmentsCommand();
+    await cmdZero.parseAsync(['node', 'test', 'list', address, '--limit', '0', '--json']);
+    expect(process.exitCode).toBe(1);
+    expect(errSpy.mock.calls[0][0]).toContain('Limit must be a positive integer');
+
+    errSpy.mockClear();
+    process.exitCode = 0;
+
+    const cmdNegative = createCommitmentsCommand();
+    await cmdNegative.parseAsync(['node', 'test', 'list', address, '--limit', '-5', '--json']);
+    expect(process.exitCode).toBe(1);
+    expect(errSpy.mock.calls[0][0]).toContain('Limit must be a positive integer');
+
+    errSpy.mockClear();
+    process.exitCode = 0;
+
+    const cmdFloat = createCommitmentsCommand();
+    await cmdFloat.parseAsync(['node', 'test', 'list', address, '--limit', '2.5', '--json']);
+    expect(process.exitCode).toBe(1);
+    expect(errSpy.mock.calls[0][0]).toContain('Limit must be a positive integer');
+  });
+
   it('rejects an invalid stellar public key', async () => {
     const cmd = createCommitmentsCommand();
     await cmd.parseAsync(['node', 'test', 'list', 'INVALID_PUBLIC_KEY', '--json']);

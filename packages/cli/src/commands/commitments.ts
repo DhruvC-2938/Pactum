@@ -102,7 +102,19 @@ export function createCommitmentsCommand(): Command {
         return;
       }
 
-      const limit = parseInt(options.limit, 10) || 20;
+      const parsedLimit = Number(options.limit);
+      if (!Number.isInteger(parsedLimit) || parsedLimit <= 0) {
+        const errorMsg = `Invalid limit: "${options.limit}". Limit must be a positive integer.`;
+        if (options.json) {
+          console.error(JSON.stringify({ error: errorMsg }, null, 2));
+          process.exitCode = 1;
+          return;
+        }
+        console.error(chalk.red(`\n✖ Error: ${errorMsg}\n`));
+        process.exitCode = 1;
+        return;
+      }
+      const limit = parsedLimit;
 
       try {
         const apiBase = options.apiUrl.replace(/\/$/, '');
