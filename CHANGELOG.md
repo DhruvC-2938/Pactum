@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 ### Added
+- Optimistic rollup engine for high-frequency micro-commitment batching (#182):
+  client-side deterministic state transitions + Merkle accumulator, Soroban
+  `submit_batch_root` / `force_include` endpoints, and React UI for pending
+  rollup vs on-chain finalized states.
 - Formal verification pipeline for dispute-slashing economics (#192): pure
   `registry::economics` modules (slash cut, vault TVL, slash policy), unit
   tests in default Contract CI, and an optional Kani workflow
