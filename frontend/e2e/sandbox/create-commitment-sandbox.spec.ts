@@ -71,10 +71,13 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
     await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
 
-    // Launch the create wizard. Selectors below match the real
-    // CreateCommitmentWizard.tsx markup (#wizard-counterparty etc, same ids
-    // used by frontend/e2e/contract-errors.spec.ts's fillWizardAndSubmit).
-    await page.getByRole('button', { name: 'Create Commitment' }).click();
+    // Launch the create wizard via the nav button's id: its accessible name is
+    // "Create Commitment navigation" (aria-label), not "Create Commitment", and the
+    // wizard's own submit button shares that text too -- see commitment-flow.spec.ts's
+    // "avoid strict mode violation" convention for the same #nav-create locator.
+    // Wizard selectors below match the real CreateCommitmentWizard.tsx markup
+    // (#wizard-counterparty etc, same ids used by contract-errors.spec.ts's fillWizardAndSubmit).
+    await page.locator('#nav-create').click();
 
     await page.locator('#wizard-counterparty').fill(E2E_COUNTERPARTY_ADDRESS);
     await page.getByRole('button', { name: 'Continue' }).click();

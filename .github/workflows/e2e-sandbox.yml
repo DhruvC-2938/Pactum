@@ -77,7 +77,9 @@ jobs:
 
       - name: Run sandbox E2E tests
         working-directory: frontend
-        run: npx playwright test e2e/sandbox
+        # Only chromium is installed above (--with-deps chromium) -- the firefox project in
+        # playwright.config.ts is for the regular e2e workflow, not this docker-sandbox job.
+        run: npx playwright test e2e/sandbox --project=chromium
         env:
           CI: true
           E2E_SANDBOX: true
