@@ -6,18 +6,15 @@
 //! code for slash arithmetic.
 
 #![forbid(unsafe_code)]
+#![allow(unexpected_cfgs)]
 
 mod policy;
 mod slash;
 mod vault;
 
-pub use policy::{
-    should_slash_attestor, SlashDecision, SLASH_PERCENT_BPS, SLASH_PERCENT_OF_STAKE,
-};
+pub use policy::{should_slash_attestor, SlashDecision, SLASH_PERCENT_BPS, SLASH_PERCENT_OF_STAKE};
 pub use slash::{apply_slash_accounting, slash_cut, SlashCut};
-pub use vault::{
-    vault_covers_recorded_stakes, VaultSnapshot, MAX_MODELLED_ATTESTORS,
-};
+pub use vault::{vault_covers_recorded_stakes, VaultSnapshot, MAX_MODELLED_ATTESTORS};
 
 #[cfg(test)]
 mod tests;

@@ -114,5 +114,5 @@ pub fn verify_merkle_fraud(
     let leaf = commitment_leaf(env, commitment);
     let recomputed = recompute_root(env, leaf, &proof.siblings, &proof.path_bits);
 
-    &recomputed != &registered_root
+    recomputed != registered_root
 }
