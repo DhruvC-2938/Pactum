@@ -175,7 +175,7 @@ export default function App() {
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
   const [reputationAddress, setReputationAddress] = useState(
-    'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
+    'GBY54VG5G4A7DC4D6YJ6GHD4X4QW2AR43JLYZ2QVWSHKACWK3BLDR5IX',
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
@@ -267,7 +267,6 @@ export default function App() {
       <div className="app-shell">
         {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
         <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-          <ThemeSelector />
           <div
             className="sidebar-logo"
             onClick={() => {
@@ -657,6 +656,7 @@ export default function App() {
               className="topbar-actions"
               style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
             >
+              <ThemeSelector />
               <div className="search-bar">
                 <svg
                   viewBox="0 0 16 16"
