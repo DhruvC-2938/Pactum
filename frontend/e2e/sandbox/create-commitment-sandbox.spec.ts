@@ -71,6 +71,12 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
     await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
 
+    // App.tsx defaults to the 'landing' page, which renders LandingPage instead of the
+    // sidebar -- #nav-create doesn't exist in the DOM until it's dismissed.
+    if (await page.locator('#hero-launch-btn').isVisible()) {
+      await page.locator('#hero-launch-btn').click();
+    }
+
     // Launch the create wizard via the nav button's id: its accessible name is
     // "Create Commitment navigation" (aria-label), not "Create Commitment", and the
     // wizard's own submit button shares that text too -- see commitment-flow.spec.ts's
