@@ -74,7 +74,7 @@ export const updateCommitmentOutcome = async (
   commitmentId: string,
   status: string,
   outcome: string,
-  completedAt: Date,
+  completedAt: Date | null,
 ): Promise<void> => {
   await queryTimescale(
     `UPDATE commitment_outcomes

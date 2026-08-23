@@ -125,7 +125,12 @@ export const parseContractEvent = async (event: LedgerEvent): Promise<ContractEv
   switch (symbol) {
     case 'created': {
       const [issuer, counterparty] = topicValues;
-      const commitmentId = toCommitmentId(value);
+      // The event value is (id, schema_id) -- a tuple, which scValToNative decodes as a JS
+      // array. Tolerate a bare id too, for events indexed before schema_id/oracle were added
+      // to commitment_created. See contracts/registry/src/events.rs::commitment_created and
+      // the identical unwrap in ../commitments.ts::parseCommitmentCreatedEvents.
+      const rawId = Array.isArray(value) ? value[0] : value;
+      const commitmentId = toCommitmentId(rawId);
       if (commitmentId === null || typeof issuer !== 'string' || typeof counterparty !== 'string') {
         return null;
       }
