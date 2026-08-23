@@ -104,6 +104,12 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs backend indexer postgres
 
+      - name: Dump commitment_outcomes table on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T postgres \
+            psql -U postgres -d pactum_timeseries -c "SELECT * FROM commitment_outcomes ORDER BY time DESC LIMIT 20;"
+
       - name: Tear down
         if: always()
         run: |
