@@ -1,5 +1,4 @@
-import * as crypto from "node:crypto";
-
+import * as crypto from 'node:crypto';
 
 import { buildPoseidon } from 'circomlibjs';
 import { generateFraudProof } from '../scripts/generate_proof.ts';
@@ -42,7 +41,7 @@ test.describe('FraudProof circuit', () => {
     const issuerHash = addressToField(operation.issuerAddress);
     const counterpartyHash = addressToField(operation.counterpartyAddress);
     const commitmentId = poseidon.F.toObject(
-      poseidon([issuerHash, counterpartyHash, operation.termsHash, operation.dueAt])
+      poseidon([issuerHash, counterpartyHash, operation.termsHash, operation.dueAt]),
     );
     let realRoot = commitmentId;
     for (let i = 0; i < 10; i++) {
@@ -53,7 +52,7 @@ test.describe('FraudProof circuit', () => {
       claimedBatchRoot: tamperPostStateRoot ? realRoot + 1n : realRoot,
       operation,
       issuerSignature: '00'.repeat(64), // Dummy signature for test
-      merkleWitness
+      merkleWitness,
     };
   }
 

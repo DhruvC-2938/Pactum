@@ -7,13 +7,18 @@ test.describe('Reputation Dashboard DOM Virtualization', () => {
       (window as any).freighter = {
         isConnected: () => Promise.resolve(true),
         isAllowed: () => Promise.resolve(true),
-        getUserInfo: () => Promise.resolve({ publicKey: 'GBY54VG5G4A7DC4D6YJ6GHD4X4QW2AR43JLYZ2QVWSHKACWK3BLDR5IX' }),
+        getUserInfo: () =>
+          Promise.resolve({
+            publicKey: 'GBY54VG5G4A7DC4D6YJ6GHD4X4QW2AR43JLYZ2QVWSHKACWK3BLDR5IX',
+          }),
         signTransaction: (tx: string) => Promise.resolve({ status: 'SUCCESS', signedTx: tx }),
       };
     });
   });
 
-  test('Renders virtualized commitments and maintains small DOM footprint for large datasets', async ({ page }) => {
+  test('Renders virtualized commitments and maintains small DOM footprint for large datasets', async ({
+    page,
+  }) => {
     await page.goto('/');
     // Launch app to enter Dashboard
     await page.click('#hero-launch-btn');
@@ -34,7 +39,7 @@ test.describe('Reputation Dashboard DOM Virtualization', () => {
 
     // Count actual rendered commitment card nodes inside the DOM
     const renderedCards = await viewport.locator('.commitment-card-item').count();
-    
+
     // With 500 items, virtualization + overscan should only render between 4 and 25 items in the DOM
     expect(renderedCards).toBeGreaterThan(0);
     expect(renderedCards).toBeLessThan(30);
@@ -70,7 +75,9 @@ test.describe('Reputation Dashboard DOM Virtualization', () => {
     await expect(page.locator('text=Dynamic Size Cache:')).toBeVisible();
   });
 
-  test('Maintains scroll anchoring when async updates happen above the viewport', async ({ page }) => {
+  test('Maintains scroll anchoring when async updates happen above the viewport', async ({
+    page,
+  }) => {
     await page.goto('/');
     await page.click('#hero-launch-btn');
     await page.click('#nav-reputation');

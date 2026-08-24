@@ -70,26 +70,23 @@ function commitmentLeaf(
   return Buffer.from(hashHex, 'hex');
 }
 
-function computeMerkleRoot(
-  leaf: Buffer,
-  siblings: Buffer[],
-  pathBits: (0 | 1)[],
-): Buffer {
+function computeMerkleRoot(leaf: Buffer, siblings: Buffer[], pathBits: (0 | 1)[]): Buffer {
   assert.strictEqual(siblings.length, BATCH_DEPTH);
   assert.strictEqual(pathBits.length, BATCH_DEPTH);
 
   let current = leaf;
   for (let i = 0; i < BATCH_DEPTH; i++) {
     const sibling = siblings[i];
-    current = pathBits[i] === 0
-      ? hash2(current, sibling)  // current is left child
-      : hash2(sibling, current); // current is right child
+    current =
+      pathBits[i] === 0
+        ? hash2(current, sibling) // current is left child
+        : hash2(sibling, current); // current is right child
   }
   return current;
 }
 
 function computeRustPoseidon(numInputs: number, inputs: Buffer[]): Buffer {
-  const hexArgs = inputs.map(b => b.toString('hex')).join(' ');
+  const hexArgs = inputs.map((b) => b.toString('hex')).join(' ');
   const res = execSync(`cargo run --bin hash_helper -- ${numInputs} ${hexArgs}`, {
     cwd: '../contracts/fraud_verifier',
     encoding: 'utf8',
@@ -110,7 +107,6 @@ const ALL_LEFT: (0 | 1)[] = Array.from({ length: BATCH_DEPTH }, () => 0);
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 test.describe('BATCH_DEPTH cross-check: TypeScript ↔ Soroban contract conventions', () => {
-
   test.it('Rust and TypeScript produce identical hashes for the same four inputs', () => {
     // We explicitly confirm in the cross-check test that Rust and TypeScript produce identical hashes
     const issuerBytes = addressToBytes32(TEST_ISSUER);
@@ -119,15 +115,23 @@ test.describe('BATCH_DEPTH cross-check: TypeScript ↔ Soroban contract conventi
     dueAtBuf.writeBigUInt64BE(TEST_DUE_AT);
 
     const tsLeaf = commitmentLeaf(TEST_ISSUER, TEST_COUNTERPARTY, TEST_TERMS_HASH, TEST_DUE_AT);
-    
+
     // Call the Rust hash helper
     const rustLeaf = computeRustPoseidon(4, [issuerBytes, cpBytes, TEST_TERMS_HASH, dueAtBuf]);
-    assert.deepStrictEqual(rustLeaf, tsLeaf, 'Rust Poseidon must match circomlibjs Poseidon for 4 inputs');
+    assert.deepStrictEqual(
+      rustLeaf,
+      tsLeaf,
+      'Rust Poseidon must match circomlibjs Poseidon for 4 inputs',
+    );
 
     // Also check hash2
     const tsNode = hash2(tsLeaf, ZERO_SIBLINGS[0]);
     const rustNode = computeRustPoseidon(2, [tsLeaf, ZERO_SIBLINGS[0]]);
-    assert.deepStrictEqual(rustNode, tsNode, 'Rust Poseidon must match circomlibjs Poseidon for 2 inputs');
+    assert.deepStrictEqual(
+      rustNode,
+      tsNode,
+      'Rust Poseidon must match circomlibjs Poseidon for 2 inputs',
+    );
   });
 
   test.it('leaf hash is deterministic for identical inputs', () => {
@@ -150,20 +154,20 @@ test.describe('BATCH_DEPTH cross-check: TypeScript ↔ Soroban contract conventi
     const rootLeft = computeMerkleRoot(leaf, ZERO_SIBLINGS, ALL_LEFT);
     const allRight: (0 | 1)[] = Array.from({ length: BATCH_DEPTH }, () => 1);
     const rootRight = computeMerkleRoot(leaf, ZERO_SIBLINGS, allRight);
-    assert.notDeepStrictEqual(rootLeft, rootRight,
-      'Left-path root must differ from right-path root — catches path_bits endianness bugs');
+    assert.notDeepStrictEqual(
+      rootLeft,
+      rootRight,
+      'Left-path root must differ from right-path root — catches path_bits endianness bugs',
+    );
   });
 
   test.it('changing a sibling changes the root — proves depth sensitivity', () => {
     const leaf = commitmentLeaf(TEST_ISSUER, TEST_COUNTERPARTY, TEST_TERMS_HASH, TEST_DUE_AT);
     const rootA = computeMerkleRoot(leaf, ZERO_SIBLINGS, ALL_LEFT);
 
-    const differentSiblings = ZERO_SIBLINGS.map((s, i) =>
-      i === 5 ? Buffer.alloc(32, 0xff) : s
-    );
+    const differentSiblings = ZERO_SIBLINGS.map((s, i) => (i === 5 ? Buffer.alloc(32, 0xff) : s));
     const rootB = computeMerkleRoot(leaf, differentSiblings, ALL_LEFT);
-    assert.notDeepStrictEqual(rootA, rootB,
-      'Changing sibling at depth 5 must change the root');
+    assert.notDeepStrictEqual(rootA, rootB, 'Changing sibling at depth 5 must change the root');
   });
 
   test.it('hash2 is NOT commutative — left/right ordering is enforced', () => {
@@ -171,7 +175,10 @@ test.describe('BATCH_DEPTH cross-check: TypeScript ↔ Soroban contract conventi
     const b = Buffer.alloc(32, 0xbb);
     const h1 = hash2(a, b);
     const h2 = hash2(b, a);
-    assert.notDeepStrictEqual(h1, h2,
-      'hash2(a,b) must differ from hash2(b,a) — catches left/right swap bugs');
+    assert.notDeepStrictEqual(
+      h1,
+      h2,
+      'hash2(a,b) must differ from hash2(b,a) — catches left/right swap bugs',
+    );
   });
 });

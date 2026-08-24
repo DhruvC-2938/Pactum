@@ -43,15 +43,15 @@ Property (1) is needed — but it is already provided by Soroban's deterministic
 
 ## 4. Quantitative Cost Comparison
 
-| Metric | PLONK SNARK Verifier | Native Soroban Poseidon |
-|---|---|---|
-| **Soroban CPU instructions** | ~40–70 million | ~1.5 million |
-| **Gas cost (stroops)** | ~3,500–6,000 | ~130–200 |
-| **Client prover time** | ~3–8 seconds (WASM) | < 1 ms |
-| **Trusted setup required** | Powers of Tau ceremony | None |
-| **Dependency footprint** | `ark-bn254`, `ark-ff`, `ark-ec`, `ark-serialize`, `ark-std` | `soroban-sdk` only |
-| **On-chain code size** | ~200 lines pairing arithmetic | ~50 lines Poseidon + Merkle |
-| **Resistance to setup compromise** | Depends on ceremony entropy | N/A — no setup |
+| Metric                             | PLONK SNARK Verifier                                        | Native Soroban Poseidon     |
+| ---------------------------------- | ----------------------------------------------------------- | --------------------------- |
+| **Soroban CPU instructions**       | ~40–70 million                                              | ~1.5 million                |
+| **Gas cost (stroops)**             | ~3,500–6,000                                                | ~130–200                    |
+| **Client prover time**             | ~3–8 seconds (WASM)                                         | < 1 ms                      |
+| **Trusted setup required**         | Powers of Tau ceremony                                      | None                        |
+| **Dependency footprint**           | `ark-bn254`, `ark-ff`, `ark-ec`, `ark-serialize`, `ark-std` | `soroban-sdk` only          |
+| **On-chain code size**             | ~200 lines pairing arithmetic                               | ~50 lines Poseidon + Merkle |
+| **Resistance to setup compromise** | Depends on ceremony entropy                                 | N/A — no setup              |
 
 Native verification is **~20–40× cheaper** in instruction count and eliminates the trusted setup dependency entirely.
 
@@ -62,6 +62,7 @@ Native verification is **~20–40× cheaper** in instruction count and eliminate
 **Adopted: Option A — Native Soroban Verification**
 
 The `contracts/fraud_verifier` contract:
+
 - Accepts: `commitment fields + siblings[10] + path_bits[10]`
 - Computes: `commitment_id = Poseidon4(issuer, counterparty, terms_hash, due_at)` then hashes up 10 levels
 - Compares: `computed_root` against the `registered_root` stored when the sequencer submitted the batch
@@ -86,6 +87,7 @@ In that future phase, PLONK is preferred over Groth16 because it requires no per
 ## 7. Attack Vector Closed by This Decision
 
 The original stub `verifier.rs` compared two public signals the **challenger** provides:
+
 ```rust
 inputs.correct_batch_root != inputs.claimed_batch_root
 ```

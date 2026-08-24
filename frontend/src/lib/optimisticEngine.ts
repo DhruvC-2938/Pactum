@@ -1,4 +1,4 @@
-import type { QueryClient, QueryKey } from '@tanstack/react-query'
+import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
 /**
  * A contract event arriving from the Soroban indexer that affects one cached slice.
@@ -6,27 +6,27 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query'
  * `actorId` is the wallet/address that caused the change on-chain.
  */
 export interface ChainEvent<T = unknown> {
-  queryKey: QueryKey
-  version: number
-  actorId: string
-  data: T
+  queryKey: QueryKey;
+  version: number;
+  actorId: string;
+  data: T;
 }
 
 export interface ConflictInfo {
-  queryKey: QueryKey
-  message: string
-  detectedAt: number
+  queryKey: QueryKey;
+  message: string;
+  detectedAt: number;
 }
 
 interface InflightMutation {
-  mutationId: string
-  queryKey: QueryKey
-  baseVersion: number
-  actorId: string
-  previousData: unknown
+  mutationId: string;
+  queryKey: QueryKey;
+  baseVersion: number;
+  actorId: string;
+  previousData: unknown;
 }
 
-const keyHash = (key: QueryKey) => JSON.stringify(key)
+const keyHash = (key: QueryKey) => JSON.stringify(key);
 
 /**
  * Tracks in-flight optimistic mutations against the entity version they assumed,
@@ -34,13 +34,13 @@ const keyHash = (key: QueryKey) => JSON.stringify(key)
  * so a conflict on one query never invalidates the rest of the dashboard.
  */
 export class OptimisticConflictEngine {
-  private inflight = new Map<string, InflightMutation>()
-  private conflicts = new Map<string, ConflictInfo>()
-  private listeners = new Set<() => void>()
-  private queryClient: QueryClient
+  private inflight = new Map<string, InflightMutation>();
+  private conflicts = new Map<string, ConflictInfo>();
+  private listeners = new Set<() => void>();
+  private queryClient: QueryClient;
 
   constructor(queryClient: QueryClient) {
-    this.queryClient = queryClient
+    this.queryClient = queryClient;
   }
 
   /** Call from onMutate: applies the optimistic value and remembers how to undo it. */
@@ -51,19 +51,19 @@ export class OptimisticConflictEngine {
     actorId: string,
     optimisticData: unknown,
   ) {
-    const previousData = this.queryClient.getQueryData(queryKey)
-    this.inflight.set(mutationId, { mutationId, queryKey, baseVersion, actorId, previousData })
-    this.queryClient.setQueryData(queryKey, optimisticData)
-    return previousData
+    const previousData = this.queryClient.getQueryData(queryKey);
+    this.inflight.set(mutationId, { mutationId, queryKey, baseVersion, actorId, previousData });
+    this.queryClient.setQueryData(queryKey, optimisticData);
+    return previousData;
   }
 
   /** Call from onError/onSuccess: stops tracking the mutation, rolling back on error. */
   settleMutation(mutationId: string, outcome: 'success' | 'error') {
-    const record = this.inflight.get(mutationId)
-    if (!record) return
-    this.inflight.delete(mutationId)
+    const record = this.inflight.get(mutationId);
+    if (!record) return;
+    this.inflight.delete(mutationId);
     if (outcome === 'error') {
-      this.queryClient.setQueryData(record.queryKey, record.previousData)
+      this.queryClient.setQueryData(record.queryKey, record.previousData);
     }
   }
 
@@ -75,52 +75,53 @@ export class OptimisticConflictEngine {
    * as a conflict — every other cached query is untouched.
    */
   handleChainEvent(event: ChainEvent) {
-    const hash = keyHash(event.queryKey)
-    const matching = [...this.inflight.values()].filter((m) => keyHash(m.queryKey) === hash)
+    const hash = keyHash(event.queryKey);
+    const matching = [...this.inflight.values()].filter((m) => keyHash(m.queryKey) === hash);
 
     if (matching.length === 0) {
-      this.queryClient.setQueryData(event.queryKey, event.data)
-      return
+      this.queryClient.setQueryData(event.queryKey, event.data);
+      return;
     }
 
     for (const record of matching) {
       const isOwnConfirmation =
-        record.actorId === event.actorId && event.version === record.baseVersion + 1
+        record.actorId === event.actorId && event.version === record.baseVersion + 1;
 
       if (isOwnConfirmation) {
-        this.inflight.delete(record.mutationId)
-        this.queryClient.setQueryData(event.queryKey, event.data)
-        continue
+        this.inflight.delete(record.mutationId);
+        this.queryClient.setQueryData(event.queryKey, event.data);
+        continue;
       }
 
       if (event.version > record.baseVersion) {
-        this.inflight.delete(record.mutationId)
-        this.queryClient.setQueryData(event.queryKey, event.data)
+        this.inflight.delete(record.mutationId);
+        this.queryClient.setQueryData(event.queryKey, event.data);
         this.conflicts.set(hash, {
           queryKey: event.queryKey,
-          message: 'Another update landed on-chain while your change was pending. This view was refreshed.',
+          message:
+            'Another update landed on-chain while your change was pending. This view was refreshed.',
           detectedAt: Date.now(),
-        })
-        this.notify()
+        });
+        this.notify();
       }
     }
   }
 
   getConflict(queryKey: QueryKey): ConflictInfo | undefined {
-    return this.conflicts.get(keyHash(queryKey))
+    return this.conflicts.get(keyHash(queryKey));
   }
 
   clearConflict(queryKey: QueryKey) {
-    if (this.conflicts.delete(keyHash(queryKey))) this.notify()
+    if (this.conflicts.delete(keyHash(queryKey))) this.notify();
   }
 
   subscribe(listener: () => void) {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   private notify() {
-    for (const listener of this.listeners) listener()
+    for (const listener of this.listeners) listener();
   }
 }
 
@@ -133,7 +134,7 @@ export {
   MerkleAccumulator,
   doubleSha256LeafHex,
   verifyMerkleProof,
-} from './optimisticRollup.ts'
+} from './optimisticRollup.ts';
 
 export type {
   RollupCommitmentStatus,
@@ -146,4 +147,4 @@ export type {
   AccumulatorLeaf,
   Hex32,
   MerkleProofNode,
-} from './optimisticRollup.ts'
+} from './optimisticRollup.ts';

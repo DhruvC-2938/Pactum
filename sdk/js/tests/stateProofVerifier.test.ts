@@ -58,7 +58,8 @@ describe('Zero-Trust StateProofVerifier (TypeScript SDK)', () => {
       ledgerVersion: 21,
     },
   };
-  const independentTrustedHeader = '0x95e603468fa1f5628529977b4dd12b56da453da8756426730eadfd88e3ac73d6';
+  const independentTrustedHeader =
+    '0x95e603468fa1f5628529977b4dd12b56da453da8756426730eadfd88e3ac73d6';
 
   const sampleProof: PactumStateProof = {
     version: '1.0.0',
@@ -88,7 +89,8 @@ describe('Zero-Trust StateProofVerifier (TypeScript SDK)', () => {
 
     const contractId = overrides.contractId || sampleProof.contractId;
     const stellarAddress = overrides.stellarAddress || sampleProof.stellarAddress;
-    const ledgerSeq = overrides.ledgerSeq !== undefined ? overrides.ledgerSeq : sampleProof.ledgerSeq;
+    const ledgerSeq =
+      overrides.ledgerSeq !== undefined ? overrides.ledgerSeq : sampleProof.ledgerSeq;
 
     const leaf = computeLeafHash(contractId, stellarAddress, scoreData);
     const leafHex = bytesToHex(leaf);
