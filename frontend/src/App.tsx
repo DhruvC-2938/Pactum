@@ -9,6 +9,7 @@ import ReputationDashboard from './components/ReputationDashboard';
 import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import DecryptTermsModal from './components/DecryptTermsModal';
+import RollupStatusPanel from './components/RollupStatusPanel';
 import { useCommitments } from './hooks/useCommitments';
 import { useSyncCache } from './hooks/useSyncCache';
 import { fetchEncryptedTerms } from './lib/api';
@@ -23,6 +24,7 @@ import {
   submitInitRegistry,
 } from './lib/sorobanTxHelpers';
 import { ThemeSelector } from './context/ThemeContext';
+import { IndexerModeToggle, useIndexerMode } from './context/IndexerModeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
 import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
 
@@ -155,6 +157,29 @@ function renderCommitmentItem(
       connectedAddress={connectedAddress}
       provider={provider}
     />
+  );
+}
+
+function LocalIndexerNotice() {
+  const { mode, syncState, lastError, retentionGapDetected } = useIndexerMode();
+  if (mode !== 'local') return null;
+
+  if (syncState === 'error') {
+    return (
+      <div className="inline-alert warning">
+        Local Indexer error: {lastError ?? 'unknown error'}. Switch back to Cloud Indexer if this
+        persists.
+      </div>
+    );
+  }
+
+  return (
+    <div className="inline-alert info">
+      Local Indexer is active — commitments are read directly from Soroban RPC via this browser's
+      IndexedDB, bypassing the backend.
+      {retentionGapDetected &&
+        " Some older history may be missing (outside the RPC provider's event retention window) — switch to Cloud Indexer for full history."}
+    </div>
   );
 }
 
@@ -597,6 +622,7 @@ export default function App() {
               </span>
               Home
             </button>
+            <IndexerModeToggle />
             <div className="sidebar-network">
               <span className="network-dot"></span>
               <span className="network-name">Stellar Testnet</span>
@@ -997,6 +1023,7 @@ export default function App() {
               </div>
             </div>
             <div className="commitment-list" id="commitments-list-page">
+              <LocalIndexerNotice />
               {commitmentsQuery.isLoading && (
                 <div className="inline-alert info">Loading commitments...</div>
               )}
@@ -1514,6 +1541,7 @@ export default function App() {
               onNavigateAddress={(addr) => handleNavigateReputation(addr)}
               onLaunchCreate={() => setActivePage('create')}
             />
+            <RollupStatusPanel demoMode />
           </section>
 
           {/* ──────────────────────────────────────────────
