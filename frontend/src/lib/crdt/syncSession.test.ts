@@ -6,7 +6,7 @@ import { attestSessionKey, createSessionIdentity, type Attestation, type Session
 import { SignedPeerSession, type PeerLink, type RejectionInfo } from './syncSession'
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-const HANDSHAKE_MS = 50
+const HANDSHAKE_MS = 150
 
 function localSigner(keypair: Keypair): WalletSigner {
   return async (payload, address) => ({ signatureBytes: keypair.signMessage(payload), signerAddress: address })

@@ -2,6 +2,8 @@ import { Contract, rpc, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
 import { signTransaction } from '@stellar/freighter-api';
 import type { WalletProvider } from './wallet';
 import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
+import { SorobanSimulationError, extractDiagnosticEventBlobs } from './soroban';
+import { decodeSimulationError } from './xdrDecode';
 
 const BASE_FEE = '100000';
 const DEFAULT_SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org:443';
@@ -34,7 +36,7 @@ export async function submitGenericSorobanTx({
   let account: any = null;
   try {
     account = await server.getAccount(signerAddress);
-  } catch (err: any) {
+  } catch {
     throw new Error(
       `Connected account (${signerAddress.substring(0, 8)}...) is not funded on Stellar Testnet.`,
     );
@@ -47,13 +49,30 @@ export async function submitGenericSorobanTx({
     .build();
 
   onStatusUpdate?.('Simulating transaction on Soroban RPC...');
-  const preparedTx = await server.prepareTransaction(tx);
+  let preparedTx: Awaited<ReturnType<typeof server.prepareTransaction>>;
+  try {
+    preparedTx = await server.prepareTransaction(tx);
+  } catch (prepareErr: unknown) {
+    const errMsg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
+    const diagBlobs = extractDiagnosticEventBlobs({ error: errMsg });
+    const decoded = decodeSimulationError(errMsg, diagBlobs, methodName);
+    throw new SorobanSimulationError(
+      decoded.message ?? `Transaction simulation failed: ${errMsg}`,
+      errMsg,
+      diagBlobs,
+      methodName,
+    );
+  }
   const unsignedXdr = preparedTx.toXDR();
 
   let signedXdr = '';
   if (walletProvider === 'ledger') {
     onStatusUpdate?.('Awaiting signature on Ledger device...');
     signedXdr = await signTransactionWithLedger(unsignedXdr, networkPassphrase);
+  } else if (walletProvider === 'web3auth') {
+    onStatusUpdate?.('Signing with your social-login Stellar key...');
+    const { signTransactionWithWeb3Auth } = await import('./web3auth');
+    signedXdr = signTransactionWithWeb3Auth(unsignedXdr, networkPassphrase);
   } else {
     onStatusUpdate?.('Awaiting signature in Freighter wallet...');
     const signResult = await signTransaction(unsignedXdr, {
@@ -90,7 +109,25 @@ export async function submitGenericSorobanTx({
     txStatus = txResult.status;
     if (txStatus === rpc.Api.GetTransactionStatus.SUCCESS) break;
     else if (txStatus === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error(`Transaction execution failed on Stellar Testnet. Hash: ${txHash}`);
+      const failedTx = txResult as rpc.Api.GetFailedTransactionResponse | null;
+      let diagBlobs: string[] = [];
+      if (failedTx?.diagnosticEventsXdr) {
+        diagBlobs = failedTx.diagnosticEventsXdr
+          .map((e: any) => {
+            try {
+              return (e as any).toXDR?.('base64') ?? String(e);
+            } catch {
+              return null;
+            }
+          })
+          .filter((b: string | null): b is string => b !== null);
+      }
+      throw new SorobanSimulationError(
+        `Transaction execution failed on Stellar Testnet. Hash: ${txHash}`,
+        `Transaction execution failed on Stellar Testnet. Hash: ${txHash}`,
+        diagBlobs,
+        methodName,
+      );
     }
   }
 

@@ -47,4 +47,26 @@ describe('session key attestation', () => {
     const attestation = await attestSessionKey(identity, 60_000, localSigner(keypair))
     expect(verifyAttestation(attestation)).toBe(false)
   })
+
+  it('rejects an attestation with an empty signature', async () => {
+    const keypair = Keypair.random()
+    const identity = await createSessionIdentity(keypair.publicKey())
+    const attestation = await attestSessionKey(identity, 60_000, localSigner(keypair))
+    expect(verifyAttestation({ ...attestation, walletSignature: new Uint8Array(0) })).toBe(false)
+  })
+
+  it('rejects an attestation with a truncated signature', async () => {
+    const keypair = Keypair.random()
+    const identity = await createSessionIdentity(keypair.publicKey())
+    const attestation = await attestSessionKey(identity, 60_000, localSigner(keypair))
+    expect(verifyAttestation({ ...attestation, walletSignature: attestation.walletSignature.slice(0, 16) })).toBe(false)
+  })
+
+  it('rejects an attestation with arbitrary garbage signature bytes', async () => {
+    const keypair = Keypair.random()
+    const identity = await createSessionIdentity(keypair.publicKey())
+    const attestation = await attestSessionKey(identity, 60_000, localSigner(keypair))
+    const garbage = new Uint8Array(64).fill(0xaa)
+    expect(verifyAttestation({ ...attestation, walletSignature: garbage })).toBe(false)
+  })
 })

@@ -1,4 +1,4 @@
-export type CommitmentStatus = 'Pending' | 'Fulfilled' | 'Late' | 'Breached';
+export type CommitmentStatus = 'Pending' | 'Fulfilled' | 'Late' | 'Breached' | 'Disputed';
 
 export interface Reputation {
   address: string;
@@ -16,6 +16,8 @@ export interface Commitment {
   due_at: number;
   status: CommitmentStatus;
   outcome: CommitmentStatus | null;
+  created_at?: number;
+  attested_at?: number | null;
   /** True when the terms are stored as AES-GCM ciphertext on the backend. */
   encrypted?: boolean;
 }
@@ -23,6 +25,13 @@ export interface Commitment {
 export interface CommitmentFilters {
   status?: CommitmentStatus;
   address?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface CommitmentsResponse {
+  items: Commitment[];
+  total?: number;
   page?: number;
   limit?: number;
 }
@@ -60,7 +69,10 @@ interface StateProofResponse {
   proof: PactumStateProof;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+// Matches the backend's actual default port (docker-compose.yml PORT: 3000,
+// host-mapped ${BACKEND_PORT:-3000}:3000) -- 4000 was stale and pointed at
+// nothing, which silently dropped every commitments-list fetch.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, options);
@@ -92,7 +104,7 @@ export async function fetchReputationProof(
   return response.proof;
 }
 
-export function fetchCommitments(
+export async function fetchCommitments(
   filters: CommitmentFilters = {},
   signal?: AbortSignal,
 ): Promise<Commitment[]> {
@@ -104,7 +116,14 @@ export function fetchCommitments(
   if (filters.limit) params.set('limit', filters.limit.toString());
 
   const query = params.toString();
-  return request<Commitment[]>(`/commitments${query ? `?${query}` : ''}`, { signal });
+  const res = await request<Commitment[] | CommitmentsResponse>(
+    `/commitments${query ? `?${query}` : ''}`,
+    { signal },
+  );
+  if (Array.isArray(res)) {
+    return res;
+  }
+  return res?.items ?? [];
 }
 
 // ── Encrypted Terms API ──────────────────────────────────────────────────────

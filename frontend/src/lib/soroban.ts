@@ -12,13 +12,83 @@ import {
   scValToNative,
 } from '@stellar/stellar-sdk';
 import type { Reputation } from './api';
+import { Buffer } from 'buffer';
 import { signTransaction } from '@stellar/freighter-api';
 import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
 import type { WalletProvider } from './wallet';
+import { decodeSimulationError, isSorobanXdrError } from './xdrDecode';
+import type { DecodedXdrError } from './xdrDecode';
 
 export const DEFAULT_SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 export const DEFAULT_CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
 export const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
+
+/**
+ * Enhanced error class that carries decoded Soroban XDR information.
+ *
+ * When a simulation fails, this error wraps the raw RPC response alongside
+ * decoded diagnostic events, the attempted operation, and resolution guidance.
+ * UI components can extract these fields to render a rich error modal.
+ */
+export class SorobanSimulationError extends Error {
+  public readonly diagnosticEventBlobs: string[];
+  public readonly attemptedFunction: string | null;
+  public readonly decodedXdrError: DecodedXdrError;
+
+  constructor(
+    message: string,
+    rawError: string,
+    diagnosticEventBlobs: string[] = [],
+    attemptedFunction: string | null = null,
+  ) {
+    super(message);
+    this.name = 'SorobanSimulationError';
+    this.diagnosticEventBlobs = diagnosticEventBlobs;
+    this.attemptedFunction = attemptedFunction;
+    this.decodedXdrError = decodeSimulationError(rawError, diagnosticEventBlobs, attemptedFunction);
+  }
+}
+
+/**
+ * Extract base64-encoded diagnostic event XDR blobs from a raw simulation
+ * error response. These are often embedded in the error string or returned
+ * as a separate `events` array.
+ */
+export function extractDiagnosticEventBlobs(
+  simulationResult: rpc.Api.SimulateTransactionErrorResponse | any,
+): string[] {
+  const blobs: string[] = [];
+
+  if (!simulationResult || typeof simulationResult !== 'object') {
+    return blobs;
+  }
+
+  // Path 1: `events` array on the simulation response (parsed DiagnosticEvent[])
+  if (Array.isArray(simulationResult.events)) {
+    for (const event of simulationResult.events) {
+      try {
+        const base64 = (event as any).toXDR?.('base64');
+        if (base64) blobs.push(base64);
+      } catch {
+        // skip
+      }
+    }
+  }
+
+  // Path 2: Base64 strings embedded in the error message
+  if (typeof simulationResult.error === 'string') {
+    const matches = simulationResult.error.match(/[A-Za-z0-9+/]{40,}={0,2}/g);
+    if (matches) {
+      for (const m of matches) {
+        if (isSorobanXdrError(m)) {
+          blobs.push(m);
+        }
+      }
+    }
+  }
+
+  return blobs;
+}
 
 export interface CreateCommitmentParams {
   issuerAddress: string;
@@ -56,12 +126,53 @@ export async function fetchLatestLedgerAnchor(
   return { hash: ledger.id, sequence: ledger.sequence };
 }
 
+/**
+ * Reads the registry's current arbitrator address. `create_commitment` requires a
+ * `resolver_address`, and this is the standard, no-custom-resolver value to pass for it: naming a
+ * current arbitrator routes disputes through the registry's committee majority vote instead of
+ * single-delegate resolution. Never default `resolver_address` to the issuer or counterparty --
+ * `resolve_dispute`'s only guard is `caller == resolver_address`, so that would let a party
+ * unilaterally resolve their own dispute.
+ */
+export async function fetchArbitrator(
+  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
+  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+): Promise<string> {
+  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const contract = new Contract(contractId);
+  const source = new Account(Keypair.random().publicKey(), '0');
+  const transaction = new TransactionBuilder(source, {
+    fee: BASE_FEE,
+    networkPassphrase,
+  })
+    .addOperation(contract.call('get_arbitrator'))
+    .setTimeout(30)
+    .build();
+
+  const simulation = await server.simulateTransaction(transaction);
+  if (rpc.Api.isSimulationError(simulation)) {
+    const diagBlobs = extractDiagnosticEventBlobs(simulation);
+    const decoded = decodeSimulationError(simulation.error, diagBlobs, 'get_arbitrator');
+    throw new SorobanSimulationError(
+      decoded.message ?? `Failed to read registry arbitrator: ${simulation.error}`,
+      simulation.error,
+      diagBlobs,
+      'get_arbitrator',
+    );
+  }
+  if (!simulation.result) {
+    throw new Error('Direct Soroban query returned no arbitrator value');
+  }
+
+  return String(scValToNative(simulation.result.retval));
+}
+
 export async function fetchReputationFromRpc(
   address: string,
   rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
-  networkPassphrase =
-    import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
 ): Promise<Reputation> {
   const server = new rpc.Server(rpcUrl, { allowHttp: true });
   const contract = new Contract(contractId);
@@ -76,7 +187,14 @@ export async function fetchReputationFromRpc(
 
   const simulation = await server.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error(`Direct Soroban query failed: ${simulation.error}`);
+    const diagnosticBlobs = extractDiagnosticEventBlobs(simulation);
+    const decoded = decodeSimulationError(simulation.error, diagnosticBlobs, 'get_reputation');
+    throw new SorobanSimulationError(
+      decoded.message ?? `Direct Soroban query failed: ${simulation.error}`,
+      simulation.error,
+      diagnosticBlobs,
+      'get_reputation',
+    );
   }
   if (!simulation.result) {
     throw new Error('Direct Soroban query returned no reputation value');
@@ -168,8 +286,25 @@ export async function submitCreateCommitment({
   const issuerScVal = Address.fromString(issuerAddress).toScVal();
   const counterpartyScVal = Address.fromString(counterpartyAddress).toScVal();
   const termsHashBytes = hexToBytes(termsHashHex);
-  const termsHashScVal = xdr.ScVal.scvBytes(termsHashBytes);
+  const termsHashScVal = xdr.ScVal.scvBytes(Buffer.from(termsHashBytes));
   const dueAtScVal = xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString()));
+
+  // create_commitment requires a resolver_address; the wizard's UI has no concept of a custom
+  // dispute resolver yet, so read the registry's own arbitrator and use that (see
+  // fetchArbitrator's doc comment for why this -- NOT issuerScVal/counterpartyScVal -- is the
+  // safe default: resolve_dispute's only guard is `caller == resolver_address`, so defaulting to
+  // the issuer would let them unilaterally resolve their own dispute).
+  onStatusUpdate?.('Fetching registry arbitrator...');
+  const arbitratorAddress = await fetchArbitrator(rpcUrl, contractId, networkPassphrase);
+  const resolverScVal = Address.fromString(arbitratorAddress).toScVal();
+  // oracle and schema_id are both genuinely optional (Option<Address>/Option<u32>) with no
+  // downstream code assuming they're populated; the wizard doesn't collect either yet.
+  const oracleScVal = xdr.ScVal.scvVoid();
+  const schemaIdScVal = xdr.ScVal.scvVoid();
+  // Empty attestors + a 0 threshold is the contract's explicitly-designed "no voting panel, use
+  // the single-resolver dispute path" state (contracts/registry/src/commitments.rs::create).
+  const attestorsScVal = xdr.ScVal.scvVec([]);
+  const voteThresholdScVal = xdr.ScVal.scvU32(0);
 
   // 3. Build Transaction Envelope
   onStatusUpdate?.('Fetching sequence number for issuer account...');
@@ -212,6 +347,11 @@ export async function submitCreateCommitment({
         counterpartyScVal,
         termsHashScVal,
         dueAtScVal,
+        resolverScVal,
+        oracleScVal,
+        schemaIdScVal,
+        attestorsScVal,
+        voteThresholdScVal,
       ),
     )
     .setTimeout(60)
@@ -219,7 +359,20 @@ export async function submitCreateCommitment({
 
   // 4. Simulate & Prepare Transaction Envelope (Soroban footprint & fees)
   onStatusUpdate?.('Simulating transaction on Soroban RPC...');
-  const preparedTx = await server.prepareTransaction(tx);
+  let preparedTx: Awaited<ReturnType<typeof server.prepareTransaction>>;
+  try {
+    preparedTx = await server.prepareTransaction(tx);
+  } catch (prepareErr: unknown) {
+    const errMsg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
+    const diagBlobs = extractDiagnosticEventBlobs({ error: errMsg });
+    const decoded = decodeSimulationError(errMsg, diagBlobs, 'create_commitment');
+    throw new SorobanSimulationError(
+      decoded.message ?? `Transaction simulation failed: ${errMsg}`,
+      errMsg,
+      diagBlobs,
+      'create_commitment',
+    );
+  }
 
   const unsignedXdr = preparedTx.toXDR();
 
@@ -229,6 +382,10 @@ export async function submitCreateCommitment({
   if (walletProvider === 'ledger') {
     onStatusUpdate?.('Awaiting signature on Ledger device (confirm on-screen)...');
     signedXdr = await signTransactionWithLedger(unsignedXdr, networkPassphrase);
+  } else if (walletProvider === 'web3auth') {
+    onStatusUpdate?.('Signing with your social-login Stellar key...');
+    const { signTransactionWithWeb3Auth } = await import('./web3auth');
+    signedXdr = signTransactionWithWeb3Auth(unsignedXdr, networkPassphrase);
   } else {
     onStatusUpdate?.('Awaiting signature in Freighter wallet...');
     const signResult = await signTransaction(unsignedXdr, {
@@ -242,7 +399,11 @@ export async function submitCreateCommitment({
       if ((signResult as any).error) {
         throw new Error(`Freighter signing rejected: ${(signResult as any).error}`);
       }
-      signedXdr = (signResult as any).signedTxXdr || (signResult as any).signedXdr || '';
+      signedXdr =
+        (signResult as any).signedTxXdr ||
+        (signResult as any).signedXdr ||
+        (signResult as any).signedTransaction ||
+        '';
     }
   }
 
@@ -267,7 +428,11 @@ export async function submitCreateCommitment({
   let txResult: rpc.Api.GetTransactionResponse | null = null;
   let attempts = 0;
 
-  while (attempts < 25) {
+  // 25 attempts (30s) was too tight against a freshly-booted local sandbox
+  // under CI load, where ledger close + RPC round-trip time can eat most of
+  // that budget before the tx is even included -- bumped to give real
+  // confirmation latency enough headroom.
+  while (attempts < 45) {
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, 1200));
     txResult = await server.getTransaction(txHash);
@@ -276,7 +441,30 @@ export async function submitCreateCommitment({
     if (txStatus === rpc.Api.GetTransactionStatus.SUCCESS) {
       break;
     } else if (txStatus === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error(`Transaction execution failed on Stellar Testnet. Hash: ${txHash}`);
+      // Enrich the FAILED result with XDR decoding if available
+      const failedTx = txResult as rpc.Api.GetFailedTransactionResponse | null;
+      let diagBlobs: string[] = [];
+      if (failedTx?.diagnosticEventsXdr) {
+        diagBlobs = failedTx.diagnosticEventsXdr
+          .map((e: any) => {
+            try {
+              return (e as any).toXDR?.('base64') ?? String(e);
+            } catch {
+              return null;
+            }
+          })
+          .filter((b: string | null): b is string => b !== null);
+      }
+      const resultXdr = (failedTx as any)?.resultXdr;
+      const enrichedMessage = resultXdr
+        ? `Transaction execution failed on Stellar Testnet. Hash: ${txHash}`
+        : `Transaction execution failed on Stellar Testnet. Hash: ${txHash}`;
+      throw new SorobanSimulationError(
+        enrichedMessage,
+        enrichedMessage,
+        diagBlobs,
+        'create_commitment',
+      );
     }
   }
 
