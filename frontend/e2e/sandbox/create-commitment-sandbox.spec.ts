@@ -169,10 +169,10 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     // "Commitment #4" etc, not commitmentsQuery-backed) and would never show this.
     await page.locator('#nav-commitments').click();
 
-    const commitmentCard = page.locator('#commitments-list-page .commitment-item', {
+    const listCommitmentCard = page.locator('#commitments-list-page .commitment-item', {
       hasText: `Commitment #${commitmentId}`,
     });
-    await expect(commitmentCard).toBeVisible({ timeout: 25_000 });
-    await expect(commitmentCard.getByText('Pending')).toBeVisible();
+    await expect(listCommitmentCard).toBeVisible({ timeout: 25_000 });
+    await expect(listCommitmentCard.getByText('Pending')).toBeVisible();
   });
 });

@@ -53,10 +53,9 @@ async function installFreighterMock(page: Page) {
           case 'SUBMIT_TRANSACTION':
           case 'REQUEST_SIGN_TRANSACTION': {
             const txXdr = data.transactionXdr ?? data.transaction ?? '';
-          // Simulate signTransaction: echo back the XDR as "signed"
-          case 'REQUEST_SIGN_TRANSACTION': {
+            // Simulate signTransaction: echo back the XDR as "signed"
             response = {
-              signedTxXdr: data.transactionXdr || '',
+              signedTxXdr: txXdr,
               signerAddress: mockAddress,
             };
             break;
@@ -83,6 +82,9 @@ async function installFreighterMock(page: Page) {
               signedBlob: mockSig,
               signedMessage: mockSig,
               signerAddress: mockAddress,
+            };
+            break;
+          }
           case 'SUBMIT_TRANSACTION': {
             response = {
               status: 'SUCCESS',

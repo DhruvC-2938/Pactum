@@ -12,8 +12,6 @@ export function useCommitments(filters: CommitmentFilters = {}) {
   const isLocal = mode === 'local';
 
   return useQuery({
-    queryKey: commitmentKeys.list(filters),
-    queryFn: () => fetchCommitments(filters),
     // Offline-first: show the persisted CRDT cache as placeholder data while a
     // fresh fetch is in flight or when the device is offline.
     // Using placeholderData (not initialData) preserves isLoading=true during
