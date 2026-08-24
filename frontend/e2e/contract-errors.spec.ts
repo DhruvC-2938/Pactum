@@ -165,7 +165,9 @@ async function openCreateWizard(page: Page) {
   await expect(page.getByRole('button', { name: /GASV7Z\.\.\./ })).toBeVisible();
   await page.getByRole('button', { name: 'Launch App' }).first().click();
   await page.locator('#nav-create').click();
-  await expect(page.locator('.section-title').filter({ hasText: 'Create Commitment' })).toBeVisible();
+  await expect(
+    page.locator('.section-title').filter({ hasText: 'Create Commitment' }),
+  ).toBeVisible();
 }
 
 async function fillWizardAndSubmit(page: Page) {
@@ -181,8 +183,8 @@ async function fillWizardAndSubmit(page: Page) {
   await page.locator('#page-create').getByRole('button', { name: 'Create Commitment' }).click();
 }
 
-function errorToast(page: Page) {
-  return page.locator('#toast-container .toast.error[role="alert"]');
+function errorModal(page: Page) {
+  return page.getByText('Transaction Simulation Failed');
 }
 
 test.describe('Registry contract errors in Create Commitment wizard (#35)', () => {
@@ -198,9 +200,8 @@ test.describe('Registry contract errors in Create Commitment wizard (#35)', () =
     await openCreateWizard(page);
     await fillWizardAndSubmit(page);
 
-    const toast = errorToast(page);
-    await expect(toast).toBeVisible();
-    await expect(toast).toHaveText('Due date must be in the future');
+    await expect(errorModal(page)).toBeVisible();
+    await expect(page.getByText('Due date must be in the future')).toBeVisible();
     await expect(page.locator('.wizard .form-error')).toHaveCount(0);
   });
 
@@ -209,9 +210,8 @@ test.describe('Registry contract errors in Create Commitment wizard (#35)', () =
     await openCreateWizard(page);
     await fillWizardAndSubmit(page);
 
-    const toast = errorToast(page);
-    await expect(toast).toBeVisible();
-    await expect(toast).toHaveText('Transaction Failed');
+    await expect(errorModal(page)).toBeVisible();
+    await expect(page.getByText('Transaction Failed').first()).toBeVisible();
   });
 
   test('does not expose sensitive markers from RPC errors', async ({ page }) => {
@@ -219,9 +219,8 @@ test.describe('Registry contract errors in Create Commitment wizard (#35)', () =
     await openCreateWizard(page);
     await fillWizardAndSubmit(page);
 
-    const toast = errorToast(page);
-    await expect(toast).toBeVisible();
-    await expect(toast).toHaveText('Transaction Failed');
+    await expect(errorModal(page)).toBeVisible();
+    await expect(page.getByText('Transaction Failed').first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(SENSITIVE_MARKER);
   });
 
@@ -230,8 +229,8 @@ test.describe('Registry contract errors in Create Commitment wizard (#35)', () =
     await openCreateWizard(page);
     await fillWizardAndSubmit(page);
 
-    await expect(errorToast(page)).toBeVisible();
+    await expect(errorModal(page)).toBeVisible();
     await page.reload();
-    await expect(errorToast(page)).toHaveCount(0);
+    await expect(errorModal(page)).toHaveCount(0);
   });
 });

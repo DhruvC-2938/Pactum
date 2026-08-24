@@ -11,6 +11,7 @@ import App from './App.tsx';
 import { queryClient } from './lib/queryClient';
 import { WalletProvider } from './context/WalletContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { IndexerModeProvider } from './context/IndexerModeContext';
 
 // WalletProvider and QueryClientProvider wrap the whole tree here, in the host, exactly once —
 // not per-remote — since the host owns the single WalletContext and QueryClient instances that
@@ -22,7 +23,9 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
         <ThemeProvider>
-          <App />
+          <IndexerModeProvider>
+            <App />
+          </IndexerModeProvider>
         </ThemeProvider>
       </WalletProvider>
     </QueryClientProvider>

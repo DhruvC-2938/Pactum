@@ -35,6 +35,18 @@ module.exports = {
         '@typescript-eslint/no-explicit-any': 'off',
       },
     },
+    {
+      // Hardhat/Mocha EVM tests: CommonJS require() and describe/it/before/after globals,
+      // not the TS/Jest/Vitest conventions the rest of the repo uses.
+      files: ['evm/**/*.js'],
+      env: {
+        mocha: true,
+        node: true,
+      },
+      rules: {
+        '@typescript-eslint/no-require-imports': 'off',
+      },
+    },
   ],
   ignorePatterns: [
     'node_modules/',

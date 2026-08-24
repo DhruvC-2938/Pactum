@@ -121,11 +121,9 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/commitments', commitmentsRouter);
 const redis = createRedisClientFromEnv();
 redis.on('error', (error) => console.error('Redis connection error', error));
-const reputationCache = new ReputationCache(
-  redis,
-  new PostgresReputationRepository(pool),
-  { ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300) },
-);
+const reputationCache = new ReputationCache(redis, new PostgresReputationRepository(pool), {
+  ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300),
+});
 
 // ── Soroban client (shared by reputation router + TTL monitor) ─────────────
 // Built once from env so both the trust-score API endpoint and the TTL monitor
@@ -156,8 +154,13 @@ app.use('/api-docs', createOpenApiRouter());
 
 const relayerService = new RelayerService({
   rpcUrl: process.env.SOROBAN_RPC_URL,
-  contractId: process.env.REGISTRY_CONTRACT_ID || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  contractId:
+    process.env.REGISTRY_CONTRACT_ID || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015',
+  maxBatchSize: Number(process.env.RELAYER_MAX_BATCH_SIZE) || 32,
+  batchTtlMs: Number(process.env.RELAYER_BATCH_TTL_MS) || 10_000,
+  persistPath: process.env.RELAYER_BATCH_QUEUE_PATH,
+  autoStart: process.env.RELAYER_AUTO_START === 'on' || process.env.RELAYER_AUTO_START === '1',
 });
 const proofsRouter = createProofsRouter(relayerService);
 app.use('/proofs', proofsRouter);
@@ -186,7 +189,7 @@ if (process.env.INDEXER_ENABLED !== 'off') {
   } else {
     console.warn(
       '[TTL Monitor] Skipping TTL monitor cron: SOROBAN_RPC_URL, SOROBAN_CONTRACT_ID, ' +
-      'ORACLE_PRIVATE_KEY, or SOROBAN_NETWORK_PASSPHRASE is not set.',
+        'ORACLE_PRIVATE_KEY, or SOROBAN_NETWORK_PASSPHRASE is not set.',
     );
   }
 }
@@ -204,6 +207,7 @@ async function init() {
 init();
 
 export const stop = async () => {
+  await relayerService.shutdown();
   wsService?.close();
   server?.close();
 };

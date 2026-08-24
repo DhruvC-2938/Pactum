@@ -15,10 +15,79 @@ import type { Reputation } from './api';
 import { signTransaction } from '@stellar/freighter-api';
 import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
 import type { WalletProvider } from './wallet';
+import { decodeSimulationError, isSorobanXdrError } from './xdrDecode';
+import type { DecodedXdrError } from './xdrDecode';
 
 export const DEFAULT_SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
 export const DEFAULT_CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
 export const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
+
+/**
+ * Enhanced error class that carries decoded Soroban XDR information.
+ *
+ * When a simulation fails, this error wraps the raw RPC response alongside
+ * decoded diagnostic events, the attempted operation, and resolution guidance.
+ * UI components can extract these fields to render a rich error modal.
+ */
+export class SorobanSimulationError extends Error {
+  public readonly diagnosticEventBlobs: string[];
+  public readonly attemptedFunction: string | null;
+  public readonly decodedXdrError: DecodedXdrError;
+
+  constructor(
+    message: string,
+    rawError: string,
+    diagnosticEventBlobs: string[] = [],
+    attemptedFunction: string | null = null,
+  ) {
+    super(message);
+    this.name = 'SorobanSimulationError';
+    this.diagnosticEventBlobs = diagnosticEventBlobs;
+    this.attemptedFunction = attemptedFunction;
+    this.decodedXdrError = decodeSimulationError(rawError, diagnosticEventBlobs, attemptedFunction);
+  }
+}
+
+/**
+ * Extract base64-encoded diagnostic event XDR blobs from a raw simulation
+ * error response. These are often embedded in the error string or returned
+ * as a separate `events` array.
+ */
+export function extractDiagnosticEventBlobs(
+  simulationResult: rpc.Api.SimulateTransactionErrorResponse | any,
+): string[] {
+  const blobs: string[] = [];
+
+  if (!simulationResult || typeof simulationResult !== 'object') {
+    return blobs;
+  }
+
+  // Path 1: `events` array on the simulation response (parsed DiagnosticEvent[])
+  if (Array.isArray(simulationResult.events)) {
+    for (const event of simulationResult.events) {
+      try {
+        const base64 = (event as any).toXDR?.('base64');
+        if (base64) blobs.push(base64);
+      } catch {
+        // skip
+      }
+    }
+  }
+
+  // Path 2: Base64 strings embedded in the error message
+  if (typeof simulationResult.error === 'string') {
+    const matches = simulationResult.error.match(/[A-Za-z0-9+/]{40,}={0,2}/g);
+    if (matches) {
+      for (const m of matches) {
+        if (isSorobanXdrError(m)) {
+          blobs.push(m);
+        }
+      }
+    }
+  }
+
+  return blobs;
+}
 
 export interface CreateCommitmentParams {
   issuerAddress: string;
@@ -82,7 +151,14 @@ export async function fetchArbitrator(
 
   const simulation = await server.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error(`Failed to read registry arbitrator: ${simulation.error}`);
+    const diagBlobs = extractDiagnosticEventBlobs(simulation);
+    const decoded = decodeSimulationError(simulation.error, diagBlobs, 'get_arbitrator');
+    throw new SorobanSimulationError(
+      decoded.message ?? `Failed to read registry arbitrator: ${simulation.error}`,
+      simulation.error,
+      diagBlobs,
+      'get_arbitrator',
+    );
   }
   if (!simulation.result) {
     throw new Error('Direct Soroban query returned no arbitrator value');
@@ -110,7 +186,14 @@ export async function fetchReputationFromRpc(
 
   const simulation = await server.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error(`Direct Soroban query failed: ${simulation.error}`);
+    const diagnosticBlobs = extractDiagnosticEventBlobs(simulation);
+    const decoded = decodeSimulationError(simulation.error, diagnosticBlobs, 'get_reputation');
+    throw new SorobanSimulationError(
+      decoded.message ?? `Direct Soroban query failed: ${simulation.error}`,
+      simulation.error,
+      diagnosticBlobs,
+      'get_reputation',
+    );
   }
   if (!simulation.result) {
     throw new Error('Direct Soroban query returned no reputation value');
@@ -275,7 +358,20 @@ export async function submitCreateCommitment({
 
   // 4. Simulate & Prepare Transaction Envelope (Soroban footprint & fees)
   onStatusUpdate?.('Simulating transaction on Soroban RPC...');
-  const preparedTx = await server.prepareTransaction(tx);
+  let preparedTx: Awaited<ReturnType<typeof server.prepareTransaction>>;
+  try {
+    preparedTx = await server.prepareTransaction(tx);
+  } catch (prepareErr: unknown) {
+    const errMsg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
+    const diagBlobs = extractDiagnosticEventBlobs({ error: errMsg });
+    const decoded = decodeSimulationError(errMsg, diagBlobs, 'create_commitment');
+    throw new SorobanSimulationError(
+      decoded.message ?? `Transaction simulation failed: ${errMsg}`,
+      errMsg,
+      diagBlobs,
+      'create_commitment',
+    );
+  }
 
   const unsignedXdr = preparedTx.toXDR();
 
@@ -327,7 +423,11 @@ export async function submitCreateCommitment({
   let txResult: rpc.Api.GetTransactionResponse | null = null;
   let attempts = 0;
 
-  while (attempts < 25) {
+  // 25 attempts (30s) was too tight against a freshly-booted local sandbox
+  // under CI load, where ledger close + RPC round-trip time can eat most of
+  // that budget before the tx is even included -- bumped to give real
+  // confirmation latency enough headroom.
+  while (attempts < 45) {
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, 1200));
     txResult = await server.getTransaction(txHash);
@@ -336,7 +436,27 @@ export async function submitCreateCommitment({
     if (txStatus === rpc.Api.GetTransactionStatus.SUCCESS) {
       break;
     } else if (txStatus === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error(`Transaction execution failed on Stellar Testnet. Hash: ${txHash}`);
+      // Enrich the FAILED result with XDR decoding if available
+      const failedTx = txResult as rpc.Api.GetFailedTransactionResponse | null;
+      let diagBlobs: string[] = [];
+      if (failedTx?.diagnosticEventsXdr) {
+        diagBlobs = failedTx.diagnosticEventsXdr
+          .map((e: any) => {
+            try {
+              return (e as any).toXDR?.('base64') ?? String(e);
+            } catch {
+              return null;
+            }
+          })
+          .filter((b: string | null): b is string => b !== null);
+      }
+      const enrichedMessage = `Transaction execution failed on Stellar Testnet. Hash: ${txHash}`;
+      throw new SorobanSimulationError(
+        enrichedMessage,
+        enrichedMessage,
+        diagBlobs,
+        'create_commitment',
+      );
     }
   }
 

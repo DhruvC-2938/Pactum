@@ -30,7 +30,7 @@ const {
 } = process.env as Record<string, string>;
 
 test.describe('create_commitment against local Soroban sandbox (#8)', () => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
 
   test.beforeEach(async ({ page }) => {
     if (!E2E_ISSUER_ADDRESS || !E2E_ISSUER_SECRET) {
@@ -46,7 +46,6 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     });
 
     await page.goto('/');
-    await page.waitForLoadState('domcontentloaded');
   });
 
   test('creating a commitment lands on-chain and appears Pending on the dashboard', async ({
@@ -62,32 +61,39 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
     });
 
-    // Connect the (mocked, but really-signing) Freighter wallet
+    // Connect the (mocked, but really-signing) Freighter wallet. Assertion pattern matches the
+    // confirmed-working frontend/e2e/wallet-connect.spec.ts, not the unverified 'Connected' text
+    // used in commitment-flow.spec.ts.
     const connectBtn = page.getByRole('button', { name: 'Connect Wallet' }).first();
     await expect(connectBtn).toBeVisible({ timeout: 15_000 });
     await connectBtn.click();
     await page.getByRole('button', { name: /Freighter/ }).click();
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
-    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
 
-    // Launch the create wizard
+    // App.tsx defaults to the 'landing' page, which renders LandingPage instead of the
+    // sidebar -- #nav-create doesn't exist in the DOM until it's dismissed.
     if (await page.locator('#hero-launch-btn').isVisible()) {
       await page.locator('#hero-launch-btn').click();
     }
+
+    // Launch the create wizard via the nav button's id: its accessible name is
+    // "Create Commitment navigation" (aria-label), not "Create Commitment", and the
+    // wizard's own submit button shares that text too -- see commitment-flow.spec.ts's
+    // "avoid strict mode violation" convention for the same #nav-create locator.
+    // Wizard selectors below match the real CreateCommitmentWizard.tsx markup
+    // (#wizard-counterparty etc, same ids used by contract-errors.spec.ts's fillWizardAndSubmit).
     await page.locator('#nav-create').click();
-    await expect(page.locator('#wizard-counterparty')).toBeVisible({ timeout: 10_000 });
 
     await page.locator('#wizard-counterparty').fill(E2E_COUNTERPARTY_ADDRESS);
     await page.getByRole('button', { name: 'Continue' }).click();
 
     const terms = `E2E sandbox run ${Date.now()}`;
-    await expect(page.locator('#wizard-terms')).toBeVisible({ timeout: 10_000 });
     await page.locator('#wizard-terms').fill(terms);
     await page.getByRole('button', { name: 'Continue' }).click();
 
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 7);
-    await expect(page.locator('#wizard-dueat')).toBeVisible({ timeout: 10_000 });
     await page.locator('#wizard-dueat').fill(dueDate.toISOString().slice(0, 16));
 
     // Submit wizard using unique button id
@@ -96,39 +102,31 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
     await submitBtn.click();
 
-    // The real signing + RPC round-trip takes longer than the mocked-route tests, and a real
-    // submission/simulation/confirmation error can surface well after the click (not just in the
-    // first couple of seconds) -- capture the first error toast's text the instant it appears,
-    // for the whole wait, so a real failure here shows up as its actual message instead of a
-    // generic "waited 45s and nothing happened" timeout with no diagnostic value.
-    let toastMessage: string | null = null;
+    // The real signing + RPC round-trip (submit -> poll for on-chain confirmation) can take up to
+    // ~55s under CI load, so a real submission/simulation/confirmation error can surface well
+    // after a fixed early check would look for it. Race the success transition against the error
+    // toast instead of checking once up front, so a real failure fails fast with its actual
+    // message -- enriched with the raw console.error CreateCommitmentWizard logs before decoding
+    // it into the generic toast label -- instead of just timing out on the success locator.
     const errorToast = page.locator('#toast-container .toast.error').first();
-    const toastWatcher = errorToast
-      .waitFor({ state: 'visible', timeout: 45_000 })
-      .then(async () => {
-        toastMessage = await errorToast.innerText();
-      })
-      .catch(() => {});
+    const outcome = await Promise.race([
+      page
+        .locator('#page-reputation.active')
+        .waitFor({ state: 'attached', timeout: 65_000 })
+        .then(() => 'success' as const),
+      errorToast.waitFor({ state: 'visible', timeout: 65_000 }).then(() => 'error' as const),
+    ]);
 
-    // On success, App.tsx's onSuccess handler transitions to the Reputation page.
-    try {
-      await expect(page.locator('#page-reputation')).toHaveClass(/active/, {
-        timeout: 45_000,
-      });
-    } catch (err) {
-      await toastWatcher;
-      if (toastMessage) {
-        const rawError = consoleErrors.find((line) =>
-          line.includes('[CreateCommitmentWizard] Soroban error:'),
-        );
-        throw new Error(
-          `Commitment creation failed with toast error: ${toastMessage}` +
-            (rawError ? `\nRaw console error: ${rawError}` : ''),
-        );
-      }
-      throw err;
+    if (outcome === 'error') {
+      const toastMessage = await errorToast.innerText();
+      const rawError = consoleErrors.find((line) =>
+        line.includes('[CreateCommitmentWizard] Soroban error:'),
+      );
+      throw new Error(
+        `Commitment creation failed with toast error: ${toastMessage}` +
+          (rawError ? `\nRaw console error: ${rawError}` : ''),
+      );
     }
-    await toastWatcher;
 
     const commitmentId = 1;
 
@@ -137,11 +135,15 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const onChain = await getCommitmentOnChain(commitmentId, E2E_ISSUER_ADDRESS);
     expect(onChain.status).toBe('Pending');
 
-    // Confirm the commitments list (fed by backend/indexer) picks up the same commitment
+    // Now confirm the Commitments page (fed by backend/indexer, not the wizard's
+    // own state) picks up the same commitment as Pending. This is the part that
+    // actually catches indexer/backend desync bugs -- the wizard succeeding doesn't
+    // guarantee the separate read path agrees. Deliberately not the Dashboard's
+    // "Recent Commitments" card: that widget is static placeholder markup (hardcoded
+    // "Commitment #4" etc, not commitmentsQuery-backed) and would never show this.
     await page.locator('#nav-commitments').click();
-    await expect(page.locator('#commitments-list-page')).toBeVisible({ timeout: 15_000 });
 
-    const commitmentCard = page.locator('.commitment-item', {
+    const commitmentCard = page.locator('#commitments-list-page .commitment-item', {
       hasText: `Commitment #${commitmentId}`,
     });
     await expect(commitmentCard).toBeVisible({ timeout: 25_000 });

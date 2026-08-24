@@ -19,10 +19,12 @@ import {
   submitCreateCommitment,
   fundTestnetAccount,
   type CreateCommitmentResult,
+  SorobanSimulationError,
 } from './lib/soroban';
 import { postEncryptedTerms } from './lib/api';
 import UserProfile from './components/UserProfile';
 import EncryptionConsentModal from './components/EncryptionConsentModal';
+import { SorobanErrorModal } from './components/SorobanErrorModal';
 import {
   CheckCircle2,
   ExternalLink,
@@ -153,6 +155,9 @@ export default function CreateCommitmentWizard({
   const [encryptResolve, setEncryptResolve] = useState<((r: EncryptResult) => void) | null>(null);
   const [encryptReject, setEncryptReject] = useState<((e: Error) => void) | null>(null);
 
+  // ── XDR Error Modal state ─────────────────────────────────────────────────
+  const [xdrError, setXdrError] = useState<SorobanSimulationError | null>(null);
+
   const isFreighter = provider === 'freighter';
 
   useEffect(() => {
@@ -251,8 +256,10 @@ export default function CreateCommitmentWizard({
       const dueAtSeconds = Math.floor(new Date(data.dueAt).getTime() / 1000);
       const nowSeconds = Math.floor(Date.now() / 1000);
 
+      console.log('[DEBUG] Starting WASM validation...', { dueAtSeconds, nowSeconds });
       // Pre-flight WASM Web Worker validation before transaction simulation & wallet submission
       const wasmResult = await validateCommitmentWithWasm(dueAtSeconds, nowSeconds, 1);
+      console.log('[DEBUG] WASM validation result:', wasmResult);
       if (!wasmResult.isValid) {
         showErrorToast(wasmResult.error || 'Contract validation failed in WASM Web Worker.');
         setSubmitting(false);
@@ -336,7 +343,12 @@ export default function CreateCommitmentWizard({
       await queryClient.invalidateQueries({ queryKey: ['commitments'] });
     } catch (err: unknown) {
       console.error('[CreateCommitmentWizard] Soroban error:', err);
-      showErrorToast(decodeRegistryContractError(err));
+      // Show rich modal for Soroban XDR simulation errors, simple toast for everything else
+      if (err instanceof SorobanSimulationError) {
+        setXdrError(err);
+      } else {
+        showErrorToast(decodeRegistryContractError(err));
+      }
     } finally {
       setSubmitting(false);
       setStatusMessage(null);
@@ -993,6 +1005,28 @@ export default function CreateCommitmentWizard({
           issuerAddress={connectedAddress}
           counterpartyAddress={values.counterparty}
           isFreighter={isFreighter}
+        />
+      )}
+
+      {/* ── Soroban XDR Error Modal ── */}
+      {xdrError && (
+        <SorobanErrorModal
+          error={xdrError}
+          diagnosticEventBlobs={xdrError.diagnosticEventBlobs}
+          attemptedFunction={xdrError.attemptedFunction ?? undefined}
+          onDismiss={() => {
+            setXdrError(null);
+            setSubmitting(false);
+            setStatusMessage(null);
+          }}
+          onRetry={
+            isConnected && isLastStep
+              ? () => {
+                  setXdrError(null);
+                  handleFinalSubmit();
+                }
+              : undefined
+          }
         />
       )}
     </div>

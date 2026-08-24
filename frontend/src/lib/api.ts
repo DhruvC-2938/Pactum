@@ -69,7 +69,10 @@ interface StateProofResponse {
   proof: PactumStateProof;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+// Matches the backend's actual default port (docker-compose.yml PORT: 3000,
+// host-mapped ${BACKEND_PORT:-3000}:3000) -- 4000 was stale and pointed at
+// nothing, which silently dropped every commitments-list fetch.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, options);
