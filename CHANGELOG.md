@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Web3Auth social login for Web2 onboarding (#214): "Login with Google" (and
+  other Web3Auth socials) provisions a non-custodial Stellar keypair beside
+  Freighter/Albedo/Ledger, with in-app transaction signing for commitments and
+  disputes. Set `VITE_WEB3AUTH_CLIENT_ID` to enable the modal.
 - Optimistic rollup engine for high-frequency micro-commitment batching (#182):
   client-side deterministic state transitions + Merkle accumulator, Soroban
   `submit_batch_root` / `force_include` endpoints, and React UI for pending

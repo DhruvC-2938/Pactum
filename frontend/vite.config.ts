@@ -1,9 +1,10 @@
 /// <reference types="vitest/config" />
-import { defineConfig, loadEnv } from 'vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
-import { federation } from '@module-federation/vite'
-import path from "path"
+import { defineConfig, loadEnv } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { federation } from '@module-federation/vite';
+import path from 'path';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 // The host/container application. Exposes WalletContext and queryClient so the dashboard/wizard
 // remotes consume the exact same module instances instead of bundling their own; consumes those
@@ -13,14 +14,20 @@ export default defineConfig(({ mode }) => {
   // Remote entry URLs are independently-deployed apps' addresses, not build-time constants — the
   // whole point of this architecture is that they can be redeployed without rebuilding the host.
   // Defaults match this repo's local dev ports (see each remote's vite.config.ts).
-  const env = loadEnv(mode, process.cwd(), '')
-  const dashboardRemoteUrl = env.VITE_DASHBOARD_REMOTE_URL || 'http://localhost:5174/remoteEntry.js'
-  const wizardRemoteUrl = env.VITE_WIZARD_REMOTE_URL || 'http://localhost:5175/remoteEntry.js'
+  const env = loadEnv(mode, process.cwd(), '');
+  const dashboardRemoteUrl =
+    env.VITE_DASHBOARD_REMOTE_URL || 'http://localhost:5174/remoteEntry.js';
+  const wizardRemoteUrl = env.VITE_WIZARD_REMOTE_URL || 'http://localhost:5175/remoteEntry.js';
 
   return {
     plugins: [
       tailwindcss(),
       react(),
+      // Web3Auth / torus deps expect Node builtins in the browser.
+      nodePolyfills({
+        include: ['buffer', 'process', 'util', 'stream', 'crypto'],
+        globals: { Buffer: true, global: true, process: true },
+      }),
       federation({
         name: 'host',
         filename: 'remoteEntry.js',
@@ -63,8 +70,11 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        "@": path.resolve(import.meta.dirname, "./src"),
+        '@': path.resolve(import.meta.dirname, './src'),
       },
+    },
+    define: {
+      'process.env': {},
     },
     server: {
       port: 5173,
@@ -82,5 +92,5 @@ export default defineConfig(({ mode }) => {
       environment: 'node',
       include: ['src/**/*.test.ts'],
     },
-  }
-})
+  };
+});

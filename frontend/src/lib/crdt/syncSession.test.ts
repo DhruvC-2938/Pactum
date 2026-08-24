@@ -84,6 +84,26 @@ function stateVectorsEqual(a: Y.Doc, b: Y.Doc): boolean {
   );
 }
 
+/** Poll until a predicate holds instead of relying on a fixed delay. The sync
+ *  handshake is async (crypto + microtask delivery), so under the full-suite
+ *  CPU contention a bare `wait(HANDSHAKE_MS)` can resolve before convergence. */
+async function waitFor(predicate: () => boolean, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('waitFor timed out before condition was met');
+    await wait(10);
+  }
+}
+
+function allConverged(...docs: Y.Doc[]): boolean {
+  const sv0 = Array.from(Y.encodeStateVector(docs[0])).join(',');
+  return docs.every((d) => Array.from(Y.encodeStateVector(d)).join(',') === sv0);
+}
+
+async function waitForConvergence(...docs: Y.Doc[]): Promise<void> {
+  await waitFor(() => allConverged(...docs));
+}
+
 describe('SignedPeerSession — multi-peer CRDT sync over an authenticated channel', () => {
   it('converges two peers that each had independent pre-connect edits', async () => {
     const docA = new Y.Doc();
@@ -96,7 +116,7 @@ describe('SignedPeerSession — multi-peer CRDT sync over an authenticated chann
     const sessionA = new SignedPeerSession(docA, peerA.identity, peerA.attestation, linkA);
     const sessionB = new SignedPeerSession(docB, peerB.identity, peerB.attestation, linkB);
 
-    await wait(HANDSHAKE_MS);
+    await waitForConvergence(docA, docB);
 
     expect(itemsOf(docA)).toEqual({ a: 1, b: 2 });
     expect(itemsOf(docB)).toEqual({ a: 1, b: 2 });
@@ -117,7 +137,7 @@ describe('SignedPeerSession — multi-peer CRDT sync over an authenticated chann
     await wait(HANDSHAKE_MS);
 
     docA.getMap('items').set('shared', 'initial');
-    await wait(HANDSHAKE_MS);
+    await waitFor(() => itemsOf(docB).shared === 'initial');
     expect(itemsOf(docB).shared).toBe('initial');
 
     // Partition: the underlying connection drops (mirrors an RTCPeerConnection
@@ -135,7 +155,7 @@ describe('SignedPeerSession — multi-peer CRDT sync over an authenticated chann
     ({ linkA, linkB } = createLinkPair());
     sessionA = new SignedPeerSession(docA, peerA.identity, peerA.attestation, linkA);
     sessionB = new SignedPeerSession(docB, peerB.identity, peerB.attestation, linkB);
-    await wait(HANDSHAKE_MS);
+    await waitForConvergence(docA, docB);
 
     const a = itemsOf(docA);
     const b = itemsOf(docB);
@@ -172,7 +192,7 @@ describe('SignedPeerSession — multi-peer CRDT sync over an authenticated chann
     const ac = createLinkPair();
     const sessAC_A = new SignedPeerSession(docA, peerA.identity, peerA.attestation, ac.linkA);
     const sessAC_C = new SignedPeerSession(docC, peerC.identity, peerC.attestation, ac.linkB);
-    await wait(HANDSHAKE_MS);
+    await waitForConvergence(docA, docB, docC);
 
     const a = itemsOf(docA);
     const b = itemsOf(docB);

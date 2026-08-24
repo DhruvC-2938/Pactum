@@ -21,7 +21,7 @@ import {
   type CreateCommitmentResult,
   SorobanSimulationError,
 } from './lib/soroban';
-import { postEncryptedTerms } from './lib/api';
+import { postEncryptedTerms, createCommitment } from './lib/api';
 import UserProfile from './components/UserProfile';
 import EncryptionConsentModal from './components/EncryptionConsentModal';
 import { SorobanErrorModal } from './components/SorobanErrorModal';
@@ -303,7 +303,24 @@ export default function CreateCommitmentWizard({
         dueAt: dueAtSeconds,
       });
 
-      // Submit Soroban transaction to Stellar Testnet via the connected wallet
+      // Best-effort registration with the backend so the dashboard can list
+      // the commitment before the indexer observes the chain event. Never
+      // masks on-chain failures below.
+      try {
+        setStatusMessage('Registering commitment...');
+        await createCommitment({
+          issuer: connectedAddress,
+          counterparty: data.counterparty,
+          termsHash: termsHashHex,
+          dueAt: dueAtSeconds,
+        });
+      } catch (backendErr) {
+        console.warn('[CreateCommitmentWizard] Backend registration failed:', backendErr);
+        // Non-fatal: continue to Soroban submission even if backend is unavailable
+      }
+
+      // Submit Soroban transaction to Stellar Testnet via the connected wallet.
+      // Errors propagate to the outer catch so users always see on-chain failures.
       const result = await submitCreateCommitment({
         issuerAddress: connectedAddress,
         counterpartyAddress: data.counterparty,
@@ -445,91 +462,97 @@ export default function CreateCommitmentWizard({
           <h3
             style={{ fontSize: '20px', fontWeight: '800', color: '#0f172a', margin: '0 0 6px 0' }}
           >
-            Commitment Created On-Chain!
+            Commitment created successfully
           </h3>
           <p style={{ fontSize: '13.5px', color: '#64748b', margin: '0 0 24px 0' }}>
-            Your transaction has been confirmed on Stellar Testnet.
+            {txResult
+              ? 'Your transaction has been confirmed on Stellar Testnet.'
+              : 'Your commitment has been registered.'}
           </p>
 
-          <div
-            style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '18px',
-              textAlign: 'left',
-              marginBottom: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-            }}
-          >
-            {txResult.commitmentId !== undefined && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                <span style={{ color: '#64748b', fontWeight: '600' }}>Commitment ID:</span>
-                <span style={{ fontWeight: '800', color: '#0f172a' }}>
-                  #{String(txResult.commitmentId)}
-                </span>
-              </div>
-            )}
+          {txResult && (
             <div
               style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '18px',
+                textAlign: 'left',
+                marginBottom: '24px',
                 display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '13px',
-                alignItems: 'center',
+                flexDirection: 'column',
+                gap: '10px',
               }}
             >
-              <span style={{ color: '#64748b', fontWeight: '600' }}>Tx Hash:</span>
-              <span style={{ fontFamily: 'monospace', fontWeight: '700', color: '#334155' }}>
-                {txResult.hash.substring(0, 10)}...
-                {txResult.hash.substring(txResult.hash.length - 8)}
-              </span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '13px',
-                alignItems: 'center',
-              }}
-            >
-              <span style={{ color: '#64748b', fontWeight: '600' }}>Network:</span>
-              <span
+              {txResult.commitmentId !== undefined && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                  <span style={{ color: '#64748b', fontWeight: '600' }}>Commitment ID:</span>
+                  <span style={{ fontWeight: '800', color: '#0f172a' }}>
+                    #{String(txResult.commitmentId)}
+                  </span>
+                </div>
+              )}
+              <div
                 style={{
-                  fontSize: '11px',
-                  fontWeight: '800',
-                  color: '#16a34a',
-                  background: '#dcfce7',
-                  padding: '2px 8px',
-                  borderRadius: '100px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '13px',
+                  alignItems: 'center',
                 }}
               >
-                Stellar Testnet
-              </span>
+                <span style={{ color: '#64748b', fontWeight: '600' }}>Tx Hash:</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: '700', color: '#334155' }}>
+                  {txResult.hash.substring(0, 10)}...
+                  {txResult.hash.substring(txResult.hash.length - 8)}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '13px',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ color: '#64748b', fontWeight: '600' }}>Network:</span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    color: '#16a34a',
+                    background: '#dcfce7',
+                    padding: '2px 8px',
+                    borderRadius: '100px',
+                  }}
+                >
+                  Stellar Testnet
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <a
-              href={`https://stellar.expert/explorer/testnet/tx/${txResult.hash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: '#0f172a',
-                color: '#ffffff',
-                fontWeight: '700',
-                fontSize: '13px',
-                padding: '10px 18px',
-                borderRadius: '10px',
-                textDecoration: 'none',
-              }}
-            >
-              View on Stellar Expert <ExternalLink size={14} />
-            </a>
+            {txResult && (
+              <a
+                href={`https://stellar.expert/explorer/testnet/tx/${txResult.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  textDecoration: 'none',
+                }}
+              >
+                View on Stellar Expert <ExternalLink size={14} />
+              </a>
+            )}
             <button
               onClick={handleReset}
               style={{
@@ -959,17 +982,15 @@ export default function CreateCommitmentWizard({
                   className="btn btn-primary"
                   style={{ flex: '1' }}
                   onClick={handleFinalSubmit}
-                  disabled={submitting || !isConnected || isSameAddress}
+                  disabled={submitting || isSameAddress}
                 >
                   {submitting ? (
                     <>
                       <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
                       <span className="btn-text">Submitting to Soroban...</span>
                     </>
-                  ) : isConnected ? (
-                    <span className="btn-text">Create Commitment</span>
                   ) : (
-                    <span className="btn-text">Connect Freighter to Submit</span>
+                    <span className="btn-text">Continue</span>
                   )}
                 </button>
               ) : (

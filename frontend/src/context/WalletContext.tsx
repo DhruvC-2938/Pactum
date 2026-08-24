@@ -24,6 +24,8 @@ export interface WalletContextType {
   isConnecting: boolean;
   error: string | null;
   errorCode: WalletErrorCode | null;
+  /** True when the session came from Web2 social login (Web3Auth). */
+  isSocialLogin: boolean;
   connectWallet: (provider?: WalletProviderName) => Promise<void>;
   disconnectWallet: () => void;
   clearError: () => void;
@@ -54,18 +56,16 @@ interface PersistedWalletState {
   address: string;
 }
 
+function isKnownProvider(value: unknown): value is WalletProviderName {
+  return value === 'freighter' || value === 'albedo' || value === 'ledger' || value === 'web3auth';
+}
+
 function loadPersistedState(): PersistedWalletState | null {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedWalletState;
-    if (
-      !parsed ||
-      (parsed.provider !== 'freighter' &&
-        parsed.provider !== 'albedo' &&
-        parsed.provider !== 'ledger') ||
-      !parsed.address
-    ) {
+    if (!parsed || !isKnownProvider(parsed.provider) || !parsed.address) {
       return null;
     }
     return parsed;
@@ -114,9 +114,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setErrorCode(null);
   }, []);
 
-  // Auto-connect check on mount: restore persisted session (public key only, no signatures).
-  // Ledger/hardware sessions are never auto-restored since they require a fresh
-  // device connection prompt each time.
+  // Auto-connect check on mount: restore persisted session (public key only, no secrets).
   useEffect(() => {
     let isMounted = true;
 
@@ -125,7 +123,6 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       if (!persisted) return;
 
       if (persisted.provider === 'albedo') {
-        // Albedo is web-based; the public key is public info, safe to restore.
         if (isMounted) {
           setAddress(persisted.address);
           setProvider('albedo');
@@ -134,11 +131,25 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
 
       if (persisted.provider === 'ledger') {
-        // Hardware wallets require an explicit reconnect (USB/BLE prompt).
         return;
       }
 
-      // Freighter: verify the extension is still installed & the account is still accessible.
+      if (persisted.provider === 'web3auth') {
+        try {
+          const { restoreWeb3AuthSession } = await import('../lib/web3auth');
+          const restored = await restoreWeb3AuthSession(persisted.address);
+          if (isMounted && restored) {
+            setAddress(restored.address);
+            setProvider('web3auth');
+          } else if (isMounted) {
+            clearPersistedState();
+          }
+        } catch (err) {
+          console.warn('[WalletContext] Web3Auth restore failed:', err);
+        }
+        return;
+      }
+
       const installed = isFreighterInstalled();
       setIsInstalled(installed);
       if (!installed) return;
@@ -191,10 +202,14 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   );
 
   const disconnectWallet = useCallback(() => {
+    const wasSocial = provider === 'web3auth';
     setAddress(null);
     setProvider(null);
     clearPersistedState();
-  }, []);
+    if (wasSocial) {
+      void import('../lib/web3auth').then(({ logoutWeb3Auth }) => logoutWeb3Auth());
+    }
+  }, [provider]);
 
   useEffect(() => {
     // VITE_E2E_DIAGNOSTICS, not DEV: needs to be readable from a real production build served
@@ -217,6 +232,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isConnecting,
         error,
         errorCode,
+        isSocialLogin: provider === 'web3auth',
         connectWallet,
         disconnectWallet,
         clearError,

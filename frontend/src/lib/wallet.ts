@@ -9,7 +9,7 @@ import albedo from '@albedo-link/intent';
 import { isStellarAddress } from './stellar';
 import { LedgerAdapter } from './wallet-adapters/ledger-adapter';
 
-export type WalletProvider = 'freighter' | 'albedo' | 'ledger';
+export type WalletProvider = 'freighter' | 'albedo' | 'ledger' | 'web3auth';
 
 export const PACTUM_NETWORK_PASSPHRASE =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_STELLAR_NETWORK_PASSPHRASE) ||
@@ -205,9 +205,13 @@ export async function connectWithLedger(): Promise<WalletConnectionResult> {
   }
 }
 
-export function connectWallet(provider: WalletProvider): Promise<WalletConnectionResult> {
+export async function connectWallet(provider: WalletProvider): Promise<WalletConnectionResult> {
   if (provider === 'albedo') return connectWithAlbedo();
   if (provider === 'ledger') return connectWithLedger();
+  if (provider === 'web3auth') {
+    const { connectWithWeb3Auth } = await import('./web3auth');
+    return connectWithWeb3Auth();
+  }
   return connectWithFreighter();
 }
 
