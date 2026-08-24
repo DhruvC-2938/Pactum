@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractclient, contracterror, contractimpl, contracttype, panic_with_error,
-    token, Address, Bytes, BytesN, Env, Symbol,
+    contract, contractclient, contracterror, contractimpl, contracttype, panic_with_error, token,
+    Address, Bytes, BytesN, Env, Symbol,
 };
 
 #[contracterror]
@@ -355,11 +355,19 @@ impl StateChannelContract {
         let contract_address = env.current_contract_address();
 
         if channel.latest_balance_a > 0 {
-            token_client.transfer(&contract_address, &channel.party_a, &channel.latest_balance_a);
+            token_client.transfer(
+                &contract_address,
+                &channel.party_a,
+                &channel.latest_balance_a,
+            );
         }
 
         if channel.latest_balance_b > 0 {
-            token_client.transfer(&contract_address, &channel.party_b, &channel.latest_balance_b);
+            token_client.transfer(
+                &contract_address,
+                &channel.party_b,
+                &channel.latest_balance_b,
+            );
         }
 
         channel.status = ChannelStatus::Closed;

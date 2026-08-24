@@ -470,10 +470,11 @@ test('loading spinners display during network requests', async ({ page }) => {
     indexedDB.deleteDatabase('pactum-cache-v1');
   });
   await page.reload();
-  const launchBtn = page.locator('#hero-launch-btn');
-  if (await launchBtn.isVisible()) {
-    await launchBtn.click();
-  }
+  // `isVisible()` doesn't auto-wait (see beforeEach's comment on the same trap), so it can
+  // read the DOM before the landing page has hydrated and race to false, silently skipping
+  // the click and leaving the test stuck on the landing page. `click()`'s own actionability
+  // wait is the reliable way to land on this always-present button.
+  await page.locator('#hero-launch-btn').click();
 
   // Navigate to Dashboard using nav button id (not role=link)
   await page.locator('#nav-dashboard').click();
