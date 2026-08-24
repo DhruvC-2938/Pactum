@@ -72,9 +72,12 @@ jobs:
           chmod +x circom
           sudo mv circom /usr/local/bin/
           mkdir -p artifacts
-          circom circuits/fraud_proof.circom --r1cs --sym -o artifacts/
-          circom circuits/batch_merkle.circom --r1cs --sym -o artifacts/
-          circom circuits/commitment_hash.circom --r1cs --sym -o artifacts/
+          # circomlib is a devDependency hoisted by npm workspaces, so it can land in
+          # either this package's own node_modules or the monorepo root's -- same
+          # fallback circomlibCircuits resolution as scripts/build-circuit.mjs.
+          circom circuits/fraud_proof.circom --r1cs --sym -o artifacts/ -l node_modules -l ../node_modules
+          circom circuits/batch_merkle.circom --r1cs --sym -o artifacts/ -l node_modules -l ../node_modules
+          circom circuits/commitment_hash.circom --r1cs --sym -o artifacts/ -l node_modules -l ../node_modules
 
       - name: Run cross-check tests
         working-directory: zk
