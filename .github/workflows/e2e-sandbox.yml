@@ -67,9 +67,20 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      # frontend/ is a member of the npm-workspaces monorepo, so a bare
+      # `npm ci` in this subdir detects the parent workspace and requires the
+      # local @pactum/cli package, which a standalone frontend lockfile cannot
+      # satisfy (EUSAGE: "Missing: @pactum/cli@0.1.0 from lock file"). Mirror
+      # the Frontend Checks job and fall back to `npm install`, which resolves
+      # workspace packages from the repo and succeeds.
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci || npm install
+          else
+            npm install
+          fi
 
       - name: Install Playwright browsers
         working-directory: frontend

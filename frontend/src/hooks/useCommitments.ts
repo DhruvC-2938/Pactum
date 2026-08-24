@@ -12,6 +12,14 @@ export function useCommitments(filters: CommitmentFilters = {}) {
   const isLocal = mode === 'local';
 
   return useQuery({
+    // Offline-first: show the persisted CRDT cache as placeholder data while a
+    // fresh fetch is in flight or when the device is offline.
+    // Using placeholderData (not initialData) preserves isLoading=true during
+    // the initial fetch so loading indicators remain visible.
+    placeholderData: () => {
+      const cached = syncStore.readCommitments();
+      return cached.length > 0 ? cached : undefined;
+    },
     queryKey: isLocal ? commitmentKeys.localList(filters) : commitmentKeys.list(filters),
     queryFn: () => (isLocal ? listCommitments(filters) : fetchCommitments(filters)),
     // Offline-first: render the persisted CRDT cache while a fresh cloud fetch is in flight or

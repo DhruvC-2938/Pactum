@@ -71,6 +71,18 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const shortAddress = `${E2E_ISSUER_ADDRESS.slice(0, 6)}...${E2E_ISSUER_ADDRESS.slice(-4)}`;
     await expect(page.getByRole('button', { name: shortAddress })).toBeVisible();
 
+    // Enter the app shell (landing page gates the nav behind "Launch App"),
+    // then open the create wizard via its stable nav id.
+    const launchBtn = page.locator('#hero-launch-btn');
+    if (await launchBtn.isVisible()) {
+      await launchBtn.click();
+    }
+    await page.locator('#nav-create').click();
+    await expect(page.locator('#wizard-counterparty')).toBeVisible({ timeout: 10_000 });
+    // Launch the create wizard. Selectors below match the real
+    // CreateCommitmentWizard.tsx markup (#wizard-counterparty etc, same ids
+    // used by frontend/e2e/contract-errors.spec.ts's fillWizardAndSubmit).
+    await page.getByRole('button', { name: 'Create Commitment' }).click();
     // App.tsx defaults to the 'landing' page, which renders LandingPage instead of the
     // sidebar -- #nav-create doesn't exist in the DOM until it's dismissed.
     if (await page.locator('#hero-launch-btn').isVisible()) {
@@ -135,18 +147,32 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     const onChain = await getCommitmentOnChain(commitmentId, E2E_ISSUER_ADDRESS);
     expect(onChain.status).toBe('Pending');
 
-    // Now confirm the Commitments page (fed by backend/indexer, not the wizard's
-    // own state) picks up the same commitment as Pending. This is the part that
-    // actually catches indexer/backend desync bugs -- the wizard succeeding doesn't
-    // guarantee the separate read path agrees. Deliberately not the Dashboard's
-    // "Recent Commitments" card: that widget is static placeholder markup (hardcoded
-    // "Commitment #4" etc, not commitmentsQuery-backed) and would never show this.
+    // Confirm the commitments list (fed by backend/indexer) picks up the same
+    // commitment. This is the part that catches indexer/backend desync bugs --
+    // the wizard succeeding doesn't guarantee the list's separate read path agrees.
+    // Clear any success toast first so it can't intercept the sidebar nav click,
+    // then navigate and wait for the commitments view to actually become active.
+    await page.locator('#toast-container .toast').first().waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
     await page.locator('#nav-commitments').click();
+    await expect(page.locator('#page-commitments')).toHaveClass(/active/, { timeout: 15_000 });
+    await expect(page.locator('#commitments-list-page')).toBeVisible({ timeout: 15_000 });
 
-    const commitmentCard = page.locator('#commitments-list-page .commitment-item', {
+    const commitmentCard = page.locator('.commitment-item', { hasText: `Commitment #${commitmentId}` });
+    await expect(commitmentCard).toBeVisible({ timeout: 25_000 }); // indexer poll latency
+    await expect(commitmentCard.locator('.badge')).toHaveText(/Pending/i);
+    // The in-app "Dashboard" nav item (#nav-dashboard) is also wired to the
+    // commitments view, and the Dashboard page's "Recent Commitments" widget is
+    // static placeholder markup (hardcoded "Commitment #4", not
+    // commitmentsQuery-backed) -- so we re-confirm against the live commitments
+    // list (fed by the backend/indexer), which is the path that actually catches
+    // indexer/backend desync bugs.
+    await page.locator('#nav-commitments').click();
+    await expect(page.locator('#page-commitments')).toHaveClass(/active/, { timeout: 15_000 });
+
+    const listCommitmentCard = page.locator('#commitments-list-page .commitment-item', {
       hasText: `Commitment #${commitmentId}`,
     });
-    await expect(commitmentCard).toBeVisible({ timeout: 25_000 });
-    await expect(commitmentCard.getByText('Pending')).toBeVisible();
+    await expect(listCommitmentCard).toBeVisible({ timeout: 25_000 });
+    await expect(listCommitmentCard.getByText('Pending')).toBeVisible();
   });
 });
