@@ -24,11 +24,7 @@ impl MockWasmRuleset {
         _new_balance_b: i128,
     ) -> bool {
         // If state_data contains a single byte equal to 0, reject transition as invalid
-        if state_data.len() > 0 && state_data.get(0).unwrap() == 0 {
-            false
-        } else {
-            true
-        }
+        state_data.is_empty() || state_data.get(0).unwrap() != 0
     }
 }
 

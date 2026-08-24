@@ -71,6 +71,7 @@ jobs:
           wget -qO circom https://github.com/iden3/circom/releases/download/v2.1.5/circom-linux-amd64
           chmod +x circom
           sudo mv circom /usr/local/bin/
+          mkdir -p artifacts
           circom circuits/fraud_proof.circom --r1cs --sym -o artifacts/
           circom circuits/batch_merkle.circom --r1cs --sym -o artifacts/
           circom circuits/commitment_hash.circom --r1cs --sym -o artifacts/
