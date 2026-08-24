@@ -75,9 +75,12 @@ jobs:
           # circomlib is a devDependency hoisted by npm workspaces, so it can land in
           # either this package's own node_modules or the monorepo root's -- same
           # fallback circomlibCircuits resolution as scripts/build-circuit.mjs.
+          #
+          # Only fraud_proof.circom declares a `component main`; batch_merkle.circom and
+          # commitment_hash.circom are template-only libraries it includes, so circom has
+          # no entry point to compile them standalone ("No main specified"). Compiling
+          # fraud_proof.circom alone already fully parses and validates both.
           circom circuits/fraud_proof.circom --r1cs --sym -o artifacts/ -l node_modules -l ../node_modules
-          circom circuits/batch_merkle.circom --r1cs --sym -o artifacts/ -l node_modules -l ../node_modules
-          circom circuits/commitment_hash.circom --r1cs --sym -o artifacts/ -l node_modules -l ../node_modules
 
       - name: Run cross-check tests
         working-directory: zk
