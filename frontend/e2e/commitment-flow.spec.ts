@@ -53,9 +53,13 @@ async function installFreighterMock(page: Page) {
           case 'SUBMIT_TRANSACTION':
           case 'REQUEST_SIGN_TRANSACTION': {
             const txXdr = data.transactionXdr ?? data.transaction ?? '';
-            // Simulate signTransaction: echo back the XDR as "signed"
+            // Simulate signTransaction: echo back the XDR as "signed".
+            // freighter-api v6's submitTransaction reads `signedTransaction`
+            // off the extension response and maps it onto its own `signedTxXdr`,
+            // so the mock must echo the signed XDR under that key too.
             response = {
               signedTxXdr: txXdr,
+              signedTransaction: txXdr,
               signerAddress: mockAddress,
             };
             break;
@@ -632,7 +636,6 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
   // Wait for the submit button to be visible before clicking
   await expect(page.locator('#wizard-submit-btn')).toBeVisible();
-  await page.locator('#wizard-submit-btn').click({ timeout: 5000 });
   await page.locator('#wizard-dueat').fill('2027-12-31T12:00');
   // Use the specific submit button id to avoid strict mode violation
   await page.locator('#wizard-submit-btn').click();

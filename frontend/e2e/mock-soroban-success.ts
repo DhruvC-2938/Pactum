@@ -178,7 +178,18 @@ export async function installSuccessfulSorobanRpc(
         await respond({
           transactionData: mockSorobanTransactionData(),
           minResourceFee: '10000',
-          results: [{ auth: [], xdr: xdr.ScVal.scvBool(true).toXDR('base64') }],
+          // get_arbitrator() is simulated via simulateTransaction and
+          // fetchArbitrator() decodes results[0].xdr as an Address ScVal
+          // (Address.fromString(scValToNative(retval))). Returning a boolean
+          // here makes fetchArbitrator throw "Unsupported address type: true",
+          // so we return a valid Address ScVal instead (same encoding the
+          // per-test mockSorobanRpc uses).
+          results: [
+            {
+              auth: [],
+              xdr: 'AAAAEgAAAAAAAAAAJV/nLntxgpHp83Zr8qhqSLpCA439S1nO5sveir5wYUI=',
+            },
+          ],
           events: [],
           cpuInsns: '1000000',
           memoryBytes: '1000000',
