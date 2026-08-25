@@ -1,8 +1,154 @@
 import { test, expect, type Page } from '@playwright/test';
+import { xdr } from '@stellar/stellar-sdk';
 
 const MOCK_ADDRESS = 'GASV7ZZOPNYYFEPJ6N3GX4VINJELUQQDRX6UWWOO43F55CV6OBQUEGVK';
 const COUNTERPARTY = 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB';
 const SHORT_ADDRESS = 'GASV7Z...EGVK';
+
+// A real, on-chain Stellar account entry (LedgerEntryData + its LedgerKey).
+// Returning them from the mocked getLedgerEntries lets the wallet journey
+// resolve the issuer account deterministically without depending on network
+// state.
+const ACCOUNT_LEDGER_KEY = 'AAAAAAAAAAAlX+cue3GCkenzdmvyqGpIukIDjf1LWc7my96KvnBhQg==';
+const ACCOUNT_LEDGER_ENTRY_XDR =
+  'AAAAAAAAAAAlX+cue3GCkenzdmvyqGpIukIDjf1LWc7my96KvnBhQgAAABdIdugAAEASMgAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAA';
+
+// ── Soroban RPC fixtures (built with the SDK's XDR types) ────────────────
+
+/** Empty SorobanTransactionData — enough for the SDK to assemble the tx. */
+const EMPTY_SOROBAN_TX_DATA = (() => {
+  const footprint = new xdr.LedgerFootprint({ readOnly: [], readWrite: [] });
+  const resources = new xdr.SorobanResources({
+    footprint,
+    instructions: 0,
+    diskReadBytes: 0,
+    writeBytes: 0,
+  });
+  const txData = new xdr.SorobanTransactionData({
+    ext: new xdr.SorobanTransactionDataExt(0, undefined),
+    resources,
+    resourceFee: xdr.Int64.fromString('0'),
+  });
+  return txData.toXDR('base64');
+})();
+
+/** u64 retval (commitment id = 2) returned by the mocked create_commitment simulation. */
+const COMMITMENT_ID_RETVAL = xdr.ScVal.scvU64(xdr.Uint64.fromString('2')).toXDR('base64');
+
+/** A successful TransactionResult (txSuccess, no op results). */
+const SUCCESS_TX_RESULT = new xdr.TransactionResult({
+  feeCharged: xdr.Int64.fromString('100'),
+  result: new xdr.TransactionResultResult(xdr.TransactionResultCode.txSuccess(), []),
+  ext: new xdr.TransactionResultExt(0, undefined),
+}).toXDR('base64');
+
+/** Empty TransactionMeta (v0) — sufficient for the SDK's transaction parser. */
+const EMPTY_TX_META = new xdr.TransactionMeta(0, []).toXDR('base64');
+
+/**
+ * Mocks the Soroban RPC methods the commitment journey exercises:
+ * - getLedgerEntries → returns the account entry above (issuer account lookup),
+ * - simulateTransaction → returns a successful simulation (empty footprint),
+ * - sendTransaction → returns PENDING and captures the submitted envelope,
+ * - getTransaction → returns SUCCESS using the captured envelope,
+ * while letting every other method (getLatestLedger, getHealth, getNetwork…)
+ * pass through to the real Testnet endpoint.
+ */
+async function mockSorobanRpc(page: Page) {
+  let submittedEnvelope = '';
+  await page.route('**/soroban-testnet.stellar.org/**', async (route) => {
+    const postData = route.request().postData() ?? '';
+    let parsed: { id?: number | string; method?: string; params?: { transaction?: string } } = {};
+    try {
+      parsed = JSON.parse(postData);
+    } catch {
+      await route.continue();
+      return;
+    }
+    const id = parsed.id ?? 1;
+
+    switch (parsed.method) {
+      case 'getLedgerEntries':
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              entries: [
+                {
+                  key: ACCOUNT_LEDGER_KEY,
+                  xdr: ACCOUNT_LEDGER_ENTRY_XDR,
+                  lastModifiedLedgerSeq: 4198962,
+                },
+              ],
+              latestLedger: 4198984,
+            },
+          }),
+        });
+        return;
+      case 'simulateTransaction':
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              id: String(id),
+              latestLedger: 100,
+              events: [],
+              transactionData: EMPTY_SOROBAN_TX_DATA,
+              minResourceFee: '0',
+              results: [{ xdr: COMMITMENT_ID_RETVAL, auth: [] }],
+            },
+          }),
+        });
+        return;
+      case 'sendTransaction':
+        submittedEnvelope = parsed.params?.transaction ?? '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              status: 'PENDING',
+              hash: 'mock-hash',
+              latestLedger: 100,
+              latestLedgerCloseTime: 1,
+            },
+          }),
+        });
+        return;
+      case 'getTransaction':
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id,
+            result: {
+              status: 'SUCCESS',
+              hash: 'mock-hash',
+              latestLedger: 100,
+              latestLedgerCloseTime: 1,
+              oldestLedger: 1,
+              oldestLedgerCloseTime: 1,
+              envelopeXdr: submittedEnvelope,
+              resultXdr: SUCCESS_TX_RESULT,
+              resultMetaXdr: EMPTY_TX_META,
+            },
+          }),
+        });
+        return;
+      default:
+        await route.continue();
+    }
+  });
+}
 
 /**
  * Simulates the Freighter browser extension content script (postMessage protocol).
@@ -52,6 +198,15 @@ async function installFreighterMock(page: Page) {
             response = { signedMessage: mockSig, signerAddress: mockAddress };
             break;
           }
+          // Simulate signTransaction: echo the transaction XDR back as "signed"
+          // (submission itself is mocked in mockSorobanRpc, so no real signature
+          // is needed).
+          case 'SUBMIT_TRANSACTION':
+            response = {
+              signedTransaction: data.transactionXdr,
+              signerAddress: mockAddress,
+            };
+            break;
           default:
             return;
         }
@@ -88,46 +243,52 @@ test.beforeEach(async ({ page }) => {
     });
   });
 
+  const mockedCommitments = [
+    {
+      id: 1,
+      issuer: MOCK_ADDRESS,
+      counterparty: 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB',
+      terms_hash: 'mock_hash',
+      due_at: Date.now() / 1000 + 86400,
+      status: 'Pending',
+      outcome: null,
+      encrypted: false,
+    },
+    {
+      id: 2,
+      issuer: MOCK_ADDRESS,
+      counterparty: COUNTERPARTY,
+      terms_hash: 'encrypted_mock_hash',
+      due_at: Date.now() / 1000 + 86400,
+      status: 'Pending',
+      outcome: null,
+      encrypted: true,
+    },
+  ];
+
+  // Commitments list (GET) and creation (POST /commitments).
+  // Note: `**/commitments*` matches both `/commitments` and `/commitments?…`;
+  // the more specific routes registered below take precedence for
+  // `/commitments/encrypted` and `/commitments/:id/encrypted`.
   await page.route('**/commitments*', async (route) => {
-    if (route.request().method() === 'GET') {
+    const method = route.request().method();
+    if (method === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            id: 1,
-            issuer: MOCK_ADDRESS,
-            counterparty: 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB',
-            terms_hash: 'mock_hash',
-            due_at: Date.now() / 1000 + 86400,
-            status: 'Pending',
-            outcome: null,
-            encrypted: false,
-          },
-          {
-            id: 2,
-            issuer: MOCK_ADDRESS,
-            counterparty: COUNTERPARTY,
-            terms_hash: 'encrypted_mock_hash',
-            due_at: Date.now() / 1000 + 86400,
-            status: 'Pending',
-            outcome: null,
-            encrypted: true,
-          },
-        ]),
+        body: JSON.stringify(mockedCommitments),
       });
-    } else {
-      await route.continue();
-    }
-  });
-
-  await page.route('**/commitments', async (route) => {
-    if (route.request().method() === 'POST') {
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify({ id: 2, status: 'Created' }),
-      });
+    } else if (method === 'POST') {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/commitments') {
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ id: 2, status: 'Created' }),
+        });
+      } else {
+        await route.continue();
+      }
     } else {
       await route.continue();
     }
@@ -172,14 +333,19 @@ test.beforeEach(async ({ page }) => {
   }
 });
 
-test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
-  page,
-}) => {
-  // 1. Connect the wallet from the landing page
+async function connectFreighter(page: Page) {
   await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+}
 
+test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
+  page,
+}) => {
+  await mockSorobanRpc(page);
+
+  // 1. Connect the wallet from the landing page
+  await connectFreighter(page);
   // The sr-only "Connected" span in WalletConnectButton confirms wallet connection
   await expect(page.getByText('Connected').first()).toBeVisible();
 
@@ -188,9 +354,7 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
 
   // Step 1: Counterparty
   await expect(page.locator('#wizard-counterparty')).toBeVisible();
-  await page
-    .locator('#wizard-counterparty')
-    .fill('GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB');
+  await page.locator('#wizard-counterparty').fill(COUNTERPARTY);
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 2: Terms
@@ -198,19 +362,25 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.locator('#wizard-terms').fill('Test commitment terms');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  // Step 3: Due Date
+  // Step 3: Due Date — the last step's primary button is "Create Commitment"
   await expect(page.locator('#wizard-dueat')).toBeVisible();
   await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.locator('#wizard-submit-btn').click();
 
-  // Verify success
-  await expect(page.getByText('Commitment created successfully')).toBeVisible();
+  // The wizard submits the mocked transaction and, on success, navigates to
+  // the connected wallet's reputation profile.
+  await expect(page.locator('#page-reputation')).toBeVisible();
 
-  // 3. View Dashboard — use nav button id, not role=link (it's a button)
-  await page.locator('#nav-dashboard').click();
-
-  await expect(page.locator('.commitment-list')).toBeVisible();
-  await expect(page.getByText('mock_hash')).toBeVisible();
+  // 3. View Commitments — the backend list is mocked, so the created
+  // commitment entries render here.
+  await page.locator('#nav-commitments').click();
+  const commitmentsList = page.locator('#commitments-list-page');
+  await expect(commitmentsList).toBeVisible();
+  // The mocked backend list contains commitment id 1 (plain) and id 2
+  // (encrypted) — assert within the list page, scoped away from the static
+  // demo content that also renders "Commitment #2" on the dashboard.
+  await expect(commitmentsList.getByText('Commitment #1')).toBeVisible();
+  await expect(commitmentsList.getByText('Commitment #2')).toBeVisible();
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
@@ -225,26 +395,30 @@ test('form validation errors appear on bad input', async ({ page }) => {
 });
 
 test('loading spinners display during network requests', async ({ page }) => {
-  await page.route('**/reputation/**', async (route) => {
+  await mockSorobanRpc(page);
+
+  // Verified reputation fetches a state proof from the backend; hold the
+  // response open for a second so the loading skeleton is observable.
+  await page.route('**/api/v1/proofs/**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        address: MOCK_ADDRESS,
-        fulfilled: 0,
-        late: 0,
-        breached: 0,
-        total: 0,
-      }),
+      body: JSON.stringify({ success: false, proof: null }),
     });
   });
 
-  // Navigate to Dashboard using nav button id (not role=link)
-  await page.locator('#nav-dashboard').click();
+  // The pulse skeleton only shows for accounts that actually fetch reputation
+  // from the backend, so navigate to the reputation page and look up the
+  // (mocked) wallet address instead of relying on the demo account.
+  await page.locator('#nav-reputation').click();
+  await page.locator('input[placeholder*="Search Stellar account"]').fill(MOCK_ADDRESS);
+  await page.getByRole('button', { name: 'Lookup Account' }).click();
 
-  await expect(page.locator('div[style*="animation: pulse"]')).toBeVisible();
-  await expect(page.locator('div[style*="animation: pulse"]')).not.toBeVisible({ timeout: 5000 });
+  // Note: the browser re-serializes the inline `animation` shorthand, so the
+  // skeleton is matched by the `pulse` keyword rather than `animation: pulse`.
+  await expect(page.locator('div[style*="pulse"]').first()).toBeVisible();
+  await expect(page.locator('div[style*="pulse"]').first()).not.toBeVisible({ timeout: 5000 });
 });
 
 test('WASM validation failure blocks transaction simulation and wallet submission', async ({
@@ -261,6 +435,10 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
     }
   });
 
+  // Connect the wallet first — the wizard disables the submit button until a
+  // wallet is connected.
+  await connectFreighter(page);
+
   // Navigate to Create Commitment wizard page
   await page.locator('#nav-create').click();
 
@@ -274,12 +452,12 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   await page.locator('#wizard-terms').fill('Test commitment terms');
   await page.getByRole('button', { name: /continue/i }).click();
 
-  // Step 2: Deadline - Fill past date to trigger WASM contract validation error
+  // Step 2: Deadline - Fill past date to trigger contract validation error
   await page.locator('#wizard-dueat').fill('2020-01-01T00:00');
   // Use the specific submit button id to avoid strict mode violation
   await page.locator('#wizard-submit-btn').click();
 
-  // WASM validation error should appear and stop submit flow
+  // Contract validation error should appear and stop submit flow
   await expect(
     page.getByText(/Due date must be set in the future|Contract validation failed/i),
   ).toBeVisible();
@@ -309,9 +487,7 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   });
 
   // Connect Freighter wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+  await connectFreighter(page);
 
   // Navigate to Create Commitment — use nav id to avoid strict mode violation
   await page.locator('#nav-create').click();
@@ -352,12 +528,11 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
 test('dashboard: encrypted commitment shows lock badge and decrypt button', async ({ page }) => {
   // Connect wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+  await connectFreighter(page);
 
-  // Navigate to dashboard using nav button id
-  await page.locator('#nav-dashboard').click();
+  // The encrypted commitment (id=2) from the mocked backend renders on the
+  // Commitments page with a lock badge.
+  await page.locator('#nav-commitments').click();
 
   // The second commitment (id=2) is encrypted — its lock badge should be visible
   await expect(page.getByText('E2E Encrypted').first()).toBeVisible({ timeout: 5000 });
