@@ -16,9 +16,11 @@ import {
   fundTestnetAccount,
   type CreateCommitmentResult,
 } from '../lib/soroban';
-import { postEncryptedTerms } from '../lib/api';
+import { postEncryptedTerms, createCommitment } from '../lib/api';
 import UserProfile from './UserProfile';
 import EncryptionConsentModal from './EncryptionConsentModal';
+import { SorobanErrorModal } from './SorobanErrorModal';
+import { SorobanSimulationError } from '../lib/soroban';
 import {
   CheckCircle2,
   ExternalLink,
@@ -139,6 +141,9 @@ export default function CreateCommitmentWizard({
   const [encryptResolve, setEncryptResolve] = useState<((r: EncryptResult) => void) | null>(null);
   const [encryptReject, setEncryptReject] = useState<((e: Error) => void) | null>(null);
 
+  // ── XDR Error Modal state ─────────────────────────────────────────────────
+  const [xdrError, setXdrError] = useState<SorobanSimulationError | null>(null);
+
   const isFreighter = provider === 'freighter';
 
   const {
@@ -228,8 +233,10 @@ export default function CreateCommitmentWizard({
       const dueAtSeconds = Math.floor(new Date(data.dueAt).getTime() / 1000);
       const nowSeconds = Math.floor(Date.now() / 1000);
 
+      console.log('[DEBUG] Starting WASM validation...', { dueAtSeconds, nowSeconds });
       // Pre-flight WASM Web Worker validation before transaction simulation & wallet submission
       const wasmResult = await validateCommitmentWithWasm(dueAtSeconds, nowSeconds, 1);
+      console.log('[DEBUG] WASM validation result:', wasmResult);
       if (!wasmResult.isValid) {
         showErrorToast(wasmResult.error || 'Contract validation failed in WASM Web Worker.');
         setSubmitting(false);
@@ -273,7 +280,24 @@ export default function CreateCommitmentWizard({
         dueAt: dueAtSeconds,
       });
 
-      // Submit Soroban transaction to Stellar Testnet via the connected wallet
+      // Best-effort registration with the backend so the dashboard can list
+      // the commitment before the indexer observes the chain event. Never
+      // masks on-chain failures below.
+      try {
+        setStatusMessage('Registering commitment...');
+        await createCommitment({
+          issuer: connectedAddress,
+          counterparty: data.counterparty,
+          termsHash: termsHashHex,
+          dueAt: dueAtSeconds,
+        });
+      } catch (backendErr) {
+        console.warn('[CreateCommitmentWizard] Backend registration failed:', backendErr);
+        // Non-fatal: continue to Soroban submission even if backend is unavailable
+      }
+
+      // Submit Soroban transaction to Stellar Testnet via the connected wallet.
+      // Errors propagate to the outer catch so users always see on-chain failures.
       const result = await submitCreateCommitment({
         issuerAddress: connectedAddress,
         counterpartyAddress: data.counterparty,
@@ -298,7 +322,7 @@ export default function CreateCommitmentWizard({
           // Non-fatal: on-chain commitment is already confirmed
           showErrorToast(
             'On-chain commitment created, but the encrypted terms could not be stored. ' +
-            'Please retry uploading later.',
+              'Please retry uploading later.',
           );
         }
       }
@@ -307,7 +331,12 @@ export default function CreateCommitmentWizard({
       onSuccess?.(result);
     } catch (err: unknown) {
       console.error('[CreateCommitmentWizard] Soroban error:', err);
-      showErrorToast(decodeRegistryContractError(err));
+      // Show rich modal for Soroban XDR simulation errors, simple toast for everything else
+      if (err instanceof SorobanSimulationError) {
+        setXdrError(err);
+      } else {
+        showErrorToast(decodeRegistryContractError(err));
+      }
     } finally {
       setSubmitting(false);
       setStatusMessage(null);
@@ -390,12 +419,15 @@ export default function CreateCommitmentWizard({
           <h3
             style={{ fontSize: '20px', fontWeight: '800', color: '#0f172a', margin: '0 0 6px 0' }}
           >
-            Commitment Created On-Chain!
+            Commitment created successfully
           </h3>
           <p style={{ fontSize: '13.5px', color: '#64748b', margin: '0 0 24px 0' }}>
-            Your transaction has been confirmed on Stellar Testnet.
+            {txResult
+              ? 'Your transaction has been confirmed on Stellar Testnet.'
+              : 'Your commitment has been registered.'}
           </p>
 
+          {txResult && (
           <div
             style={{
               background: '#f8fafc',
@@ -454,8 +486,10 @@ export default function CreateCommitmentWizard({
               </span>
             </div>
           </div>
+          )}
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            {txResult && (
             <a
               href={`https://stellar.expert/explorer/testnet/tx/${txResult.hash}`}
               target="_blank"
@@ -475,6 +509,7 @@ export default function CreateCommitmentWizard({
             >
               View on Stellar Expert <ExternalLink size={14} />
             </a>
+            )}
             <button
               onClick={handleReset}
               style={{
@@ -705,12 +740,14 @@ export default function CreateCommitmentWizard({
                       >
                         {encryptEnabled ? 'E2E Encrypted' : 'Encryption Off'}
                       </div>
-                      <div style={{ fontSize: '11px', color: encryptEnabled ? '#4338ca' : '#94a3b8' }}>
+                      <div
+                        style={{ fontSize: '11px', color: encryptEnabled ? '#4338ca' : '#94a3b8' }}
+                      >
                         {encryptEnabled
                           ? 'Only you & counterparty can read the terms'
                           : isFreighter
-                          ? 'Enable to encrypt terms with your wallet key'
-                          : 'Requires Freighter wallet'}
+                            ? 'Enable to encrypt terms with your wallet key'
+                            : 'Requires Freighter wallet'}
                       </div>
                     </div>
                   </div>
@@ -902,17 +939,15 @@ export default function CreateCommitmentWizard({
                   className="btn btn-primary"
                   style={{ flex: '1' }}
                   onClick={handleFinalSubmit}
-                  disabled={submitting || !isConnected || isSameAddress}
+                  disabled={submitting || isSameAddress}
                 >
                   {submitting ? (
                     <>
                       <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
                       <span className="btn-text">Submitting to Soroban...</span>
                     </>
-                  ) : isConnected ? (
-                    <span className="btn-text">Create Commitment</span>
                   ) : (
-                    <span className="btn-text">Connect Freighter to Submit</span>
+                    <span className="btn-text">Continue</span>
                   )}
                 </button>
               ) : (
@@ -948,6 +983,28 @@ export default function CreateCommitmentWizard({
           issuerAddress={connectedAddress}
           counterpartyAddress={values.counterparty}
           isFreighter={isFreighter}
+        />
+      )}
+
+      {/* ── Soroban XDR Error Modal ── */}
+      {xdrError && (
+        <SorobanErrorModal
+          error={xdrError}
+          diagnosticEventBlobs={xdrError.diagnosticEventBlobs}
+          attemptedFunction={xdrError.attemptedFunction ?? undefined}
+          onDismiss={() => {
+            setXdrError(null);
+            setSubmitting(false);
+            setStatusMessage(null);
+          }}
+          onRetry={
+            isConnected && isLastStep
+              ? () => {
+                  setXdrError(null);
+                  handleFinalSubmit();
+                }
+              : undefined
+          }
         />
       )}
     </div>

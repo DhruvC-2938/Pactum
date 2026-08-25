@@ -47,6 +47,36 @@ test('parses a created event into the issuing parties and commitment id', async 
   });
 });
 
+test('parses a created event whose value is the real (id, schema_id) tuple', async () => {
+  // contracts/registry/src/events.rs::commitment_created actually publishes (id, schema_id),
+  // not a bare id -- scValToNative decodes a tuple as a JS array, so this is what production
+  // events look like (unlike the bare-u64 case above, which only covers pre-schema_id history).
+  // Matches the equivalent fixture in ./commitments.test.ts's createdEvent().
+  const { nativeToScVal, xdr } = await import('@stellar/stellar-sdk');
+  const tupleXdr = xdr.ScVal.scvVec([
+    nativeToScVal(BigInt(42), { type: 'u64' }),
+    xdr.ScVal.scvVoid(),
+  ]).toXDR('base64');
+
+  const parsed = await parseContractEvent(
+    event(
+      [
+        await encode('created', 'symbol'),
+        await encode(ISSUER, 'address'),
+        await encode(COUNTERPARTY, 'address'),
+      ],
+      tupleXdr,
+    ),
+  );
+
+  assert.deepEqual(parsed, {
+    type: 'created',
+    commitmentId: '42',
+    issuer: ISSUER,
+    counterparty: COUNTERPARTY,
+  });
+});
+
 test('parses an attested event into a final outcome', async () => {
   const parsed = await parseContractEvent(
     event(
