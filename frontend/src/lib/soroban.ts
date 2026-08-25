@@ -18,8 +18,21 @@ import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
 import type { WalletProvider } from './wallet';
 import { decodeSimulationError, isSorobanXdrError } from './xdrDecode';
 import type { DecodedXdrError } from './xdrDecode';
+import { SorobanRpcPool } from './sorobanRpcPool';
 
-export const DEFAULT_SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org';
+/**
+ * Default pool of Soroban RPC endpoints, ordered by preference.
+ *
+ * Every endpoint in a pool must be on the **same Stellar network** so that a
+ * transaction prepared or submitted through any of them is valid on all of
+ * them. Operators can override/extend the pool at build time with the
+ * `VITE_SOROBAN_RPC_URLS` env var (comma-separated list) — the legacy single
+ * `VITE_SOROBAN_RPC_URL` is still honoured as a one-node pool.
+ */
+export const DEFAULT_SOROBAN_RPC_URLS: string[] = ['https://soroban-testnet.stellar.org'];
+
+/** @deprecated Use {@link DEFAULT_SOROBAN_RPC_URLS} / {@link resolveSorobanRpcUrls}. */
+export const DEFAULT_SOROBAN_RPC_URL = DEFAULT_SOROBAN_RPC_URLS[0];
 export const DEFAULT_CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
 export const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
 
@@ -90,11 +103,167 @@ export function extractDiagnosticEventBlobs(
   return blobs;
 }
 
+/**
+ * Resolves the ordered list of Soroban RPC endpoints the caller wants, in
+ * priority order:
+ *
+ * 1. Explicit `rpcUrls` array (most specific),
+ * 2. explicit legacy single `rpcUrl`,
+ * 3. `VITE_SOROBAN_RPC_URLS` (comma-separated) from the environment,
+ * 4. legacy `VITE_SOROBAN_RPC_URL` from the environment,
+ * 5. {@link DEFAULT_SOROBAN_RPC_URLS}.
+ *
+ * Duplicate/empty entries are removed.
+ */
+export function resolveSorobanRpcUrls(rpcUrls?: string[], rpcUrl?: string): string[] {
+  if (rpcUrls && rpcUrls.length > 0) {
+    const deduped = dedupeRpcUrls(rpcUrls);
+    if (deduped.length > 0) return deduped;
+    // Explicit list had only blank entries — fall through to env / defaults.
+  }
+  if (rpcUrl && rpcUrl.trim()) {
+    return [rpcUrl.trim()];
+  }
+  const envList = import.meta.env.VITE_SOROBAN_RPC_URLS;
+  if (typeof envList === 'string' && envList.trim()) {
+    return dedupeRpcUrls(
+      envList
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean),
+    );
+  }
+  const envSingle = import.meta.env.VITE_SOROBAN_RPC_URL;
+  if (typeof envSingle === 'string' && envSingle.trim()) {
+    return [envSingle.trim()];
+  }
+  return [...DEFAULT_SOROBAN_RPC_URLS];
+}
+
+function dedupeRpcUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of urls) {
+    const url = raw?.trim();
+    if (!url) continue;
+    const normalized = url.replace(/\/+$/, '').toLowerCase();
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      result.push(url);
+    }
+  }
+  return result;
+}
+
+/**
+ * Module-level pool cache keyed by a stable sort-join of the resolved URLs.
+ *
+ * Because every RPC entry point (`submitCreateCommitment`,
+ * `fetchReputationFromRpc`, `fetchLatestLedgerAnchor`) previously
+ * constructed a fresh {@link SorobanRpcPool} per invocation, health scores,
+ * EWMA latencies and cooldowns were lost between calls — a node that
+ * returned 429 on the last call was ranked first again on the next call.
+ * In-call retry worked; cross-call routing to the healthiest node did not.
+ *
+ * Caching reuses the same pool instance for the same set of URLs so that
+ * scores degrade and recover naturally as real traffic flows through.
+ */
+const poolCache = new Map<string, SorobanRpcPool>();
+
+/**
+ * Per-pool set of live status listeners. The pool-wide `onFallback` closure
+ * is fixed at construction time, so it consults this set on every fallback
+ * and notifies each registered listener. This lets per-call callers pass
+ * their own `onStatusUpdate` and receive failover messages in the UI without
+ * binding the callback into the (long-lived, cached) pool instance.
+ */
+const statusListeners = new Map<string, Set<(statusMessage: string) => void>>();
+
+/** Upper bound on registered status listeners per pool (see {@link getOrCreatePool}). */
+const MAX_STATUS_LISTENERS = 8;
+
+/**
+ * Returns a {@link SorobanRpcPool} for the given URL set, creating it on
+ * first use and reusing it on subsequent calls so health scores, EWMA
+ * latencies and cooldowns persist across invocations.
+ *
+ * @param urls Ordered list of RPC endpoints for the pool.
+ * @param onStatusUpdate Optional per-call callback invoked with a
+ * user-facing message whenever the pool fails over to a backup node.
+ * Callbacks are stored in a listener set keyed by the pool and invoked by the
+ * pool's fallback handler — they are never bound into the cached pool itself.
+ */
+export function getOrCreatePool(
+  urls: string[],
+  onStatusUpdate?: (statusMessage: string) => void,
+): SorobanRpcPool {
+  const key = [...urls].sort().join('|');
+  let pool = poolCache.get(key);
+  if (!pool) {
+    pool = new SorobanRpcPool(urls, {
+      allowHttp: true,
+      timeout: 15_000,
+      onFallback: ({ url, error, attempt, remaining }) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[SorobanRpcPool] RPC node ${url} failed (${reason}); retrying on another node ` +
+            `(attempt ${attempt}/${attempt + remaining}).`,
+        );
+        // Notify every live status listener registered for this pool.
+        for (const listener of statusListeners.get(key) ?? []) {
+          try {
+            listener(`RPC node unavailable (${reason}). Retrying on a backup node...`);
+          } catch {
+            // A misbehaving listener must not break the failover path.
+          }
+        }
+      },
+    });
+    poolCache.set(key, pool);
+  }
+  if (onStatusUpdate) {
+    let listeners = statusListeners.get(key);
+    if (!listeners) {
+      listeners = new Set();
+      statusListeners.set(key, listeners);
+    }
+    listeners.add(onStatusUpdate);
+    // Keep the set bounded. Listeners are per-invocation UI callbacks that are
+    // never explicitly unregistered, so without a cap a long-lived session
+    // would retain every stale React state setter it ever registered.
+    while (listeners.size > MAX_STATUS_LISTENERS) {
+      const oldest = listeners.values().next().value;
+      if (oldest === undefined) break;
+      listeners.delete(oldest);
+    }
+  }
+  return pool;
+}
+
+/**
+ * Builds a pool wired up with sensible production defaults.
+ *
+ * @deprecated Prefer {@link getOrCreatePool} which caches the pool instance
+ * so that health scores persist across calls.
+ */
+function createSorobanRpcPool(
+  urls: string[],
+  onStatusUpdate?: (statusMessage: string) => void,
+): SorobanRpcPool {
+  return getOrCreatePool(urls, onStatusUpdate);
+}
+
 export interface CreateCommitmentParams {
   issuerAddress: string;
   counterpartyAddress: string;
   termsHashHex: string;
   dueAtSeconds: number;
+  /**
+   * Ordered list of Soroban RPC endpoints (connection pool). When omitted,
+   * `VITE_SOROBAN_RPC_URLS` / `VITE_SOROBAN_RPC_URL` / defaults are used.
+   */
+  rpcUrls?: string[];
+  /** @deprecated Use {@link CreateCommitmentParams.rpcUrls}. */
   rpcUrl?: string;
   contractId?: string;
   networkPassphrase?: string;
@@ -113,11 +282,26 @@ export interface TrustedLedgerAnchor {
   sequence: number;
 }
 
+export interface SorobanReadOptions {
+  /**
+   * Ordered list of Soroban RPC endpoints (connection pool). When omitted,
+   * `VITE_SOROBAN_RPC_URLS` / `VITE_SOROBAN_RPC_URL` / defaults are used.
+   */
+  rpcUrls?: string[];
+  /** @deprecated Use {@link SorobanReadOptions.rpcUrls}. */
+  rpcUrl?: string;
+}
+
+export interface ReputationQueryOptions extends SorobanReadOptions {
+  contractId?: string;
+  networkPassphrase?: string;
+}
+
 export async function fetchLatestLedgerAnchor(
-  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  options: SorobanReadOptions = {},
 ): Promise<TrustedLedgerAnchor> {
-  const server = new rpc.Server(rpcUrl, { allowHttp: true });
-  const ledger = await server.getLatestLedger();
+  const pool = createSorobanRpcPool(resolveSorobanRpcUrls(options.rpcUrls, options.rpcUrl));
+  const ledger = await pool.getLatestLedger();
 
   if (!ledger.id || !ledger.sequence) {
     throw new Error('Soroban RPC returned an incomplete latest-ledger response');
@@ -135,11 +319,12 @@ export async function fetchLatestLedgerAnchor(
  * unilaterally resolve their own dispute.
  */
 export async function fetchArbitrator(
-  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  rpcUrls?: string[],
+  rpcUrl?: string,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
   networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
 ): Promise<string> {
-  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const pool = getOrCreatePool(resolveSorobanRpcUrls(rpcUrls, rpcUrl));
   const contract = new Contract(contractId);
   const source = new Account(Keypair.random().publicKey(), '0');
   const transaction = new TransactionBuilder(source, {
@@ -150,7 +335,7 @@ export async function fetchArbitrator(
     .setTimeout(30)
     .build();
 
-  const simulation = await server.simulateTransaction(transaction);
+  const simulation = await pool.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
     const diagBlobs = extractDiagnosticEventBlobs(simulation);
     const decoded = decodeSimulationError(simulation.error, diagBlobs, 'get_arbitrator');
@@ -170,11 +355,15 @@ export async function fetchArbitrator(
 
 export async function fetchReputationFromRpc(
   address: string,
-  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
-  contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
-  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+  options: ReputationQueryOptions = {},
 ): Promise<Reputation> {
-  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const contractId =
+    options.contractId || import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID;
+  const networkPassphrase =
+    options.networkPassphrase ||
+    import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE ||
+    DEFAULT_NETWORK_PASSPHRASE;
+  const pool = getOrCreatePool(resolveSorobanRpcUrls(options.rpcUrls, options.rpcUrl));
   const contract = new Contract(contractId);
   const source = new Account(Keypair.random().publicKey(), '0');
   const transaction = new TransactionBuilder(source, {
@@ -185,7 +374,7 @@ export async function fetchReputationFromRpc(
     .setTimeout(30)
     .build();
 
-  const simulation = await server.simulateTransaction(transaction);
+  const simulation = await pool.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
     const diagnosticBlobs = extractDiagnosticEventBlobs(simulation);
     const decoded = decodeSimulationError(simulation.error, diagnosticBlobs, 'get_reputation');
@@ -248,13 +437,18 @@ export async function fundTestnetAccount(address: string): Promise<boolean> {
 
 /**
  * Builds, simulates, signs via Freighter, and submits a `create_commitment` Soroban transaction.
+ *
+ * Every RPC interaction goes through a {@link SorobanRpcPool}: if the active
+ * node rate-limits (HTTP 429), returns a 5xx, or drops the connection, the
+ * request is transparently retried on the next-healthiest node.
  */
 export async function submitCreateCommitment({
   issuerAddress,
   counterpartyAddress,
   termsHashHex,
   dueAtSeconds,
-  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  rpcUrls,
+  rpcUrl,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
   networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
   onStatusUpdate,
@@ -278,8 +472,8 @@ export async function submitCreateCommitment({
     );
   }
 
-  onStatusUpdate?.('Initializing Soroban RPC connection...');
-  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  onStatusUpdate?.('Initializing Soroban RPC connection pool...');
+  const pool = createSorobanRpcPool(resolveSorobanRpcUrls(rpcUrls, rpcUrl), onStatusUpdate);
 
   // 2. Convert Arguments to ScVal
   onStatusUpdate?.('Encoding contract parameters...');
@@ -295,7 +489,7 @@ export async function submitCreateCommitment({
   // safe default: resolve_dispute's only guard is `caller == resolver_address`, so defaulting to
   // the issuer would let them unilaterally resolve their own dispute).
   onStatusUpdate?.('Fetching registry arbitrator...');
-  const arbitratorAddress = await fetchArbitrator(rpcUrl, contractId, networkPassphrase);
+  const arbitratorAddress = await fetchArbitrator(rpcUrls, rpcUrl, contractId, networkPassphrase);
   const resolverScVal = Address.fromString(arbitratorAddress).toScVal();
   // oracle and schema_id are both genuinely optional (Option<Address>/Option<u32>) with no
   // downstream code assuming they're populated; the wizard doesn't collect either yet.
@@ -310,7 +504,7 @@ export async function submitCreateCommitment({
   onStatusUpdate?.('Fetching sequence number for issuer account...');
   let account: any = null;
   try {
-    account = await server.getAccount(issuerAddress);
+    account = await pool.getAccount(issuerAddress);
   } catch (err: any) {
     const errStr = String(err?.message || err).toLowerCase();
     if (errStr.includes('not found') || errStr.includes('404') || errStr.includes('account')) {
@@ -320,7 +514,7 @@ export async function submitCreateCommitment({
         onStatusUpdate?.('Account funded! Re-fetching sequence number...');
         await new Promise((resolve) => setTimeout(resolve, 1500));
         try {
-          account = await server.getAccount(issuerAddress);
+          account = await pool.getAccount(issuerAddress);
         } catch (e2) {
           console.warn('Re-fetch account error:', e2);
         }
@@ -359,9 +553,9 @@ export async function submitCreateCommitment({
 
   // 4. Simulate & Prepare Transaction Envelope (Soroban footprint & fees)
   onStatusUpdate?.('Simulating transaction on Soroban RPC...');
-  let preparedTx: Awaited<ReturnType<typeof server.prepareTransaction>>;
+  let preparedTx: Awaited<ReturnType<typeof pool.prepareTransaction>>;
   try {
-    preparedTx = await server.prepareTransaction(tx);
+    preparedTx = await pool.prepareTransaction(tx);
   } catch (prepareErr: unknown) {
     const errMsg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
     const diagBlobs = extractDiagnosticEventBlobs({ error: errMsg });
@@ -414,7 +608,7 @@ export async function submitCreateCommitment({
   // 6. Submit Signed Transaction Envelope to RPC
   onStatusUpdate?.('Submitting transaction to Stellar Testnet...');
   const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
-  const sendResult = await server.sendTransaction(signedTx);
+  const sendResult = await pool.sendTransaction(signedTx);
 
   if (sendResult.status === 'ERROR' || sendResult.errorResult) {
     throw new Error(`RPC submission error: ${sendResult.errorResult || sendResult.status}`);
@@ -435,7 +629,7 @@ export async function submitCreateCommitment({
   while (attempts < 45) {
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    txResult = await server.getTransaction(txHash);
+    txResult = await pool.getTransaction(txHash);
     txStatus = txResult.status;
 
     if (txStatus === rpc.Api.GetTransactionStatus.SUCCESS) {

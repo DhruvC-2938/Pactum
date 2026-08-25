@@ -88,6 +88,22 @@ async function installFreighterMock(page: Page) {
             };
             break;
           }
+          case 'SUBMIT_TRANSACTION': {
+            response = {
+              status: 'SUCCESS',
+              txHash: 'a1b2c3d4e5f6',
+            };
+            break;
+          }
+          // Simulate signTransaction: echo the transaction XDR back as "signed"
+          // (submission itself is mocked in mockSorobanRpc, so no real signature
+          // is needed).
+          case 'SUBMIT_TRANSACTION':
+            response = {
+              signedTransaction: data.transactionXdr,
+              signerAddress: mockAddress,
+            };
+            break;
           default:
             return;
         }
@@ -366,26 +382,30 @@ test.beforeEach(async ({ page }) => {
     .click();
 });
 
-test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
-  page,
-}) => {
-  // 1. Connect the wallet from the landing page
+async function connectFreighter(page: Page) {
   await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
   // The connected-wallet button (above) is WalletConnectButton's own indicator of connected
   // state — it never renders literal "Connected" text, so that assertion never matched anything.
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+}
 
-  // 2. Create Commitment — use the nav button by its id: its accessible name is "Create
-  // Commitment navigation" (aria-label on #nav-create in App.tsx), not "Create Commitment".
+test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
+  page,
+}) => {
+  await mockSorobanRpc(page);
+
+  // 1. Connect the wallet from the landing page
+  await connectFreighter(page);
+  // The sr-only "Connected" span in WalletConnectButton confirms wallet connection
+  await expect(page.getByText('Connected').first()).toBeVisible();
+
+  // 2. Create Commitment — use the nav button by its id to avoid strict mode violation
   await page.locator('#nav-create').click();
 
   // Step 1: Counterparty
-  await expect(page.getByLabel('Counterparty Address')).toBeVisible();
-  // The wizard's real client-side StrKey validation requires a well-formed 56-char address;
-  // the placeholder previously here ('GCV7GCOUNTERPARTY...', 47 chars) failed that check and
-  // silently blocked the Continue button.
-  await page.getByLabel('Counterparty Address').fill(COUNTERPARTY);
+  await expect(page.locator('#wizard-counterparty')).toBeVisible();
+  await page.locator('#wizard-counterparty').fill(COUNTERPARTY);
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 2: Terms
@@ -393,12 +413,9 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.locator('#wizard-terms').fill('Test commitment terms');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  // Step 3: Due Date
-  await expect(page.getByLabel('Due Date')).toBeVisible();
-  await page.getByLabel('Due Date').fill(futureDueDate());
-  // Use the specific submit button id (matches frontend-wizard-remote's actual markup and the
-  // pattern used elsewhere in this file) rather than a role/name match liable to collide with
-  // #nav-create, which carries the same "Create Commitment" text.
+  // Step 3: Due Date — the last step's primary button is "Create Commitment"
+  await expect(page.locator('#wizard-dueat')).toBeVisible();
+  await page.locator('#wizard-dueat').fill('2027-12-31T12:00');
   await page.locator('#wizard-submit-btn').click();
 
   // Submitting runs the full mocked chain round-trip (simulate -> sign ->
@@ -546,6 +563,10 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
     (window as any).__signCalled = false;
   });
 
+  // Connect the wallet first — the wizard disables the submit button until a
+  // wallet is connected.
+  await connectFreighter(page);
+
   // Navigate to Create Commitment wizard page
   await page.locator('#nav-create').click();
 
@@ -559,7 +580,7 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   await page.locator('#wizard-terms').fill('Test commitment terms');
   await page.getByRole('button', { name: /continue/i }).click();
 
-  // Step 2: Deadline - Fill past date to trigger WASM contract validation error
+  // Step 2: Deadline - Fill past date to trigger contract validation error
   await page.locator('#wizard-dueat').fill('2020-01-01T00:00');
   // Wait for the submit button to be visible and enabled before clicking
   await expect(page.locator('#wizard-submit-btn')).toBeVisible();
@@ -597,9 +618,7 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   });
 
   // Connect Freighter wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+  await connectFreighter(page);
 
   // Navigate to Create Commitment — use nav id to avoid strict mode violation
   await page.locator('#nav-create').click();
@@ -643,12 +662,11 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
 test('dashboard: encrypted commitment shows lock badge and decrypt button', async ({ page }) => {
   // Connect wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+  await connectFreighter(page);
 
-  // Navigate to dashboard using nav button id
-  await page.locator('#nav-dashboard').click();
+  // The encrypted commitment (id=2) from the mocked backend renders on the
+  // Commitments page with a lock badge.
+  await page.locator('#nav-commitments').click();
 
   // The second commitment (id=2) is encrypted — its lock badge should be
   // visible. Assert on elements directly instead of waitForLoadState:
