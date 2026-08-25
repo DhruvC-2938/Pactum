@@ -2,7 +2,14 @@ import { Contract, rpc, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
 import { signTransaction } from '@stellar/freighter-api';
 import type { WalletProvider } from './wallet';
 import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
-import { SorobanSimulationError, extractDiagnosticEventBlobs } from './soroban';
+import {
+  SorobanSimulationError,
+  extractDiagnosticEventBlobs,
+  resolveSorobanRpcUrls,
+  DEFAULT_NETWORK_PASSPHRASE,
+  DEFAULT_CONTRACT_ID,
+  getOrCreatePool,
+} from './soroban';
 import { decodeSimulationError } from './xdrDecode';
 
 const BASE_FEE = '100000';
@@ -31,18 +38,7 @@ export async function submitGenericSorobanTx({
   networkPassphrase?: string;
 }) {
   onStatusUpdate?.('Initializing Soroban RPC connection pool...');
-  const pool = new SorobanRpcPool(resolveSorobanRpcUrls(rpcUrls, rpcUrl), {
-    allowHttp: true,
-    timeout: 15_000,
-    onFallback: ({ url, error, attempt, remaining }) => {
-      const reason = error instanceof Error ? error.message : String(error);
-      console.warn(
-        `[SorobanRpcPool] RPC node ${url} failed (${reason}); retrying on another node ` +
-          `(attempt ${attempt}/${attempt + remaining}).`,
-      );
-      onStatusUpdate?.(`RPC node unavailable (${reason}). Retrying on a backup node...`);
-    },
-  });
+  const pool = getOrCreatePool(resolveSorobanRpcUrls(rpcUrls, rpcUrl), onStatusUpdate);
 
   onStatusUpdate?.('Fetching sequence number for account...');
   let account: any = null;

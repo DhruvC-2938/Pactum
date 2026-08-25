@@ -18,6 +18,7 @@ import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
 import type { WalletProvider } from './wallet';
 import { decodeSimulationError, isSorobanXdrError } from './xdrDecode';
 import type { DecodedXdrError } from './xdrDecode';
+import { SorobanRpcPool } from './sorobanRpcPool';
 
 /**
  * Default pool of Soroban RPC endpoints, ordered by preference.
@@ -102,6 +103,131 @@ export function extractDiagnosticEventBlobs(
   return blobs;
 }
 
+/**
+ * Resolves the ordered list of Soroban RPC endpoints the caller wants, in
+ * priority order:
+ *
+ * 1. Explicit `rpcUrls` array (most specific),
+ * 2. explicit legacy single `rpcUrl`,
+ * 3. `VITE_SOROBAN_RPC_URLS` (comma-separated) from the environment,
+ * 4. legacy `VITE_SOROBAN_RPC_URL` from the environment,
+ * 5. {@link DEFAULT_SOROBAN_RPC_URLS}.
+ *
+ * Duplicate/empty entries are removed.
+ */
+export function resolveSorobanRpcUrls(rpcUrls?: string[], rpcUrl?: string): string[] {
+  if (rpcUrls && rpcUrls.length > 0) {
+    const deduped = dedupeRpcUrls(rpcUrls);
+    if (deduped.length > 0) return deduped;
+    // Explicit list had only blank entries — fall through to env / defaults.
+  }
+  if (rpcUrl && rpcUrl.trim()) {
+    return [rpcUrl.trim()];
+  }
+  const envList = import.meta.env.VITE_SOROBAN_RPC_URLS;
+  if (typeof envList === 'string' && envList.trim()) {
+    return dedupeRpcUrls(
+      envList
+        .split(',')
+        .map((u) => u.trim())
+        .filter(Boolean),
+    );
+  }
+  const envSingle = import.meta.env.VITE_SOROBAN_RPC_URL;
+  if (typeof envSingle === 'string' && envSingle.trim()) {
+    return [envSingle.trim()];
+  }
+  return [...DEFAULT_SOROBAN_RPC_URLS];
+}
+
+function dedupeRpcUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of urls) {
+    const url = raw?.trim();
+    if (!url) continue;
+    const normalized = url.replace(/\/+$/, '').toLowerCase();
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      result.push(url);
+    }
+  }
+  return result;
+}
+
+/**
+ * Module-level pool cache keyed by a stable sort-join of the resolved URLs.
+ *
+ * Because every RPC entry point (`submitCreateCommitment`,
+ * `fetchReputationFromRpc`, `fetchLatestLedgerAnchor`) previously
+ * constructed a fresh {@link SorobanRpcPool} per invocation, health scores,
+ * EWMA latencies and cooldowns were lost between calls — a node that
+ * returned 429 on the last call was ranked first again on the next call.
+ * In-call retry worked; cross-call routing to the healthiest node did not.
+ *
+ * Caching reuses the same pool instance for the same set of URLs so that
+ * scores degrade and recover naturally as real traffic flows through.
+ */
+const poolCache = new Map<string, SorobanRpcPool>();
+
+/**
+ * Returns a {@link SorobanRpcPool} for the given URL set, creating it on
+ * first use and reusing it on subsequent calls.
+ */
+export function getOrCreatePool(
+  urls: string[],
+  onStatusUpdate?: (statusMessage: string) => void,
+): SorobanRpcPool {
+  const key = [...urls].sort().join('|');
+  let pool = poolCache.get(key);
+  if (!pool) {
+    pool = new SorobanRpcPool(urls, {
+      allowHttp: true,
+      timeout: 15_000,
+      onFallback: ({ url, error, attempt, remaining }) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[SorobanRpcPool] RPC node ${url} failed (${reason}); retrying on another node ` +
+            `(attempt ${attempt}/${attempt + remaining}).`,
+        );
+      },
+    });
+    poolCache.set(key, pool);
+  }
+  // Wire up the caller's per-invocation status-update callback on each
+  // access so retry messages reach the right UI caller.
+  if (onStatusUpdate) {
+    return new Proxy(pool, {
+      get(target, prop, receiver) {
+        if (prop === 'execute') {
+          return (
+            operation: (server: never) => Promise<unknown>,
+            opts?: { isRetryable?: (error: unknown) => boolean },
+          ) =>
+            target.execute(operation, {
+              ...opts,
+            });
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as SorobanRpcPool;
+  }
+  return pool;
+}
+
+/**
+ * Builds a pool wired up with sensible production defaults.
+ *
+ * @deprecated Prefer {@link getOrCreatePool} which caches the pool instance
+ * so that health scores persist across calls.
+ */
+function createSorobanRpcPool(
+  urls: string[],
+  onStatusUpdate?: (statusMessage: string) => void,
+): SorobanRpcPool {
+  return getOrCreatePool(urls, onStatusUpdate);
+}
+
 export interface CreateCommitmentParams {
   issuerAddress: string;
   counterpartyAddress: string;
@@ -139,6 +265,11 @@ export interface SorobanReadOptions {
   rpcUrls?: string[];
   /** @deprecated Use {@link SorobanReadOptions.rpcUrls}. */
   rpcUrl?: string;
+}
+
+export interface ReputationQueryOptions extends SorobanReadOptions {
+  contractId?: string;
+  networkPassphrase?: string;
 }
 
 export async function fetchLatestLedgerAnchor(
@@ -198,9 +329,7 @@ export async function fetchArbitrator(
 
 export async function fetchReputationFromRpc(
   address: string,
-  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
-  contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
-  networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
+  options: ReputationQueryOptions = {},
 ): Promise<Reputation> {
   const contractId =
     options.contractId || import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID;
@@ -208,7 +337,7 @@ export async function fetchReputationFromRpc(
     options.networkPassphrase ||
     import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE ||
     DEFAULT_NETWORK_PASSPHRASE;
-  const pool = createSorobanRpcPool(resolveSorobanRpcUrls(options.rpcUrls, options.rpcUrl));
+  const pool = getOrCreatePool(resolveSorobanRpcUrls(options.rpcUrls, options.rpcUrl));
   const contract = new Contract(contractId);
   const source = new Account(Keypair.random().publicKey(), '0');
   const transaction = new TransactionBuilder(source, {

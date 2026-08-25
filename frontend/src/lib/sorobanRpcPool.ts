@@ -308,7 +308,7 @@ export class SorobanRpcPool {
           await node.server.getHealth();
           this.recordSuccess(node, startedAt);
         } catch (error) {
-          this.recordFailure(node, error, startedAt);
+          this.recordFailure(node, error, startedAt, true);
         }
       }),
     );
@@ -346,7 +346,7 @@ export class SorobanRpcPool {
         const retryable =
           error instanceof RetryableRpcError ||
           (options.isRetryable ? options.isRetryable(error) : isRetryableError(error));
-        this.recordFailure(node, error, startedAt);
+        this.recordFailure(node, error, startedAt, retryable);
 
         const remaining = maxAttempts - attempt - 1;
         if (retryable && remaining > 0) {
@@ -482,18 +482,32 @@ export class SorobanRpcPool {
     this.options.onNodeSuccess?.(this.toStats(node));
   }
 
-  private recordFailure(node: RpcNodeState, error: unknown, startedAt: number): void {
+  private recordFailure(
+    node: RpcNodeState,
+    error: unknown,
+    startedAt: number,
+    retryable: boolean,
+  ): void {
     const latency = Date.now() - startedAt;
     node.latencyMs =
       node.latencyMs === 0 ? latency : node.latencyMs * EWMA_ALPHA + latency * (1 - EWMA_ALPHA);
     node.totalFailures += 1;
-    node.consecutiveFailures += 1;
     node.lastError = error instanceof Error ? error.message : String(error);
-    node.cooldownUntil = Date.now() + (this.options.cooldownMs ?? DEFAULT_OPTIONS.cooldownMs);
-    node.score = Math.max(
-      this.options.minScore ?? DEFAULT_OPTIONS.minScore,
-      node.score - (this.options.failurePenalty ?? DEFAULT_OPTIONS.failurePenalty),
-    );
+
+    // Only penalise the node's health score and put it into cooldown when
+    // the failure is transient (the node itself is struggling). Application-
+    // level errors like "unfunded account" or contract simulation failures
+    // are not the node's fault — every node would return the same result.
+    if (retryable) {
+      node.consecutiveFailures += 1;
+      node.cooldownUntil = Date.now() + (this.options.cooldownMs ?? DEFAULT_OPTIONS.cooldownMs);
+      node.score = Math.max(
+        this.options.minScore ?? DEFAULT_OPTIONS.minScore,
+        node.score - (this.options.failurePenalty ?? DEFAULT_OPTIONS.failurePenalty),
+      );
+    } else {
+      node.consecutiveFailures = 0;
+    }
     this.options.onNodeFailure?.(this.toStats(node), error);
   }
 
