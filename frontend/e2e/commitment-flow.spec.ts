@@ -96,6 +96,15 @@ async function installFreighterMock(page: Page) {
             };
             break;
           }
+          // Simulate signTransaction: echo the transaction XDR back as "signed"
+          // (submission itself is mocked in mockSorobanRpc, so no real signature
+          // is needed).
+          case 'SUBMIT_TRANSACTION':
+            response = {
+              signedTransaction: data.transactionXdr,
+              signerAddress: mockAddress,
+            };
+            break;
           default:
             return;
         }
@@ -373,14 +382,19 @@ test.beforeEach(async ({ page }) => {
   }
 });
 
-test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
-  page,
-}) => {
-  // 1. Connect the wallet from the landing page
+async function connectFreighter(page: Page) {
   await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+}
 
+test('critical user journey: connect wallet -> create commitment -> view dashboard', async ({
+  page,
+}) => {
+  await mockSorobanRpc(page);
+
+  // 1. Connect the wallet from the landing page
+  await connectFreighter(page);
   // The sr-only "Connected" span in WalletConnectButton confirms wallet connection
   await expect(page.getByText('Connected').first()).toBeVisible();
 
@@ -389,9 +403,7 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
 
   // Step 1: Counterparty
   await expect(page.locator('#wizard-counterparty')).toBeVisible();
-  await page
-    .locator('#wizard-counterparty')
-    .fill('GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB');
+  await page.locator('#wizard-counterparty').fill(COUNTERPARTY);
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 2: Terms
@@ -399,7 +411,7 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.locator('#wizard-terms').fill('Test commitment terms');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  // Step 3: Due Date
+  // Step 3: Due Date — the last step's primary button is "Create Commitment"
   await expect(page.locator('#wizard-dueat')).toBeVisible();
   await page.locator('#wizard-dueat').fill('2027-12-31T12:00');
   await page.locator('#wizard-submit-btn').click();
@@ -560,6 +572,10 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
     (window as any).__signCalled = false;
   });
 
+  // Connect the wallet first — the wizard disables the submit button until a
+  // wallet is connected.
+  await connectFreighter(page);
+
   // Navigate to Create Commitment wizard page
   await page.locator('#nav-create').click();
 
@@ -573,7 +589,7 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
   await page.locator('#wizard-terms').fill('Test commitment terms');
   await page.getByRole('button', { name: /continue/i }).click();
 
-  // Step 2: Deadline - Fill past date to trigger WASM contract validation error
+  // Step 2: Deadline - Fill past date to trigger contract validation error
   await page.locator('#wizard-dueat').fill('2020-01-01T00:00');
   // Wait for the submit button to be visible and enabled before clicking
   await expect(page.locator('#wizard-submit-btn')).toBeVisible();
@@ -611,9 +627,7 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   });
 
   // Connect Freighter wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+  await connectFreighter(page);
 
   // Navigate to Create Commitment — use nav id to avoid strict mode violation
   await page.locator('#nav-create').click();
@@ -662,12 +676,11 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
 test('dashboard: encrypted commitment shows lock badge and decrypt button', async ({ page }) => {
   // Connect wallet
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+  await connectFreighter(page);
 
-  // Navigate to dashboard using nav button id
-  await page.locator('#nav-dashboard').click();
+  // The encrypted commitment (id=2) from the mocked backend renders on the
+  // Commitments page with a lock badge.
+  await page.locator('#nav-commitments').click();
 
   // The second commitment (id=2) is encrypted — its lock badge should be
   // visible. Assert on elements directly instead of waitForLoadState:
