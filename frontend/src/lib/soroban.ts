@@ -171,8 +171,27 @@ function dedupeRpcUrls(urls: string[]): string[] {
 const poolCache = new Map<string, SorobanRpcPool>();
 
 /**
+ * Per-pool set of live status listeners. The pool-wide `onFallback` closure
+ * is fixed at construction time, so it consults this set on every fallback
+ * and notifies each registered listener. This lets per-call callers pass
+ * their own `onStatusUpdate` and receive failover messages in the UI without
+ * binding the callback into the (long-lived, cached) pool instance.
+ */
+const statusListeners = new Map<string, Set<(statusMessage: string) => void>>();
+
+/** Upper bound on registered status listeners per pool (see {@link getOrCreatePool}). */
+const MAX_STATUS_LISTENERS = 8;
+
+/**
  * Returns a {@link SorobanRpcPool} for the given URL set, creating it on
- * first use and reusing it on subsequent calls.
+ * first use and reusing it on subsequent calls so health scores, EWMA
+ * latencies and cooldowns persist across invocations.
+ *
+ * @param urls Ordered list of RPC endpoints for the pool.
+ * @param onStatusUpdate Optional per-call callback invoked with a
+ * user-facing message whenever the pool fails over to a backup node.
+ * Callbacks are stored in a listener set keyed by the pool and invoked by the
+ * pool's fallback handler — they are never bound into the cached pool itself.
  */
 export function getOrCreatePool(
   urls: string[],
@@ -190,27 +209,33 @@ export function getOrCreatePool(
           `[SorobanRpcPool] RPC node ${url} failed (${reason}); retrying on another node ` +
             `(attempt ${attempt}/${attempt + remaining}).`,
         );
+        // Notify every live status listener registered for this pool.
+        for (const listener of statusListeners.get(key) ?? []) {
+          try {
+            listener(`RPC node unavailable (${reason}). Retrying on a backup node...`);
+          } catch {
+            // A misbehaving listener must not break the failover path.
+          }
+        }
       },
     });
     poolCache.set(key, pool);
   }
-  // Wire up the caller's per-invocation status-update callback on each
-  // access so retry messages reach the right UI caller.
   if (onStatusUpdate) {
-    return new Proxy(pool, {
-      get(target, prop, receiver) {
-        if (prop === 'execute') {
-          return (
-            operation: (server: never) => Promise<unknown>,
-            opts?: { isRetryable?: (error: unknown) => boolean },
-          ) =>
-            target.execute(operation, {
-              ...opts,
-            });
-        }
-        return Reflect.get(target, prop, receiver);
-      },
-    }) as SorobanRpcPool;
+    let listeners = statusListeners.get(key);
+    if (!listeners) {
+      listeners = new Set();
+      statusListeners.set(key, listeners);
+    }
+    listeners.add(onStatusUpdate);
+    // Keep the set bounded. Listeners are per-invocation UI callbacks that are
+    // never explicitly unregistered, so without a cap a long-lived session
+    // would retain every stale React state setter it ever registered.
+    while (listeners.size > MAX_STATUS_LISTENERS) {
+      const oldest = listeners.values().next().value;
+      if (oldest === undefined) break;
+      listeners.delete(oldest);
+    }
   }
   return pool;
 }

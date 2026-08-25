@@ -7,7 +7,7 @@ import {
   isRetryableError,
   type SorobanRpcNodeStats,
 } from './sorobanRpcPool';
-import { resolveSorobanRpcUrls } from './soroban';
+import { resolveSorobanRpcUrls, getOrCreatePool } from './soroban';
 
 // ── Fake rpc.Server helpers ──────────────────────────────────────────────
 
@@ -496,5 +496,54 @@ describe('SorobanRpcPool (SDK fetch-client integration)', () => {
     });
 
     await expect(pool.getHealth()).rejects.toBeInstanceOf(RpcPoolExhaustedError);
+  });
+});
+
+// ── getOrCreatePool: cached pools + per-call status listeners ───────────
+
+describe('getOrCreatePool (caching and status listeners)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubFetch(routes: Array<{ url: string; status: number; body?: unknown }>): void {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      const route = routes.find((r) => url.startsWith(r.url));
+      if (!route) {
+        return new Response(JSON.stringify({ error: 'no route' }), { status: 404 });
+      }
+      return new Response(JSON.stringify(route.body ?? { error: 'boom' }), {
+        status: route.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  }
+
+  const healthyRpc = (): unknown => ({
+    jsonrpc: '2.0',
+    id: 1,
+    result: { status: 'healthy' },
+  });
+
+  it('reuses the same pool instance for the same URL set', () => {
+    const a = getOrCreatePool(['http://node-a', 'http://node-b']);
+    const b = getOrCreatePool(['http://node-b', 'http://node-a']);
+    expect(a).toBe(b);
+  });
+
+  it('invokes the per-call status listener when the pool fails over', async () => {
+    stubFetch([
+      { url: 'http://node-a', status: 429, body: { error: 'rate limited' } },
+      { url: 'http://node-b', status: 200, body: healthyRpc() },
+    ]);
+    const onStatusUpdate = vi.fn();
+    const pool = getOrCreatePool(['http://node-a', 'http://node-b'], onStatusUpdate);
+
+    // node-a rate-limits, so the pool retries on node-b and notifies the listener.
+    await expect(pool.getHealth()).resolves.toEqual({ status: 'healthy' });
+    expect(onStatusUpdate).toHaveBeenCalled();
+    expect(onStatusUpdate.mock.calls[0][0]).toMatch(/RPC node unavailable/);
   });
 });
