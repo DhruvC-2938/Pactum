@@ -2803,3 +2803,137 @@ fn test_dispute_fails_without_dispute_token_set() {
     let res = client.try_dispute(&counterparty, &id);
     assert_eq!(res, Err(Ok(Error::DisputeTokenNotSet.into())));
 }
+
+// -----------------------------------------------------------------------------
+// Batch Commitment Creation Tests (Issue #17)
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_batch_create_commitments_success() {
+    let (env, client, _issuer, _counterparty, resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let issuer1 = Address::generate(&env);
+    let issuer2 = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    let params = soroban_sdk::vec![
+        &env,
+        commitments::CommitmentParams {
+            issuer: issuer1.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 2000,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+        commitments::CommitmentParams {
+            issuer: issuer2.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 3000,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+    ];
+
+    env.mock_all_auths();
+    let ids = client.batch_create_commitments(&params);
+
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids.get(0).unwrap(), 1);
+    assert_eq!(ids.get(1).unwrap(), 2);
+}
+
+#[test]
+fn test_batch_create_commitments_fails_when_batch_too_large() {
+    let (env, client, _issuer, _counterparty, resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let mut params = soroban_sdk::Vec::new(&env);
+
+    for i in 0..51 {
+        let issuer = Address::generate(&env);
+        let counterparty = Address::generate(&env);
+        params.push_back(commitments::CommitmentParams {
+            issuer,
+            counterparty,
+            terms_hash: terms_hash.clone(),
+            due_at: 2000 + i as u64,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        });
+    }
+
+    env.mock_all_auths();
+    let res = client.try_batch_create_commitments(&params);
+    assert_eq!(res, Err(Ok(Error::BatchTooLarge.into())));
+}
+
+#[test]
+fn test_batch_create_commitments_fails_if_any_due_at_in_past() {
+    let (env, client, _issuer, _counterparty, resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let issuer1 = Address::generate(&env);
+    let issuer2 = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    let params = soroban_sdk::vec![
+        &env,
+        commitments::CommitmentParams {
+            issuer: issuer1.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 2000,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+        commitments::CommitmentParams {
+            issuer: issuer2.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 500,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+    ];
+
+    env.mock_all_auths();
+    let res = client.try_batch_create_commitments(&params);
+    assert_eq!(res, Err(Ok(Error::DueAtInPast.into())));
+}
+
+#[test]
+fn test_batch_create_commitments_handles_empty_batch() {
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let empty_params = soroban_sdk::Vec::new(&env);
+    env.mock_all_auths();
+
+    let ids = client.batch_create_commitments(&empty_params);
+    assert_eq!(ids.len(), 0);
+}

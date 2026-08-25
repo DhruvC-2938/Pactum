@@ -22,10 +22,29 @@ export type {
   Rule,
   RuleSet,
   RuntimeValue,
-} from './types';
+} from './types.ts';
 
-export { AstValidationError, AstEvaluationError } from './errors';
-export { compileRuleSet, LIMITS } from './compiler';
-export { createAstResolver, composeResolvers } from './resolver';
-export type { AstResolverOptions } from './resolver';
-export { DEFAULT_COMMITMENT_RULES, EXAMPLE_AMOUNT_DATE_RULES } from './defaultRules';
+export { AstValidationError, AstEvaluationError } from './errors.ts';
+export { compileRuleSet, LIMITS } from './compiler.ts';
+export { createAstResolver, createWasmAstResolver, composeResolvers } from './resolver.ts';
+export type { AstResolverOptions } from './resolver.ts';
+export { DEFAULT_COMMITMENT_RULES, EXAMPLE_AMOUNT_DATE_RULES } from './defaultRules.ts';
+export {
+  serializeRuleSetBinary,
+  deserializeRuleSetBinary,
+  serializeExpr,
+  deserializeExpr,
+  MAGIC_HEADER,
+} from './binary.ts';
+export {
+  evaluateInWasmSandbox,
+  verifyTraceSignature,
+  ensureWasmSandboxInitialized,
+} from './sandbox.ts';
+export type {
+  ExecutionTrace,
+  RuleResult,
+  TraceStep,
+  WasmExecutionResult,
+  WasmEvalOptions,
+} from './sandbox.ts';

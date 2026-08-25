@@ -22,11 +22,7 @@ interface FieldErrorLike {
 const RESERVED_SEGMENTS: ReadonlySet<string> = new Set(['__proto__', 'prototype', 'constructor']);
 
 /** Safely assign a (possibly dotted) field error into a nested errors object; first write wins. */
-function setFieldError(
-  errors: Record<string, unknown>,
-  path: string,
-  error: FieldErrorLike,
-): void {
+function setFieldError(errors: Record<string, unknown>, path: string, error: FieldErrorLike): void {
   const segments = path.split('.');
   let cursor = errors;
   for (let i = 0; i < segments.length - 1; i += 1) {
@@ -45,10 +41,14 @@ function setFieldError(
   }
 }
 
-/** Options for {@link createAstResolver}. */
+/**
+ * Options for {@link createAstResolver} and {@link createWasmAstResolver}.
+ */
 export interface AstResolverOptions {
   /** Clock used for `now()` in rules. Injectable for deterministic tests. */
   now?: () => number;
+  /** Gas limit for WASM sandbox execution (default: 100,000). */
+  gasLimit?: number;
 }
 
 /**
@@ -90,9 +90,49 @@ export function createAstResolver<TFieldValues extends FieldValues = FieldValues
       }
     }
 
-    const result =
-      claimed.size > 0 ? { values: {}, errors } : { values, errors: {} };
+    const result = claimed.size > 0 ? { values: {}, errors } : { values, errors: {} };
     return result as ResolverResult<TFieldValues>;
+  };
+}
+
+/**
+ * Build a react-hook-form `Resolver` that evaluates dynamic rules inside the
+ * gas-metered WebAssembly sandbox.
+ */
+export function createWasmAstResolver<TFieldValues extends FieldValues = FieldValues>(
+  ruleSet: import('./types').RuleSet | Uint8Array,
+  options: AstResolverOptions = {},
+): Resolver<TFieldValues> {
+  const clock = options.now ?? (() => Date.now());
+
+  return async (values) => {
+    const ctx: EvalContext = {
+      values: values as Record<string, unknown>,
+      now: clock(),
+    };
+
+    try {
+      const { evaluateInWasmSandbox } = await import('./sandbox.ts');
+      const result = await evaluateInWasmSandbox(ruleSet, ctx, {
+        gasLimit: options.gasLimit,
+      });
+
+      if (!result.valid) {
+        const errors: Record<string, unknown> = {};
+        for (const [field, err] of Object.entries(result.errors)) {
+          setFieldError(errors, field, err);
+        }
+        if (Object.keys(errors).length === 0) {
+          errors.root = { type: 'ast_wasm', message: 'Validation failed.' };
+        }
+        return { values: {}, errors } as ResolverResult<TFieldValues>;
+      }
+
+      return { values, errors: {} } as ResolverResult<TFieldValues>;
+    } catch {
+      // Fail open on unexpected sandbox error to prevent bricking the form
+      return { values, errors: {} } as ResolverResult<TFieldValues>;
+    }
   };
 }
 
@@ -120,8 +160,7 @@ export function composeResolvers<TFieldValues extends FieldValues = FieldValues>
       }
     }
 
-    const result =
-      claimed.size > 0 ? { values: {}, errors: mergedErrors } : { values, errors: {} };
+    const result = claimed.size > 0 ? { values: {}, errors: mergedErrors } : { values, errors: {} };
     return result as ResolverResult<TFieldValues>;
   };
 }

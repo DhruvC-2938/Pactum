@@ -10,9 +10,7 @@ import { logger } from '../logger/logger';
 // The backend never decrypts this data — it is a dumb blob store.
 const encryptedPayloadSchema = z.object({
   commitmentId: z.string().min(1, 'commitmentId is required'),
-  issuer: z
-    .string()
-    .regex(/^G[A-Z2-7]{55}$/, 'issuer must be a valid Stellar public key (G...)'),
+  issuer: z.string().regex(/^G[A-Z2-7]{55}$/, 'issuer must be a valid Stellar public key (G...)'),
   counterparty: z
     .string()
     .regex(/^G[A-Z2-7]{55}$/, 'counterparty must be a valid Stellar public key (G...)'),
@@ -37,6 +35,59 @@ export const commitmentQuerySchema = z.object({
 });
 
 export type CommitmentQueryInput = z.infer<typeof commitmentQuerySchema>;
+
+interface CommitmentOutcomeRow {
+  time: string | Date;
+  id: string | number;
+  partyA: string;
+  partyB: string | null;
+  status: string;
+  outcome: string;
+  dueDate: string | Date;
+  completedAt: string | Date | null;
+  createdAt: string | Date;
+}
+
+const toUnixSeconds = (value: string | Date): number =>
+  Math.floor(new Date(value).getTime() / 1000);
+
+/**
+ * Maps a commitment_outcomes row onto the shape frontend/src/lib/api.ts's `Commitment` type
+ * actually expects (issuer/counterparty/due_at/status as 'Pending'|'Fulfilled'|...). The two
+ * were never aligned -- commitment_outcomes uses partyA/partyB and lowercase
+ * status/outcome columns predating this contract's data model, so every row this route
+ * returned was silently unusable: CommitmentItem (App.tsx) does
+ * `commitment.issuer.charAt(0)` unconditionally, which throws given `issuer` was always
+ * undefined, so the Commitments list rendered nothing for any row, ever.
+ *
+ * terms_hash has no equivalent in commitment_outcomes at all (off-chain, not tracked by this
+ * table) -- returned as '' rather than omitted, since the field is typed as a required string.
+ */
+export function toApiCommitment(row: CommitmentOutcomeRow) {
+  const isTerminal = row.status === 'completed';
+  const status =
+    row.status === 'disputed'
+      ? 'Disputed'
+      : isTerminal
+        ? row.outcome === 'late'
+          ? 'Late'
+          : row.outcome === 'breached'
+            ? 'Breached'
+            : 'Fulfilled'
+        : 'Pending';
+
+  return {
+    id: Number(row.id),
+    issuer: row.partyA,
+    counterparty: row.partyB ?? '',
+    terms_hash: '',
+    due_at: toUnixSeconds(row.dueDate),
+    status,
+    outcome: status === 'Pending' ? null : status,
+    created_at: toUnixSeconds(row.createdAt),
+    attested_at: row.completedAt ? toUnixSeconds(row.completedAt) : null,
+  };
+}
 
 export type KeysetCursor = {
   time: string;
@@ -199,7 +250,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     res.status(200).json({
-      items,
+      items: items.map(toApiCommitment),
       next_cursor: nextCursor,
       limit,
       has_more: hasMore,
@@ -225,54 +276,50 @@ router.get('/', async (req: Request, res: Response) => {
 // ── POST /commitments/encrypted ─────────────────────────────────────────────
 // Stores the AES-GCM encrypted terms blob for a commitment.
 // The backend never receives nor stores plaintext — only the opaque ciphertext.
-router.post(
-  '/encrypted',
-  strictLimiter,
-  async (req: Request, res: Response): Promise<void> => {
-    const parseResult = encryptedPayloadSchema.safeParse(req.body);
-    if (!parseResult.success) {
-      res.status(400).json({
-        error: 'Bad Request',
-        details: parseResult.error.issues,
-      });
-      return;
-    }
+router.post('/encrypted', strictLimiter, async (req: Request, res: Response): Promise<void> => {
+  const parseResult = encryptedPayloadSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      error: 'Bad Request',
+      details: parseResult.error.issues,
+    });
+    return;
+  }
 
-    const { commitmentId, issuer, counterparty, ciphertext }: EncryptedPayloadInput =
-      parseResult.data;
+  const { commitmentId, issuer, counterparty, ciphertext }: EncryptedPayloadInput =
+    parseResult.data;
 
-    // Sanity: issuer and counterparty must differ
-    if (issuer.trim().toUpperCase() === counterparty.trim().toUpperCase()) {
-      res.status(400).json({
-        error: 'Bad Request',
-        message: 'issuer and counterparty addresses must be different.',
-      });
-      return;
-    }
+  // Sanity: issuer and counterparty must differ
+  if (issuer.trim().toUpperCase() === counterparty.trim().toUpperCase()) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'issuer and counterparty addresses must be different.',
+    });
+    return;
+  }
 
-    try {
-      await pool.query(
-        `INSERT INTO encrypted_payloads (commitment_id, issuer, counterparty, ciphertext)
+  try {
+    await pool.query(
+      `INSERT INTO encrypted_payloads (commitment_id, issuer, counterparty, ciphertext)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (commitment_id)
          DO UPDATE SET ciphertext = EXCLUDED.ciphertext,
                        issuer = EXCLUDED.issuer,
                        counterparty = EXCLUDED.counterparty`,
-        [commitmentId, issuer, counterparty, ciphertext],
-      );
+      [commitmentId, issuer, counterparty, ciphertext],
+    );
 
-      logger.info('Encrypted payload stored for commitment', { commitmentId, issuer });
+    logger.info('Encrypted payload stored for commitment', { commitmentId, issuer });
 
-      res.status(201).json({ message: 'Encrypted terms stored successfully.' });
-    } catch (error) {
-      logger.error('Failed to store encrypted payload', error, { commitmentId });
-      res.status(503).json({
-        error: 'Service Unavailable',
-        message: 'Failed to store encrypted commitment payload.',
-      });
-    }
-  },
-);
+    res.status(201).json({ message: 'Encrypted terms stored successfully.' });
+  } catch (error) {
+    logger.error('Failed to store encrypted payload', error, { commitmentId });
+    res.status(503).json({
+      error: 'Service Unavailable',
+      message: 'Failed to store encrypted commitment payload.',
+    });
+  }
+});
 
 // ── GET /commitments/:id/encrypted ───────────────────────────────────────────
 // Returns the ciphertext blob for the given commitment ID.

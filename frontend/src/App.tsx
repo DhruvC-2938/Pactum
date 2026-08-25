@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 
 import './App.css';
@@ -8,11 +9,12 @@ import ReputationDashboard from './components/ReputationDashboard';
 import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import DecryptTermsModal from './components/DecryptTermsModal';
+import RollupStatusPanel from './components/RollupStatusPanel';
 import { useCommitments } from './hooks/useCommitments';
+import { useSyncCache } from './hooks/useSyncCache';
 import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
-import { useSyncCache } from './hooks/useSyncCache';
 import { wsClient } from './lib/wsClient';
 import type { WalletProvider } from './lib/wallet';
 import {
@@ -22,7 +24,9 @@ import {
   submitInitRegistry,
 } from './lib/sorobanTxHelpers';
 import { ThemeSelector } from './context/ThemeContext';
+import { IndexerModeToggle, useIndexerMode } from './context/IndexerModeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
+import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
 
 interface CommitmentItemProps {
   commitment: Commitment;
@@ -156,6 +160,29 @@ function renderCommitmentItem(
   );
 }
 
+function LocalIndexerNotice() {
+  const { mode, syncState, lastError, retentionGapDetected } = useIndexerMode();
+  if (mode !== 'local') return null;
+
+  if (syncState === 'error') {
+    return (
+      <div className="inline-alert warning">
+        Local Indexer error: {lastError ?? 'unknown error'}. Switch back to Cloud Indexer if this
+        persists.
+      </div>
+    );
+  }
+
+  return (
+    <div className="inline-alert info">
+      Local Indexer is active — commitments are read directly from Soroban RPC via this browser's
+      IndexedDB, bypassing the backend.
+      {retentionGapDetected &&
+        " Some older history may be missing (outside the RPC provider's event retention window) — switch to Cloud Indexer for full history."}
+    </div>
+  );
+}
+
 function InlineWalletError() {
   const { error, errorCode, clearError } = useWallet();
   return errorCode === 'NOT_INSTALLED' ? (
@@ -173,7 +200,7 @@ export default function App() {
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
   const [reputationAddress, setReputationAddress] = useState(
-    'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
+    'GBY54VG5G4A7DC4D6YJ6GHD4X4QW2AR43JLYZ2QVWSHKACWK3BLDR5IX',
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
@@ -265,7 +292,6 @@ export default function App() {
       <div className="app-shell">
         {/* ── Sidebar / Off-Canvas Mobile Drawer ── */}
         <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-          <ThemeSelector />
           <div
             className="sidebar-logo"
             onClick={() => {
@@ -290,10 +316,10 @@ export default function App() {
             <span className="nav-section-label">Overview</span>
 
             <button
-              className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
+              className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`}
               id="nav-dashboard"
               onClick={() => {
-                setActivePage('dashboard');
+                setActivePage('commitments');
                 setIsMobileMenuOpen(false);
               }}
             >
@@ -346,6 +372,7 @@ export default function App() {
             <button
               className={`nav-item ${activePage === 'create' ? 'active' : ''}`}
               id="nav-create"
+              aria-label="Create Commitment navigation"
               onClick={() => {
                 setActivePage('create');
                 setIsMobileMenuOpen(false);
@@ -519,6 +546,30 @@ export default function App() {
             </button>
 
             <button
+              className={`nav-item ${activePage === 'mesh' ? 'active' : ''}`}
+              id="nav-mesh"
+              onClick={() => {
+                setActivePage('mesh');
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <span className="nav-icon">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M2 8h12M8 2a10 10 0 010 12M8 2a10 10 0 000 12" />
+                </svg>
+              </span>
+              BFT Mesh Network
+            </button>
+
+            <button
               className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`}
               id="nav-initialize"
               onClick={() => {
@@ -571,6 +622,7 @@ export default function App() {
               </span>
               Home
             </button>
+            <IndexerModeToggle />
             <div className="sidebar-network">
               <span className="network-dot"></span>
               <span className="network-name">Stellar Testnet</span>
@@ -619,15 +671,18 @@ export default function App() {
                             ? 'Resolve Dispute'
                             : activePage === 'lookup'
                               ? 'Get Commitment'
-                              : activePage === 'initialize'
-                                ? 'Initialize'
-                                : 'Dashboard'}
+                              : activePage === 'mesh'
+                                ? 'BFT Mesh Network'
+                                : activePage === 'initialize'
+                                  ? 'Initialize'
+                                  : 'Dashboard'}
               </span>
             </div>
             <div
               className="topbar-actions"
               style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
             >
+              <ThemeSelector />
               <div className="search-bar">
                 <svg
                   viewBox="0 0 16 16"
@@ -968,6 +1023,7 @@ export default function App() {
               </div>
             </div>
             <div className="commitment-list" id="commitments-list-page">
+              <LocalIndexerNotice />
               {commitmentsQuery.isLoading && (
                 <div className="inline-alert info">Loading commitments...</div>
               )}
@@ -1485,6 +1541,7 @@ export default function App() {
               onNavigateAddress={(addr) => handleNavigateReputation(addr)}
               onLaunchCreate={() => setActivePage('create')}
             />
+            <RollupStatusPanel demoMode />
           </section>
 
           {/* ──────────────────────────────────────────────
@@ -1691,6 +1748,13 @@ export default function App() {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* ──────────────────────────────────────────────
+               PAGE: BFT Mesh Network
+               ────────────────────────────────────────────── */}
+          <section className={`page ${activePage === 'mesh' ? 'active' : ''}`} id="page-mesh">
+            <MeshNetworkMonitor />
           </section>
         </main>
       </div>

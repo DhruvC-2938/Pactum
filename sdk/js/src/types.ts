@@ -89,6 +89,25 @@ export interface CreateCommitmentParams {
   /** Unix timestamp (seconds) when the commitment is due. */
   dueAt: bigint;
   /**
+   * Address authorized to call `resolve_dispute` for this commitment. Required on-chain, with no
+   * safe default: naming `issuer`/`counterparty` here would let a party unilaterally resolve their
+   * own dispute (`resolve_dispute`'s only check is `caller == resolverAddress`). Omit this to
+   * fall back to the registry's current arbitrator (`getArbitrator()`), which routes disputes
+   * through committee majority vote instead of single-delegate resolution -- the standard,
+   * no-custom-resolver behavior.
+   */
+  resolverAddress?: string;
+  /**
+   * Address additionally authorized to call `attest` for this commitment (alongside issuer and
+   * counterparty), for automated/oracle-driven attestation. Omit for the default two-party flow.
+   */
+  oracle?: string;
+  /**
+   * Off-chain terms-template identifier echoed in the `commitment_created` event; purely
+   * descriptive metadata, never read by the contract. Omit for freeform/untemplated terms.
+   */
+  schemaId?: number;
+  /**
    * Assigned attestors for M-of-N voting. Omit or pass an empty array for
    * simple (single-party) commitments.
    */
