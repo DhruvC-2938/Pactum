@@ -40,8 +40,9 @@ export async function startIntegrationDatabase(): Promise<IntegrationDatabase> {
       await pool.query(sql);
     }
   } catch (error) {
-    await pool.end();
-    await container.stop();
+    // allSettled, not sequential awaits: a rejection from one cleanup must not
+    // skip the other, and neither should replace the original setup error.
+    await Promise.allSettled([pool.end(), container.stop()]);
     throw error;
   }
 
