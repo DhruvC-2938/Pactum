@@ -37,7 +37,8 @@ fn setup() -> (Env, RegistryContractClient<'static>, Address, Address) {
 fn setup_long_horizon() -> (Env, RegistryContractClient<'static>, Address, Address) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator], &admin);
     (env, client, issuer, counterparty)
 }
 
@@ -96,7 +97,8 @@ fn setup_with_arbitrator() -> (
 ) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 
     // Configure the dispute token required by the registry's `dispute` function
     // (error #40 = DisputeTokenNotSet without this).

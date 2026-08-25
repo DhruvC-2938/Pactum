@@ -30,6 +30,7 @@ struct Fixture {
     client: RegistryContractClient<'static>,
     contract_id: Address,
     arbitrator: Address,
+    admin: Address,
     timelock: Address,
     /// Dispute token address, configured so that `client.dispute()` calls succeed.
     dispute_token: Address,
@@ -46,8 +47,9 @@ fn setup() -> Fixture {
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let arbitrator = Address::generate(&env);
+    let admin = Address::generate(&env);
     let timelock = Address::generate(&env);
-    client.initialize(&vec![&env, arbitrator.clone()]);
+    client.initialize(&vec![&env, arbitrator.clone()], &admin);
     client.init_upgrade_admin(&timelock);
 
     // Configure the dispute token required by the registry's `dispute` function
@@ -62,6 +64,7 @@ fn setup() -> Fixture {
         client,
         contract_id,
         arbitrator,
+        admin,
         timelock,
         dispute_token,
     }
@@ -170,17 +173,18 @@ fn test_init_upgrade_admin_fails_before_initialize() {
 
 #[test]
 #[should_panic]
-fn test_init_upgrade_admin_requires_arbitrator_auth() {
-    // No mock_all_auths: the arbitrator has not signed.
+fn test_init_upgrade_admin_requires_admin_auth() {
+    // No mock_all_auths: the admin has not signed.
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
-    client.initialize(&vec![&env, arbitrator]);
+    let admin = Address::generate(&env);
+    client.initialize(&vec![&env, arbitrator], &admin);
 
     env.set_auths(&[]);
-    client.init_upgrade_admin(&Address::generate(&env));
+    client.init_upgrade_admin(&admin);
 }
 
 // -------------------------------------------------------------------------
@@ -193,10 +197,11 @@ fn test_upgrade_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&vec![&env, Address::generate(&env)]);
+    let admin = Address::generate(&env);
+    client.initialize(&vec![&env, Address::generate(&env)], &admin);
 
     let err = client
-        .try_upgrade(&dummy_wasm_hash(&env), &SCHEMA_VERSION_V2)
+        .try_upgrade(&admin, &dummy_wasm_hash(&env), &SCHEMA_VERSION_V2)
         .unwrap_err()
         .unwrap();
     assert_eq!(err, Error::UpgradeAdminNotSet.into());
@@ -209,7 +214,7 @@ fn test_upgrade_requires_upgrade_admin_auth() {
     // Drop every mocked signature: nobody has authorized as the timelock.
     f.env.set_auths(&[]);
     f.client
-        .upgrade(&dummy_wasm_hash(&f.env), &SCHEMA_VERSION_V2);
+        .upgrade(&f.admin, &dummy_wasm_hash(&f.env), &SCHEMA_VERSION_V2);
 }
 
 #[test]
@@ -219,7 +224,7 @@ fn test_upgrade_rejects_schema_downgrade() {
 
     let err = f
         .client
-        .try_upgrade(&dummy_wasm_hash(&f.env), &SCHEMA_VERSION_V1)
+        .try_upgrade(&f.admin, &dummy_wasm_hash(&f.env), &SCHEMA_VERSION_V1)
         .unwrap_err()
         .unwrap();
     assert_eq!(err, Error::SchemaDowngrade.into());
@@ -231,7 +236,7 @@ fn test_upgrade_rejects_unknown_schema_version() {
     let f = setup();
     let err = f
         .client
-        .try_upgrade(&dummy_wasm_hash(&f.env), &99u32)
+        .try_upgrade(&f.admin, &dummy_wasm_hash(&f.env), &99u32)
         .unwrap_err()
         .unwrap();
     assert_eq!(err, Error::UnsupportedSchemaVersion.into());
@@ -243,14 +248,14 @@ fn test_upgrade_rejects_unknown_schema_version() {
 fn test_set_upgrade_admin_requires_current_admin_auth() {
     let f = setup();
     f.env.set_auths(&[]);
-    f.client.set_upgrade_admin(&Address::generate(&f.env));
+    f.client.set_upgrade_admin(&f.admin, &Address::generate(&f.env));
 }
 
 #[test]
 fn test_set_upgrade_admin_rotates_authority() {
     let f = setup();
     let new_timelock = Address::generate(&f.env);
-    f.client.set_upgrade_admin(&new_timelock);
+    f.client.set_upgrade_admin(&f.admin, &new_timelock);
     assert_eq!(f.client.get_upgrade_admin(), Some(new_timelock));
 }
 
@@ -260,10 +265,11 @@ fn test_set_upgrade_admin_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&vec![&env, Address::generate(&env)]);
+    let admin = Address::generate(&env);
+    client.initialize(&vec![&env, Address::generate(&env)], &admin);
 
     let err = client
-        .try_set_upgrade_admin(&Address::generate(&env))
+        .try_set_upgrade_admin(&admin, &Address::generate(&env))
         .unwrap_err()
         .unwrap();
     assert_eq!(err, Error::UpgradeAdminNotSet.into());

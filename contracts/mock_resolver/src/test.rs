@@ -26,7 +26,8 @@ fn setup_env() -> (
     let resolver_client = MockResolverClient::new(&env, &resolver_id);
 
     let arbitrator = Address::generate(&env);
-    registry_client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    let admin = Address::generate(&env);
+    registry_client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 
     // Configure the dispute token required by the registry's `dispute` function
     // (error #40 = DisputeTokenNotSet without this).

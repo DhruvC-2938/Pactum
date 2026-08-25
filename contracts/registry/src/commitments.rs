@@ -224,6 +224,8 @@ pub enum DataKey {
     /// Instance storage key for the address of the token used for
     /// dispute staking (defaults to native XLM).
     DisputeToken,
+    /// Instance storage key for the contract admin address.
+    Admin,
 }
 
 /// Running tally of arbitrator votes on a single disputed commitment.
@@ -310,6 +312,24 @@ pub fn arbitrators(env: &Env) -> Vec<Address> {
         .instance()
         .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
     set
+}
+
+/// Loads the admin address, panicking with [`crate::errors::Error::NotInitialized`]
+/// if the contract has not been initialized.
+pub fn admin(env: &Env) -> Address {
+    env.storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .unwrap_or_else(|| panic_with_error!(env, crate::errors::Error::NotInitialized))
+}
+
+/// Verifies that the caller is the admin, panicking with [`crate::errors::Error::NotAdmin`]
+/// if they are not.
+pub fn require_admin(env: &Env, caller: &Address) {
+    let admin_address = admin(env);
+    if admin_address != *caller {
+        panic_with_error!(env, crate::errors::Error::NotAdmin);
+    }
 }
 
 /// Loads a commitment from persistent storage, transparently migrating legacy records

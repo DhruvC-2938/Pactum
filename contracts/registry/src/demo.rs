@@ -88,7 +88,8 @@ fn buckets_ledgers(buckets: u32) -> u32 {
 fn demo_time_decay_table() {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator], &admin);
 
     println!();
     println!("=== Pactum Registry: ledger-based time-decay trust score ===");
@@ -172,7 +173,8 @@ fn demo_time_decay_table() {
     println!("[6] Mixed history (1 fulfilled + 1 breach) also recovers:");
     let (env2, client2, issuer2, counterparty2) = setup();
     let arbitrator2 = Address::generate(&env2);
-    client2.initialize(&soroban_sdk::vec![&env2, arbitrator2]);
+    let admin2 = Address::generate(&env2);
+    client2.initialize(&soroban_sdk::vec![&env2, arbitrator2], &admin2);
     create_and_attest(
         &env2,
         &client2,
