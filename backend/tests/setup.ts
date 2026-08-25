@@ -34,9 +34,15 @@ export async function startIntegrationDatabase(): Promise<IntegrationDatabase> {
   // points at compiled test output under dist-integration-test/, which the
   // build does not copy the .sql migrations into.
   const migrationsDir = path.join(process.cwd(), 'src', 'db', 'migrations');
-  for (const file of INDEXER_MIGRATIONS) {
-    const sql = await readFile(path.join(migrationsDir, file), 'utf8');
-    await pool.query(sql);
+  try {
+    for (const file of INDEXER_MIGRATIONS) {
+      const sql = await readFile(path.join(migrationsDir, file), 'utf8');
+      await pool.query(sql);
+    }
+  } catch (error) {
+    await pool.end();
+    await container.stop();
+    throw error;
   }
 
   return { container, pool };
