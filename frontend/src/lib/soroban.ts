@@ -294,11 +294,12 @@ export async function fetchLatestLedgerAnchor(
  * unilaterally resolve their own dispute.
  */
 export async function fetchArbitrator(
-  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  rpcUrls?: string[],
+  rpcUrl?: string,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
   networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
 ): Promise<string> {
-  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const pool = getOrCreatePool(resolveSorobanRpcUrls(rpcUrls, rpcUrl));
   const contract = new Contract(contractId);
   const source = new Account(Keypair.random().publicKey(), '0');
   const transaction = new TransactionBuilder(source, {
@@ -309,7 +310,7 @@ export async function fetchArbitrator(
     .setTimeout(30)
     .build();
 
-  const simulation = await server.simulateTransaction(transaction);
+  const simulation = await pool.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
     const diagBlobs = extractDiagnosticEventBlobs(simulation);
     const decoded = decodeSimulationError(simulation.error, diagBlobs, 'get_arbitrator');
@@ -463,7 +464,7 @@ export async function submitCreateCommitment({
   // safe default: resolve_dispute's only guard is `caller == resolver_address`, so defaulting to
   // the issuer would let them unilaterally resolve their own dispute).
   onStatusUpdate?.('Fetching registry arbitrator...');
-  const arbitratorAddress = await fetchArbitrator(rpcUrl, contractId, networkPassphrase);
+  const arbitratorAddress = await fetchArbitrator(rpcUrls, rpcUrl, contractId, networkPassphrase);
   const resolverScVal = Address.fromString(arbitratorAddress).toScVal();
   // oracle and schema_id are both genuinely optional (Option<Address>/Option<u32>) with no
   // downstream code assuming they're populated; the wizard doesn't collect either yet.
@@ -527,9 +528,9 @@ export async function submitCreateCommitment({
 
   // 4. Simulate & Prepare Transaction Envelope (Soroban footprint & fees)
   onStatusUpdate?.('Simulating transaction on Soroban RPC...');
-  let preparedTx: Awaited<ReturnType<typeof server.prepareTransaction>>;
+  let preparedTx: Awaited<ReturnType<typeof pool.prepareTransaction>>;
   try {
-    preparedTx = await server.prepareTransaction(tx);
+    preparedTx = await pool.prepareTransaction(tx);
   } catch (prepareErr: unknown) {
     const errMsg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
     const diagBlobs = extractDiagnosticEventBlobs({ error: errMsg });

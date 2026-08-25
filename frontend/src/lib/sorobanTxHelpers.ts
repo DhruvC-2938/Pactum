@@ -57,9 +57,9 @@ export async function submitGenericSorobanTx({
     .build();
 
   onStatusUpdate?.('Simulating transaction on Soroban RPC...');
-  let preparedTx: Awaited<ReturnType<typeof server.prepareTransaction>>;
+  let preparedTx: Awaited<ReturnType<typeof pool.prepareTransaction>>;
   try {
-    preparedTx = await server.prepareTransaction(tx);
+    preparedTx = await pool.prepareTransaction(tx);
   } catch (prepareErr: unknown) {
     const errMsg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
     const diagBlobs = extractDiagnosticEventBlobs({ error: errMsg });
