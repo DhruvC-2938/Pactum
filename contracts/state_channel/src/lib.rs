@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractclient, contracterror, contractimpl, contracttype, panic_with_error,
-    token, Address, Bytes, BytesN, Env, Symbol,
+    contract, contractclient, contracterror, contractimpl, contracttype, panic_with_error, token,
+    Address, Bytes, BytesN, Env, Symbol,
 };
 
 #[contracterror]
@@ -74,6 +74,7 @@ pub trait WasmConsensusRuleset {
     /// Validates an off-chain state transition against user-defined WASM consensus rules.
     /// Returns `true` if the state transition from `old_state_hash` to `new_state_hash`
     /// with state payload `state_data` and balance movement is valid according to the WASM ruleset.
+    #[allow(clippy::too_many_arguments)]
     fn validate_transition(
         env: Env,
         old_state_hash: BytesN<32>,
@@ -92,6 +93,7 @@ pub struct StateChannelContract;
 #[contractimpl]
 impl StateChannelContract {
     /// Opens a new L2 state channel with locked token collateral and assigned WASM consensus ruleset contract.
+    #[allow(clippy::too_many_arguments)]
     pub fn open_channel(
         env: Env,
         party_a: Address,
@@ -355,11 +357,19 @@ impl StateChannelContract {
         let contract_address = env.current_contract_address();
 
         if channel.latest_balance_a > 0 {
-            token_client.transfer(&contract_address, &channel.party_a, &channel.latest_balance_a);
+            token_client.transfer(
+                &contract_address,
+                &channel.party_a,
+                &channel.latest_balance_a,
+            );
         }
 
         if channel.latest_balance_b > 0 {
-            token_client.transfer(&contract_address, &channel.party_b, &channel.latest_balance_b);
+            token_client.transfer(
+                &contract_address,
+                &channel.party_b,
+                &channel.latest_balance_b,
+            );
         }
 
         channel.status = ChannelStatus::Closed;
