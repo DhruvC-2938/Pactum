@@ -21,7 +21,7 @@ const INDEXER_MIGRATIONS = ['003_deterministic_indexer.sql', '005_commitment_ind
  * a test in between fails.
  */
 export async function startIntegrationDatabase(): Promise<IntegrationDatabase> {
-  const container = await new PostgreSqlContainer('postgres:16')
+    const container = await new PostgreSqlContainer('timescale/timescaledb:latest-pg16')
     .withDatabase('pactum_integration')
     .withUsername('pactum')
     .withPassword('pactum')
@@ -35,7 +35,10 @@ export async function startIntegrationDatabase(): Promise<IntegrationDatabase> {
   // build does not copy the .sql migrations into.
   const migrationsDir = path.join(process.cwd(), 'src', 'db', 'migrations');
   try {
-    for (const file of INDEXER_MIGRATIONS) {
+    const { readdir } = await import('node:fs/promises');
+    const files = await readdir(migrationsDir);
+    const sqlFiles = files.filter(f => f.endsWith('.sql')).sort();
+    for (const file of sqlFiles) {
       const sql = await readFile(path.join(migrationsDir, file), 'utf8');
       await pool.query(sql);
     }
