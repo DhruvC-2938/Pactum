@@ -1,4 +1,4 @@
--- Migration: 005_commitments_cursor_indexes.sql
+-- Migration: 007_commitments_cursor_indexes.sql
 -- Add template column and composite indexes for high-performance cursor-based pagination and filtering
 
 ALTER TABLE commitment_outcomes ADD COLUMN IF NOT EXISTS template VARCHAR(50);

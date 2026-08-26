@@ -103,47 +103,53 @@ jobs:
         working-directory: zk
         run: npm test
 
-  zk-tests:
-    name: ZK Circuit Tests
+  migration-dry-run:
+    name: Migration Dry-Run
     runs-on: ubuntu-latest
+    env:
+      # Custom runner reads TIMESCALEDB_* env vars; point them at the ephemeral
+      # timescaledb service container spun up for this job.
+      TIMESCALEDB_HOST: localhost
+      TIMESCALEDB_PORT: 5432
+      TIMESCALEDB_DATABASE: pactum_migration_test
+      TIMESCALEDB_USER: postgres
+      TIMESCALEDB_PASSWORD: postgres
+    services:
+      postgres:
+        # Same image docker-compose.yml uses for the real service, so
+        # CREATE EXTENSION timescaledb (001_timescale_setup.sql) succeeds here
+        # instead of only in the full docker-compose e2e stack.
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pactum_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pactum_migration_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Node 22.18+ runs the package's TypeScript sources directly, so there is no
-      # build step to keep in sync with the tests.
-      - name: Set up Node.js 22.x
+      - name: Set up Node.js 22.x (LTS)
         uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-
-      - name: Install Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      # circom is not published to npm, so it is built from source and cached — the
-      # circuit tests skip without it, and a skipped circuit test proves nothing.
-      - name: Cache circom binary
-        id: cache_circom
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/circom
-          key: ${{ runner.os }}-circom-2.2.3
-
-      - name: Build circom from source
-        if: steps.cache_circom.outputs.cache-hit != 'true'
-        run: cargo install --locked --git https://github.com/iden3/circom.git --tag v2.2.3 circom
 
       - name: Cache npm dependencies
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node-zk-${{ hashFiles('zk/package-lock.json', 'zk/package.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('backend/package-lock.json', 'backend/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-node-zk-
+            ${{ runner.os }}-node-
 
-      - name: Install zk dependencies
-        working-directory: zk
+      - name: Install backend dependencies
+        working-directory: backend
         run: |
           if [ -f package-lock.json ]; then
             npm ci
@@ -151,13 +157,14 @@ jobs:
             npm install
           fi
 
-      - name: Compile circuit and run the Groth16 setup
-        working-directory: zk
-        run: npm run build:circuit
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
 
-      - name: Run zk test suite
-        working-directory: zk
-        run: npm test
+      - name: Run migration dry-run against ephemeral TimescaleDB
+        working-directory: backend
+        run: node dist/db/migrate-dry-run.js
+
 
   backend-tests:
     name: Backend Tests
