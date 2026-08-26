@@ -409,6 +409,10 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   await page.locator('#wizard-dueat').fill('2027-12-31T12:00');
   await page.locator('#wizard-submit-btn').click();
 
+  // Preflight simulation runs first and blocks on user confirmation before the
+  // wallet is prompted -- see SimulationPreviewModal / preflightSimulate.
+  await page.locator('#sim-modal-confirm').click();
+
   // Submitting runs the full mocked chain round-trip (simulate -> sign ->
   // send -> confirm); on confirmation App.onSuccess auto-navigates to
   // Reputation (/reputation/<address>).
@@ -633,6 +637,11 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   // Encryption consent modal should appear
   await expect(page.locator('#encrypt-modal-confirm')).toBeVisible({ timeout: 10000 });
   await page.locator('#encrypt-modal-confirm').click();
+
+  // Preflight simulation runs after encryption resolves and blocks on user
+  // confirmation before the wallet is prompted -- see SimulationPreviewModal /
+  // preflightSimulate.
+  await page.locator('#sim-modal-confirm').click();
 
   // Wait until the upload actually happened (sign -> submit -> confirm ->
   // store-encrypted), then assert on its body.

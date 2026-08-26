@@ -112,6 +112,30 @@ export interface TrustedLedgerAnchor {
   sequence: number;
 }
 
+export interface SimulationCost {
+  /** Estimated fee in stroops (1 XLM = 10,000,000 stroops). */
+  feeStroops: string;
+  /** Estimated fee formatted as XLM string for display. */
+  feeXlm: string;
+  /** CPU instructions consumed. */
+  cpuInsns: string;
+  /** Memory bytes consumed. */
+  memBytes: string;
+}
+
+export interface SimulationPreview {
+  /** True if simulation succeeded. */
+  success: boolean;
+  /** Decoded error message if simulation failed. */
+  error?: string;
+  /** Cost metrics if simulation succeeded. */
+  cost?: SimulationCost;
+  /** List of required authorizations as human-readable strings. */
+  requiredAuths: string[];
+  /** Raw simulation result for downstream use (prepareTransaction). */
+  rawSimulation: rpc.Api.SimulateTransactionResponse;
+}
+
 export async function fetchLatestLedgerAnchor(
   rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
 ): Promise<TrustedLedgerAnchor> {
@@ -123,6 +147,69 @@ export async function fetchLatestLedgerAnchor(
   }
 
   return { hash: ledger.id, sequence: ledger.sequence };
+}
+
+/**
+ * Runs simulateTransaction against the Soroban RPC and returns a parsed
+ * SimulationPreview without modifying any state or prompting the wallet.
+ */
+export async function preflightSimulate(
+  tx: ReturnType<TransactionBuilder['build']>,
+  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+): Promise<SimulationPreview> {
+  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  const simulation = await server.simulateTransaction(tx);
+
+  if (rpc.Api.isSimulationError(simulation)) {
+    return {
+      success: false,
+      error: simulation.error ?? 'Simulation failed with unknown error.',
+      requiredAuths: [],
+      rawSimulation: simulation,
+    };
+  }
+
+  // Parse cost metrics
+  const feeStroops = simulation.minResourceFee ?? '0';
+  const feeXlm = (Number(feeStroops) / 10_000_000).toFixed(7);
+
+  const cost: SimulationCost = {
+    feeStroops,
+    feeXlm,
+    cpuInsns: (simulation as any).cost?.cpuInsns ?? '0',
+    memBytes: (simulation as any).cost?.memBytes ?? '0',
+  };
+
+  // Parse required auths as readable strings
+  const requiredAuths: string[] = [];
+  if (simulation.result?.auth) {
+    for (const auth of simulation.result.auth) {
+      try {
+        const decoded: xdr.SorobanAuthorizationEntry =
+          typeof auth === 'string'
+            ? xdr.SorobanAuthorizationEntry.fromXDR(auth, 'base64')
+            : (auth as xdr.SorobanAuthorizationEntry);
+        const credentials = decoded.credentials();
+        if (credentials.switch().name === 'sorobanCredentialsAddress') {
+          const addrCreds = credentials.address();
+          requiredAuths.push(
+            addrCreds.address().accountId().ed25519().toString('hex').slice(0, 8) + '...',
+          );
+        } else {
+          requiredAuths.push('Source account authorization');
+        }
+      } catch {
+        requiredAuths.push('Unknown authorization');
+      }
+    }
+  }
+
+  return {
+    success: true,
+    cost,
+    requiredAuths,
+    rawSimulation: simulation,
+  };
 }
 
 /**

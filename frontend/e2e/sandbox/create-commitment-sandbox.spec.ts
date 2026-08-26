@@ -114,6 +114,11 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     await expect(submitBtn).toBeEnabled({ timeout: 10_000 });
     await submitBtn.click();
 
+    // Preflight simulation runs first against the real sandbox RPC and blocks on
+    // user confirmation before the wallet is prompted -- see SimulationPreviewModal
+    // / preflightSimulate. Generous timeout: this is a real RPC round-trip, not a mock.
+    await page.locator('#sim-modal-confirm').click({ timeout: 30_000 });
+
     // The real signing + RPC round-trip (submit -> poll for on-chain confirmation) can take up to
     // ~55s under CI load, so a real submission/simulation/confirmation error can surface well
     // after a fixed early check would look for it. Race the success transition against the error

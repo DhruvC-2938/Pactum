@@ -18,13 +18,19 @@ import { useWasmValidation } from './hooks/useWasmValidation';
 import {
   submitCreateCommitment,
   fundTestnetAccount,
+  preflightSimulate,
+  fetchArbitrator,
+  extractDiagnosticEventBlobs,
   type CreateCommitmentResult,
+  type SimulationPreview,
   SorobanSimulationError,
 } from './lib/soroban';
+import { decodeSimulationError } from './lib/xdrDecode';
 import { postEncryptedTerms, createCommitment } from './lib/api';
 import UserProfile from './components/UserProfile';
 import EncryptionConsentModal from './components/EncryptionConsentModal';
 import { SorobanErrorModal } from './components/SorobanErrorModal';
+import SimulationPreviewModal from './components/SimulationPreviewModal';
 import {
   CheckCircle2,
   ExternalLink,
@@ -154,6 +160,9 @@ export default function CreateCommitmentWizard({
   // Resolved after the consent modal signs and encrypts (used in reset)
   const [encryptResolve, setEncryptResolve] = useState<((r: EncryptResult) => void) | null>(null);
   const [encryptReject, setEncryptReject] = useState<((e: Error) => void) | null>(null);
+
+  const [simulationPreview, setSimulationPreview] = useState<SimulationPreview | null>(null);
+  const [showSimModal, setShowSimModal] = useState(false);
 
   // ── XDR Error Modal state ─────────────────────────────────────────────────
   const [xdrError, setXdrError] = useState<SorobanSimulationError | null>(null);
@@ -302,6 +311,95 @@ export default function CreateCommitmentWizard({
         termsHash: termsHashHex,
         dueAt: dueAtSeconds,
       });
+
+      // Preflight simulation before prompting Freighter
+      setStatusMessage('Running preflight simulation...');
+      setShowSimModal(true);
+      setSimulationPreview(null);
+
+      try {
+        // Build the same tx as soroban.ts does, just for simulation
+        const { rpc, TransactionBuilder, Contract, Address, xdr, Networks, BASE_FEE } =
+          await import('@stellar/stellar-sdk');
+        const rpcUrl =
+          import.meta.env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
+        const server = new rpc.Server(rpcUrl, { allowHttp: true });
+        const account = await server.getAccount(connectedAddress);
+        const contractId =
+          import.meta.env.VITE_PACTUM_CONTRACT_ID ||
+          'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
+        const contract = new Contract(contractId);
+        const networkPassphrase =
+          import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
+        const { hexToBytes } = await import('./lib/soroban');
+        const termsHashBytes = hexToBytes(termsHashHex);
+        // Mirror submitCreateCommitment's own argument list exactly (see soroban.ts) --
+        // create_commitment takes 9 parameters, and a preflight built with only the first
+        // 4 fails simulation with a MismatchingParameterLen host error regardless of
+        // whether the real submission would have succeeded.
+        const arbitratorAddress = await fetchArbitrator(rpcUrl, contractId, networkPassphrase);
+        const simTx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
+          .addOperation(
+            contract.call(
+              'create_commitment',
+              Address.fromString(connectedAddress).toScVal(),
+              Address.fromString(data.counterparty).toScVal(),
+              xdr.ScVal.scvBytes(termsHashBytes as any),
+              xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString())),
+              Address.fromString(arbitratorAddress).toScVal(),
+              xdr.ScVal.scvVoid(),
+              xdr.ScVal.scvVoid(),
+              xdr.ScVal.scvVec([]),
+              xdr.ScVal.scvU32(0),
+            ),
+          )
+          .setTimeout(60)
+          .build();
+
+        const preview = await preflightSimulate(simTx);
+        setSimulationPreview(preview);
+
+        if (!preview.success) {
+          // Simulation failed — route through the same rich XDR error modal as an
+          // on-chain submission failure, rather than a plain toast, so a preflight
+          // rejection and a submit-time rejection look identical to the user.
+          setShowSimModal(false);
+          const diagBlobs = extractDiagnosticEventBlobs(preview.rawSimulation);
+          const decoded = decodeSimulationError(preview.error ?? '', diagBlobs, 'create_commitment');
+          setXdrError(
+            new SorobanSimulationError(
+              decoded.message ?? `Transaction simulation failed: ${preview.error}`,
+              preview.error ?? '',
+              diagBlobs,
+              'create_commitment',
+            ),
+          );
+          return;
+        }
+
+        // Wait for user to confirm in modal
+        await new Promise<void>((resolve, reject) => {
+          const confirmHandler = () => {
+            setShowSimModal(false);
+            resolve();
+          };
+          const cancelHandler = () => {
+            setShowSimModal(false);
+            reject(new Error('User cancelled preflight.'));
+          };
+          // Store handlers on window temporarily for modal callbacks
+          (window as any).__simConfirm = confirmHandler;
+          (window as any).__simCancel = cancelHandler;
+        });
+      } catch (simErr: unknown) {
+        if ((simErr as Error).message?.includes('cancelled')) {
+          setShowSimModal(false);
+          return;
+        }
+        // Non-fatal: if preflight itself errors, proceed anyway with a warning
+        console.warn('[Preflight] simulation error, proceeding anyway:', simErr);
+        setShowSimModal(false);
+      }
 
       // Best-effort registration with the backend so the dashboard can list
       // the commitment before the indexer observes the chain event. Never
@@ -1028,6 +1126,17 @@ export default function CreateCommitmentWizard({
           isFreighter={isFreighter}
         />
       )}
+
+      <SimulationPreviewModal
+        isOpen={showSimModal}
+        preview={simulationPreview}
+        onConfirm={() => {
+          if ((window as any).__simConfirm) (window as any).__simConfirm();
+        }}
+        onCancel={() => {
+          if ((window as any).__simCancel) (window as any).__simCancel();
+        }}
+      />
 
       {/* ── Soroban XDR Error Modal ── */}
       {xdrError && (
