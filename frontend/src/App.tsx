@@ -21,7 +21,7 @@ import {
   submitResolve,
   submitInitRegistry,
 } from './lib/sorobanTxHelpers';
-import { ThemeSelector } from './context/ThemeContext';
+import { ThemeToggle } from './components/ThemeToggle';
 import { IndexerModeToggle, useIndexerMode } from './context/IndexerModeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
 import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
@@ -689,7 +689,7 @@ export default function App() {
               className="topbar-actions"
               style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
             >
-              <ThemeSelector />
+              <ThemeToggle />
               <div className="search-bar">
                 <svg
                   viewBox="0 0 16 16"

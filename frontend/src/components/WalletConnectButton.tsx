@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Wallet, CheckCircle2 } from 'lucide-react';
 import { useWallet } from '../context/WalletContext';
+import { useTheme } from '../context/ThemeContext';
 import { truncateAddress } from '../lib/wallet';
 import WalletConnectModal from './WalletConnectModal';
 
@@ -62,11 +63,16 @@ const connectedStyles: React.CSSProperties = {
 };
 
 export const WalletConnectButton: React.FC<WalletConnectButtonProps> = ({
-  variant = 'dark',
+  variant,
   className,
 }) => {
   const { address, isConnected, isConnecting } = useWallet();
+  const { resolvedTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Adapt to the active theme; fall back to the explicit `variant` prop when
+  // rendered outside a ThemeProvider.
+  const activeVariant: 'dark' | 'light' = variant ?? (resolvedTheme === 'dark' ? 'dark' : 'light');
 
   const toggle = () => setIsOpen((prev) => !prev);
 
@@ -103,10 +109,10 @@ export const WalletConnectButton: React.FC<WalletConnectButtonProps> = ({
           onClick={toggle}
           disabled={isConnecting}
           className={className}
-          style={{ ...variantStyles[variant], cursor: isConnecting ? 'wait' : 'pointer' }}
+          style={{ ...variantStyles[activeVariant], cursor: isConnecting ? 'wait' : 'pointer' }}
           title="Connect a Stellar wallet or login with social"
         >
-          <Wallet size={variant === 'dark' ? 15 : 14} />
+          <Wallet size={activeVariant === 'dark' ? 15 : 14} />
           {isConnecting ? 'Connecting...' : 'Connect Wallet'}
         </button>
       )}
