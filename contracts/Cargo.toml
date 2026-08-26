@@ -1,9 +1,12 @@
 [workspace]
 members = [
+    "validation",
     "registry",
     "mock_resolver",
     "timelock",
     "upgrade-fixture",
+    "state_channel",
+    "fraud_verifier",
 ]
 resolver = "2"
 

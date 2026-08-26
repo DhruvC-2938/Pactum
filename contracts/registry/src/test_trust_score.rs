@@ -37,28 +37,26 @@ fn setup() -> (Env, RegistryContractClient<'static>, Address, Address) {
 fn setup_long_horizon() -> (Env, RegistryContractClient<'static>, Address, Address) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator], &admin);
     (env, client, issuer, counterparty)
 }
 
-/// Advances the ledger sequence to `target_seq` in chunks of 200,000 ledgers,
-/// keeping the contract instance and the issuer's trust history alive along
-/// the way (exactly as production use would): `get_arbitrator` bumps the
-/// instance TTL and `get_trust_score` bumps the history entry TTL, each to
-/// ~518,400 ledgers past the current sequence. When `commitment` is `Some`,
-/// `get_commitment` keeps that entry alive too (dispute/resolve read it).
-///
-/// Chunk math: a bump at ledger `s` extends the entry to `s + 518,400`, and
-/// the bump only fires when the entry is within `241,920` of expiry, so the
-/// gap between bumps never exceeds 400,000 ledgers — always below 518,400,
-/// and the final chunk lands exactly on `target_seq` and re-arms the TTL for
-/// the next call. Never alters the decay math.
+/// Advances the ledger to `target_seq` in 200,000-ledger chunks, bumping the
+/// TTLs of the registry instance, the issuer's trust history, and optionally
+/// the dispute token contract's instance so it is not archived before `dispute`
+/// is called. When `commitment` is `Some`, `get_commitment` keeps that entry
+/// alive too. The dispute token's default max TTL (~518,400 ledgers) is less
+/// than the largest advance in these tests (64 * 10,000 = 640,000), so without
+/// this bump the cross-contract transfer inside `dispute()` would fail with
+/// HostError: Error(Storage, InternalError).
 fn advance_ledgers(
     env: &Env,
     client: &RegistryContractClient<'static>,
     issuer: &Address,
     target_seq: u32,
     commitment: Option<u64>,
+    dispute_token: Option<&Address>,
 ) {
     const CHUNK: u32 = 200_000;
     let mut seq = env.ledger().get().sequence_number;
@@ -71,21 +69,51 @@ fn advance_ledgers(
         if let Some(id) = commitment {
             client.get_commitment(&id);
         }
+        // Bump the dispute token's instance TTL so it stays live across the
+        // advance. Without this the cross-contract transfer inside dispute()
+        // would fail with Storage/InternalError on the archived entry.
+        if let Some(token_addr) = dispute_token {
+            env.as_contract(token_addr, || {
+                env.storage().instance().extend_ttl(
+                    crate::commitments::TTL_THRESHOLD_LEDGERS,
+                    crate::commitments::TTL_EXTEND_LEDGERS,
+                );
+            });
+        }
         seq = next;
     }
 }
 
+/// Returns (env, client, issuer, counterparty, arbitrator, dispute_token_addr).
+/// The dispute token address is exposed so callers that advance ledgers by more
+/// than TTL_EXTEND_LEDGERS can pass it to `advance_ledgers` to prevent archival.
 fn setup_with_arbitrator() -> (
     Env,
     RegistryContractClient<'static>,
     Address,
     Address,
     Address,
+    Address,
 ) {
     let (env, client, issuer, counterparty) = setup();
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
-    (env, client, issuer, counterparty, arbitrator)
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
+
+    // Configure the dispute token required by the registry's `dispute` function
+    // (error #40 = DisputeTokenNotSet without this).
+    let token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    client.set_dispute_token(&arbitrator, &token);
+    env.as_contract(&token, || {
+        env.storage().instance().extend_ttl(
+            crate::commitments::TTL_THRESHOLD_LEDGERS,
+            crate::commitments::TTL_EXTEND_LEDGERS,
+        );
+    });
+
+    (env, client, issuer, counterparty, arbitrator, token)
 }
 
 /// Creates a commitment at ledger seq/timestamp 1000 (due 2000) and attests
@@ -197,6 +225,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         &issuer,
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
+        None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 25);
 
@@ -206,6 +235,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         &client,
         &issuer,
         1000 + 128 * crate::trust_score::BUCKET_SIZE_LEDGERS,
+        None,
         None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 37);
@@ -217,6 +247,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         &issuer,
         1000 + 256 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
+        None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 46);
 
@@ -226,6 +257,7 @@ fn test_breach_impact_decays_with_ledger_advances() {
         &client,
         &issuer,
         1000 + 2048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
+        None,
         None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
@@ -258,6 +290,7 @@ fn test_mixed_history_decay_exact_values() {
         &issuer,
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
+        None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 30);
 
@@ -266,6 +299,7 @@ fn test_mixed_history_decay_exact_values() {
         &client,
         &issuer,
         1000 + 128 * crate::trust_score::BUCKET_SIZE_LEDGERS,
+        None,
         None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 40);
@@ -299,6 +333,7 @@ fn test_score_is_monotone_non_decreasing_over_ledger_advances() {
             &client,
             &issuer,
             1000 + buckets * crate::trust_score::BUCKET_SIZE_LEDGERS,
+            None,
             None,
         );
         let current = client.get_trust_score(&issuer).unwrap_or(50);
@@ -353,6 +388,7 @@ fn test_late_outcome_penalty_and_decay() {
         &issuer,
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
+        None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 45);
 
@@ -361,6 +397,7 @@ fn test_late_outcome_penalty_and_decay() {
         &client,
         &issuer,
         1000 + 2048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
+        None,
         None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
@@ -428,12 +465,14 @@ fn test_score_is_deterministic_across_replays() {
             &issuer1,
             1000 + buckets * crate::trust_score::BUCKET_SIZE_LEDGERS,
             None,
+            None,
         );
         advance_ledgers(
             &env2,
             &client2,
             &issuer2,
             1000 + buckets * crate::trust_score::BUCKET_SIZE_LEDGERS,
+            None,
             None,
         );
         let a = client1.get_trust_score(&issuer1);
@@ -494,11 +533,11 @@ fn test_bucket_boundary_semantics() {
     }
 
     // 63 buckets later (9,999 + 63 * 10,000 = 639,999): still zero decay steps.
-    advance_ledgers(&env, &client, &issuer, 639_999, None);
+    advance_ledgers(&env, &client, &issuer, 639_999, None, None);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 10);
 
     // Exactly 64 buckets later (640,000): first decay step -> 30.
-    advance_ledgers(&env, &client, &issuer, 640_000, None);
+    advance_ledgers(&env, &client, &issuer, 640_000, None, None);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 30);
 }
 
@@ -538,7 +577,7 @@ fn test_huge_ledger_difference_saturates_without_panic() {
     // Stays below u32::MAX - 6,312,000: beyond that, the host's
     // `max_live_until_ledger = seq + max_entry_ttl - 1` overflows u32 when
     // the contract extends an entry's TTL during the jump.
-    advance_ledgers(&env, &client, &issuer, u32::MAX - 6_400_000, None);
+    advance_ledgers(&env, &client, &issuer, u32::MAX - 6_400_000, None, None);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
@@ -580,6 +619,7 @@ fn test_max_decay_reaches_minimum_weight() {
         &client,
         &issuer,
         1000 + 2048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
+        None,
         None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
@@ -625,6 +665,7 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
         &issuer,
         1000 + 3048 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         None,
+        None,
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
@@ -635,7 +676,7 @@ fn test_query_correct_after_thousands_of_folded_buckets() {
 
 #[test]
 fn test_dispute_retracts_recent_breach_from_score() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_with_arbitrator();
+    let (env, client, issuer, counterparty, _arbitrator, dispute_token) = setup_with_arbitrator();
 
     create_and_attest(
         &env,
@@ -647,15 +688,19 @@ fn test_dispute_retracts_recent_breach_from_score() {
     );
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 
-    // Dispute within the window: the breach is retracted from the trust history.
+    // Dispute within the window (no ledger advance, token not at risk of archival).
     env.ledger().with_mut(|l| l.timestamp = 1600);
+    soroban_sdk::token::StellarAssetClient::new(&env, &dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
     client.dispute(&counterparty, &1);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
 fn test_dispute_retracts_aged_breach_from_score() {
-    let (env, client, issuer, counterparty, _arbitrator) = setup_with_arbitrator();
+    let (env, client, issuer, counterparty, _arbitrator, dispute_token) = setup_with_arbitrator();
 
     create_and_attest(
         &env,
@@ -669,22 +714,28 @@ fn test_dispute_retracts_aged_breach_from_score() {
 
     // Advance 64 buckets (the breach has folded into `aged`) but stay within
     // the timestamp-based dispute window. The commitment entry is kept alive
-    // too: dispute reads it after the jump.
+    // too: dispute reads it after the jump. The dispute token is also kept
+    // alive: its max TTL (~518,400) is less than 64 * 10,000 = 640,000 ledgers.
     advance_ledgers(
         &env,
         &client,
         &issuer,
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         Some(1),
+        Some(&dispute_token),
     );
     env.ledger().with_mut(|l| l.timestamp = 1600);
+    soroban_sdk::token::StellarAssetClient::new(&env, &dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
     client.dispute(&counterparty, &1);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 }
 
 #[test]
 fn test_resolve_dispute_applies_final_outcome_to_score() {
-    let (env, client, issuer, counterparty, arbitrator) = setup_with_arbitrator();
+    let (env, client, issuer, counterparty, arbitrator, dispute_token) = setup_with_arbitrator();
 
     env.ledger().with_mut(|l| {
         l.timestamp = 1000;
@@ -705,14 +756,21 @@ fn test_resolve_dispute_applies_final_outcome_to_score() {
     client.attest(&issuer, &id, &CommitmentStatus::Breached);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 0);
 
+    // Advance 64 buckets — pass the dispute token so its instance TTL is bumped
+    // each chunk and the cross-contract transfer in dispute() doesn't archive.
     advance_ledgers(
         &env,
         &client,
         &issuer,
         1000 + 64 * crate::trust_score::BUCKET_SIZE_LEDGERS,
         Some(1),
+        Some(&dispute_token),
     );
     env.ledger().with_mut(|l| l.timestamp = 1600);
+    soroban_sdk::token::StellarAssetClient::new(&env, &dispute_token).mint(
+        &counterparty,
+        &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
+    );
     client.dispute(&counterparty, &1);
     assert_eq!(client.get_trust_score(&issuer).unwrap(), 50);
 

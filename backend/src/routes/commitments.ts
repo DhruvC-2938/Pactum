@@ -5,6 +5,24 @@ import { strictLimiter } from '../middleware/rateLimiter';
 import pool from '../db/timescale';
 import { logger } from '../logger/logger';
 
+// ── Encrypted Payload Schema ──────────────────────────────────────────────────
+// Validates the body of POST /commitments/encrypted.
+// The backend never decrypts this data — it is a dumb blob store.
+const encryptedPayloadSchema = z.object({
+  commitmentId: z.string().min(1, 'commitmentId is required'),
+  issuer: z.string().regex(/^G[A-Z2-7]{55}$/, 'issuer must be a valid Stellar public key (G...)'),
+  counterparty: z
+    .string()
+    .regex(/^G[A-Z2-7]{55}$/, 'counterparty must be a valid Stellar public key (G...)'),
+  // base64url(IV[12] || AES-GCM ciphertext || auth-tag[16])
+  ciphertext: z
+    .string()
+    .min(1, 'ciphertext is required')
+    .max(65536, 'ciphertext must not exceed 64 KB'),
+});
+
+type EncryptedPayloadInput = z.infer<typeof encryptedPayloadSchema>;
+
 const router = Router();
 
 export const commitmentQuerySchema = z.object({
@@ -17,6 +35,59 @@ export const commitmentQuerySchema = z.object({
 });
 
 export type CommitmentQueryInput = z.infer<typeof commitmentQuerySchema>;
+
+interface CommitmentOutcomeRow {
+  time: string | Date;
+  id: string | number;
+  partyA: string;
+  partyB: string | null;
+  status: string;
+  outcome: string;
+  dueDate: string | Date;
+  completedAt: string | Date | null;
+  createdAt: string | Date;
+}
+
+const toUnixSeconds = (value: string | Date): number =>
+  Math.floor(new Date(value).getTime() / 1000);
+
+/**
+ * Maps a commitment_outcomes row onto the shape frontend/src/lib/api.ts's `Commitment` type
+ * actually expects (issuer/counterparty/due_at/status as 'Pending'|'Fulfilled'|...). The two
+ * were never aligned -- commitment_outcomes uses partyA/partyB and lowercase
+ * status/outcome columns predating this contract's data model, so every row this route
+ * returned was silently unusable: CommitmentItem (App.tsx) does
+ * `commitment.issuer.charAt(0)` unconditionally, which throws given `issuer` was always
+ * undefined, so the Commitments list rendered nothing for any row, ever.
+ *
+ * terms_hash has no equivalent in commitment_outcomes at all (off-chain, not tracked by this
+ * table) -- returned as '' rather than omitted, since the field is typed as a required string.
+ */
+export function toApiCommitment(row: CommitmentOutcomeRow) {
+  const isTerminal = row.status === 'completed';
+  const status =
+    row.status === 'disputed'
+      ? 'Disputed'
+      : isTerminal
+        ? row.outcome === 'late'
+          ? 'Late'
+          : row.outcome === 'breached'
+            ? 'Breached'
+            : 'Fulfilled'
+        : 'Pending';
+
+  return {
+    id: Number(row.id),
+    issuer: row.partyA,
+    counterparty: row.partyB ?? '',
+    terms_hash: '',
+    due_at: toUnixSeconds(row.dueDate),
+    status,
+    outcome: status === 'Pending' ? null : status,
+    created_at: toUnixSeconds(row.createdAt),
+    attested_at: row.completedAt ? toUnixSeconds(row.completedAt) : null,
+  };
+}
 
 export type KeysetCursor = {
   time: string;
@@ -179,7 +250,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     res.status(200).json({
-      items,
+      items: items.map(toApiCommitment),
       next_cursor: nextCursor,
       limit,
       has_more: hasMore,
@@ -198,6 +269,93 @@ router.get('/', async (req: Request, res: Response) => {
     res.status(503).json({
       error: 'Service Unavailable',
       message: 'Database query failed for commitments.',
+    });
+  }
+});
+
+// ── POST /commitments/encrypted ─────────────────────────────────────────────
+// Stores the AES-GCM encrypted terms blob for a commitment.
+// The backend never receives nor stores plaintext — only the opaque ciphertext.
+router.post('/encrypted', strictLimiter, async (req: Request, res: Response): Promise<void> => {
+  const parseResult = encryptedPayloadSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      error: 'Bad Request',
+      details: parseResult.error.issues,
+    });
+    return;
+  }
+
+  const { commitmentId, issuer, counterparty, ciphertext }: EncryptedPayloadInput =
+    parseResult.data;
+
+  // Sanity: issuer and counterparty must differ
+  if (issuer.trim().toUpperCase() === counterparty.trim().toUpperCase()) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'issuer and counterparty addresses must be different.',
+    });
+    return;
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO encrypted_payloads (commitment_id, issuer, counterparty, ciphertext)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (commitment_id)
+         DO UPDATE SET ciphertext = EXCLUDED.ciphertext,
+                       issuer = EXCLUDED.issuer,
+                       counterparty = EXCLUDED.counterparty`,
+      [commitmentId, issuer, counterparty, ciphertext],
+    );
+
+    logger.info('Encrypted payload stored for commitment', { commitmentId, issuer });
+
+    res.status(201).json({ message: 'Encrypted terms stored successfully.' });
+  } catch (error) {
+    logger.error('Failed to store encrypted payload', error, { commitmentId });
+    res.status(503).json({
+      error: 'Service Unavailable',
+      message: 'Failed to store encrypted commitment payload.',
+    });
+  }
+});
+
+// ── GET /commitments/:id/encrypted ───────────────────────────────────────────
+// Returns the ciphertext blob for the given commitment ID.
+// Decryption happens entirely in the browser — the server returns only ciphertext.
+router.get('/:id/encrypted', async (req: Request, res: Response): Promise<void> => {
+  const id = String(req.params.id ?? '');
+
+  if (!id || id.trim().length === 0) {
+    res.status(400).json({ error: 'Bad Request', message: 'Commitment ID is required.' });
+    return;
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT ciphertext, issuer, counterparty, created_at
+       FROM encrypted_payloads
+       WHERE commitment_id = $1
+       LIMIT 1`,
+      [id.trim()],
+    );
+
+    if (result.rows.length === 0) {
+      res.status(404).json({
+        error: 'Not Found',
+        message: 'No encrypted payload found for this commitment.',
+      });
+      return;
+    }
+
+    const { ciphertext, issuer, counterparty, created_at } = result.rows[0];
+    res.status(200).json({ ciphertext, issuer, counterparty, createdAt: created_at });
+  } catch (error) {
+    logger.error('Failed to fetch encrypted payload', error, { commitmentId: id });
+    res.status(503).json({
+      error: 'Service Unavailable',
+      message: 'Failed to fetch encrypted commitment payload.',
     });
   }
 });

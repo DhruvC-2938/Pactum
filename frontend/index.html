@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (() => {
+        const variables = {
+          light: '--bg:#f5f5f7;--bg-card:rgba(255,255,255,.6);--bg-input:rgba(255,255,255,.8);--text-primary:#1d1d1f;--text-secondary:#86868b;--separator:rgba(0,0,0,.05);',
+          dark: '--bg:#101114;--bg-card:rgba(30,31,36,.78);--bg-input:rgba(38,39,45,.9);--text-primary:#f5f5f7;--text-secondary:#a1a1aa;--separator:rgba(255,255,255,.1);',
+        };
+        const stored = localStorage.getItem('pactum-theme');
+        const preference = stored === 'light' || stored === 'dark' ? stored : 'system';
+        const dark = preference === 'dark' ||
+          (preference === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        const theme = dark ? 'dark' : 'light';
+        const style = document.createElement('style');
+        style.id = 'pactum-theme-variables';
+        style.textContent = `:root{${variables[theme]}}`;
+        document.head.appendChild(style);
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
     <title>frontend</title>
   </head>
   <body>

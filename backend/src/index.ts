@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import commitmentsRouter from './routes/commitments';
 import { createReputationRouter } from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
+import heReputationRouter from './routes/he_reputation';
 import { createProofsRouter } from './routes/proofs';
 import { RelayerService } from './relayer/relayerService';
 import pool from './db/timescale';
@@ -13,10 +14,12 @@ import { createOpenApiRouter } from './openapi/openapi';
 import { requestLogger } from './middleware/requestLogger';
 import { logger } from './logger/logger';
 import client from 'prom-client';
-import { startSnapshotCron, startTtlMonitorCron, createTtlRpcClient } from './indexer/cron';
+import { startTtlMonitorCron, createTtlRpcClient } from './indexer/cron';
 import { SorobanClient } from './soroban/client';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { standardLimiter, strictLimiter } from './middleware/rateLimiter';
+
+import { WebSocketService } from './ws/WebSocketService';
 
 dotenv.config();
 const app = express();
@@ -49,7 +52,7 @@ client.collectDefaultMetrics({ register });
 // Sets HSTS, X-Content-Type-Options, X-Frame-Options, and related headers on
 // every response to harden the API against common web vulnerabilities.
 // ---------------------------------------------------------------------------
-app.use((_req: Request, res: Response, next: NextFunction): void => {
+app.use((req: Request, res: Response, next: NextFunction): void => {
   // Strict-Transport-Security: enforce HTTPS for 1 year, include subdomains
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   // Prevent MIME-type sniffing
@@ -68,6 +71,53 @@ app.use((_req: Request, res: Response, next: NextFunction): void => {
   } else {
     res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   }
+  // Hide the server implementation detail
+  res.removeHeader('X-Powered-By');
+  // Control referrer information leakage
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  // Prevent browsers from requesting permission-gated features
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+// POST / PUT / PATCH / DELETE requests use the strict limiter (10 req/min).
+// All other requests (GET, HEAD, OPTIONS) use the standard limiter (100 req/min).
+// ---------------------------------------------------------------------------
+app.use((req: Request, res: Response, next: NextFunction): void => {
+  const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  if (writeMethods.has(req.method)) {
+    strictLimiter(req, res, next);
+  } else {
+    standardLimiter(req, res, next);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Security headers (helmet-equivalent)
+// Sets HSTS, X-Content-Type-Options, X-Frame-Options, and related headers on
+// every response to harden the API against common web vulnerabilities.
+// ---------------------------------------------------------------------------
+app.use((_req: Request, res: Response, next: NextFunction): void => {
+  // Strict-Transport-Security: enforce HTTPS for 1 year, include subdomains
+  res.setHeader(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains',
+  );
+  // Prevent MIME-type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Disallow framing of this page (clickjacking protection)
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Disable legacy X-XSS-Protection header (modern browsers ignore it; setting
+  // to 0 prevents a known IE vulnerability)
+  res.setHeader('X-XSS-Protection', '0');
+  // Restrict what can be loaded by the page
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; frame-ancestors 'none'",
+  );
   // Hide the server implementation detail
   res.removeHeader('X-Powered-By');
   // Control referrer information leakage
@@ -125,6 +175,10 @@ const reputationCache = new ReputationCache(
   { ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300) },
 );
 
+// Homomorphic encryption layer — Issue #190
+app.use('/reputation', heReputationRouter);
+app.use('/api/reputation', heReputationRouter);
+
 // ── Soroban client (shared by reputation router + TTL monitor) ─────────────
 // Built once from env so both the trust-score API endpoint and the TTL monitor
 // cron use the same keypair and network configuration.
@@ -156,6 +210,10 @@ const relayerService = new RelayerService({
   rpcUrl: process.env.SOROBAN_RPC_URL,
   contractId: process.env.REGISTRY_CONTRACT_ID || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015',
+  maxBatchSize: Number(process.env.RELAYER_MAX_BATCH_SIZE) || 32,
+  batchTtlMs: Number(process.env.RELAYER_BATCH_TTL_MS) || 10_000,
+  persistPath: process.env.RELAYER_BATCH_QUEUE_PATH,
+  autoStart: process.env.RELAYER_AUTO_START === 'on' || process.env.RELAYER_AUTO_START === '1',
 });
 const proofsRouter = createProofsRouter(relayerService);
 app.use('/proofs', proofsRouter);
@@ -169,7 +227,9 @@ app.get('/metrics', async (req: Request, res: Response) => {
 });
 
 if (process.env.INDEXER_ENABLED !== 'off') {
-  startSnapshotCron();
+  // NOTE: Legacy startSnapshotCron() removed — reputation snapshots are now
+  // handled natively by TimescaleDB Continuous Aggregate refresh policies
+  // (see migration 007_continuous_aggregates.sql).
 
   // ── Soroban State Archival / TTL Monitor (Issue #58) ──────────────────
   // Proactively bumps the TTL of high-value reputation entries before they
@@ -188,16 +248,20 @@ if (process.env.INDEXER_ENABLED !== 'off') {
 }
 
 let server: ReturnType<typeof app.listen>;
+let wsService: WebSocketService | undefined;
 
 async function init() {
   server = app.listen(port, () => {
     logger.info(`Server running on port ${port}`, { port, metricsPort });
+    wsService = new WebSocketService(server);
   });
 }
 
 init();
 
 export const stop = async () => {
+  await relayerService.shutdown();
+  wsService?.close();
   server?.close();
 };
 export default app;

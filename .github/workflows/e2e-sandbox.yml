@@ -1,0 +1,130 @@
+name: E2E (local Soroban sandbox)
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - 'backend/**'
+      - 'scripts/e2e/**'
+      - 'docker-compose*.yml'
+      - '.github/workflows/e2e-sandbox.yml'
+
+jobs:
+  e2e-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # deploy-test-contract.sh runs `stellar contract build` which compiles
+      # to the wasm32v1-none target. GitHub's ubuntu-latest runner ships Rust
+      # with only the default host target installed -- wasm32v1-none has to
+      # be added explicitly, or the build fails with:
+      #   error[E0463]: can't find crate for `core`
+      #   = note: the wasm32v1-none target may not be installed
+      - name: Install Rust wasm32v1-none target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Install Stellar CLI
+        run: |
+          curl -sSLO https://github.com/stellar/stellar-cli/releases/download/v27.1.0/stellar-cli-27.1.0-x86_64-unknown-linux-gnu.tar.gz
+          tar -xzf stellar-cli-27.1.0-x86_64-unknown-linux-gnu.tar.gz
+          sudo mv stellar /usr/local/bin/
+          stellar --version
+
+      # Compose references .env.e2e (optional for services, but some compose
+      # versions still error on missing files during up/down). Create a stub
+      # before any compose invocation; deploy overwrites it with real values.
+      - name: Stub .env.e2e for compose
+        run: touch .env.e2e
+
+      - name: Start local Soroban sandbox
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d soroban
+
+      - name: Wait for sandbox RPC
+        run: ./scripts/e2e/wait-for-rpc.sh
+
+      - name: Deploy test contract + write .env.e2e
+        run: ./scripts/e2e/deploy-test-contract.sh
+
+      # Nothing runs `npm run migrate:timescale` automatically -- backend's Dockerfile CMD is a
+      # bare `npm start`, and no compose service applies the TimescaleDB schema. Without this,
+      # the indexer crash-loops on startup ("relation public.indexer_checkpoint does not exist"),
+      # so `/commitments` 503s for the rest of the job no matter what the contract/frontend do.
+      - name: Run backend DB migrations
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml run --rm backend npm run migrate:timescale
+
+      - name: Start backend, indexer, postgres, redis
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend indexer
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # frontend/ is a member of the npm-workspaces monorepo, so a bare
+      # `npm ci` in this subdir detects the parent workspace and requires the
+      # local @pactum/cli package, which a standalone frontend lockfile cannot
+      # satisfy (EUSAGE: "Missing: @pactum/cli@0.1.0 from lock file"). Mirror
+      # the Frontend Checks job and fall back to `npm install`, which resolves
+      # workspace packages from the repo and succeeds.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci || npm install
+          else
+            npm install
+          fi
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Load .env.e2e into job env
+        run: |
+          # Playwright config/tests read process.env directly (not import.meta.env),
+          # so the .env.e2e written by the deploy script needs to be exported here.
+          cat ../.env.e2e >> "$GITHUB_ENV"
+        working-directory: frontend
+
+      - name: Run sandbox E2E tests
+        working-directory: frontend
+        # Only chromium is installed above (--with-deps chromium) -- the firefox project in
+        # playwright.config.ts is for the regular e2e workflow, not this docker-sandbox job.
+        run: npx playwright test e2e/sandbox --project=chromium
+        env:
+          CI: true
+          E2E_SANDBOX: true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Dump backend/indexer logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs backend indexer postgres
+
+      - name: Dump commitment_outcomes table on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T postgres \
+            psql -U postgres -d pactum_timeseries -c "SELECT * FROM commitment_outcomes ORDER BY time DESC LIMIT 20;"
+
+      - name: Tear down
+        if: always()
+        run: |
+          # deploy may never have run (RPC wait failure); compose still
+          # references .env.e2e — create an empty file so down always works.
+          touch .env.e2e
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v

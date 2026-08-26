@@ -89,4 +89,21 @@ pub enum Error {
     /// can be read or mutated.  Callers should submit a `RestoreFootprint`
     /// operation — or invoke `restore_reputation` — and retry.
     ReputationArchived = 39,
+    /// No dispute token has been configured for the registry.
+    DisputeTokenNotSet = 40,
+    /// The dispute stake amount must be greater than zero.
+    InvalidDisputeStakeAmount = 41,
+    /// Forced inclusion was attempted before the rollup challenge window elapsed.
+    RollupChallengePending = 42,
+    /// The provided Merkle proof does not resolve to the expected batch root.
+    RollupProofInvalid = 43,
+    /// The fee oracle has not yet received enough observations to produce a
+    /// recommendation.
+    OracleNotInitialized = 44,
+    /// The caller is not the contract admin.
+    NotAdmin = 45,
+    /// The admin address has already been set.
+    AdminAlreadySet = 46,
+    /// The submitted zero-knowledge range proof did not verify.
+    InvalidRangeProof = 47,
 }

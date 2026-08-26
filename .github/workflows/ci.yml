@@ -88,7 +88,7 @@ jobs:
         working-directory: zk
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci || npm install
           else
             npm install
           fi
@@ -168,6 +168,7 @@ jobs:
         # Any migration that fails basic PostgreSQL parsing will still fail here.
         run: node dist/db/migrate-dry-run.js
 
+
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
@@ -222,7 +223,7 @@ jobs:
         working-directory: backend
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci || npm install
           else
             npm install
           fi
@@ -241,6 +242,65 @@ jobs:
           else
             echo "No valid test script defined in backend/package.json yet. Skipping test execution."
           fi
+
+      # Testcontainers boots its own ephemeral Postgres via the Docker daemon
+      # already available on ubuntu-latest -- no services: entry needed.
+      - name: Run backend integration tests (Testcontainers)
+        if: steps.check_backend.outputs.ready == 'true'
+        working-directory: backend
+        run: npm run test:integration
+
+  frontend-checks:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.x (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-frontend-node-${{ hashFiles('frontend/package-lock.json', 'frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-node-
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci || npm install
+          else
+            npm install
+          fi
+
+      - name: Run frontend linter
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Run Playwright end-to-end tests
+        working-directory: frontend
+        run: npx playwright test --reporter=list
 
   sdk-tests:
     name: SDK Tests (@pactum/sdk)
@@ -267,7 +327,7 @@ jobs:
         working-directory: sdk/js
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci || npm install
           else
             npm install
           fi

@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 
 import './App.css';
@@ -7,32 +8,177 @@ import CreateCommitmentWizard from './components/CreateCommitmentWizard';
 import ReputationDashboard from './components/ReputationDashboard';
 import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
+import DecryptTermsModal from './components/DecryptTermsModal';
+import RollupStatusPanel from './components/RollupStatusPanel';
 import { useCommitments } from './hooks/useCommitments';
+import { useSyncCache } from './hooks/useSyncCache';
+import { fetchEncryptedTerms } from './lib/api';
 import type { Commitment, CommitmentStatus } from './lib/api';
 import { useWallet } from './context/WalletContext';
-import { Menu, X, User } from 'lucide-react';
+import { wsClient } from './lib/wsClient';
+import type { WalletProvider } from './lib/wallet';
+import {
+  submitAttest,
+  submitDispute,
+  submitResolve,
+  submitInitRegistry,
+} from './lib/sorobanTxHelpers';
+import { ThemeSelector } from './context/ThemeContext';
+import { IndexerModeToggle, useIndexerMode } from './context/IndexerModeContext';
+import { Menu, X, User, Lock } from 'lucide-react';
+import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
 
-function renderCommitmentItem(commitment: Commitment) {
+interface CommitmentItemProps {
+  commitment: Commitment;
+  connectedAddress: string | null;
+  provider: WalletProvider | null;
+}
+
+function CommitmentItem({ commitment, connectedAddress, provider }: CommitmentItemProps) {
+  const [showDecryptModal, setShowDecryptModal] = useState(false);
+  const [ciphertext, setCiphertext] = useState<string | null>(null);
+  const [loadingCiphertext, setLoadingCiphertext] = useState(false);
+
+  const handleDecryptClick = async () => {
+    if (ciphertext) {
+      setShowDecryptModal(true);
+      return;
+    }
+    setLoadingCiphertext(true);
+    try {
+      const res = await fetchEncryptedTerms(String(commitment.id));
+      setCiphertext(res.ciphertext);
+      setShowDecryptModal(true);
+    } catch (err) {
+      console.error('[CommitmentItem] Failed to fetch ciphertext:', err);
+    } finally {
+      setLoadingCiphertext(false);
+    }
+  };
+
   return (
-    <div className="commitment-item" key={commitment.id}>
-      <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
-        {commitment.issuer.charAt(0)}
-      </div>
-      <div className="commitment-info">
-        <div className="commitment-id">Commitment #{commitment.id}</div>
-        <div className="commitment-parties">
-          {commitment.issuer} &rarr; {commitment.counterparty}
+    <>
+      <div className="commitment-item" key={commitment.id}>
+        <div className="commitment-avatar" style={{ background: '#e8e4f3', color: '#5b4d8a' }}>
+          {commitment.issuer.charAt(0)}
         </div>
-        <div className="commitment-due">
-          {new Date(commitment.due_at * 1000).toLocaleDateString()}
+        <div className="commitment-info">
+          <div
+            className="commitment-id"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            Commitment #{commitment.id}
+            {commitment.encrypted && (
+              <span
+                title="Terms are end-to-end encrypted"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  color: '#4f46e5',
+                  background: '#eef2ff',
+                  padding: '1px 6px',
+                  borderRadius: '100px',
+                  border: '1px solid #a5b4fc',
+                }}
+              >
+                <Lock size={9} /> E2E Encrypted
+              </span>
+            )}
+          </div>
+          <div className="commitment-parties">
+            {commitment.issuer} &rarr; {commitment.counterparty}
+          </div>
+          <div className="commitment-due">
+            {new Date(commitment.due_at * 1000).toLocaleDateString()}
+          </div>
+        </div>
+        <div
+          className="commitment-status"
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}
+        >
+          <span className={`badge ${commitment.status.toLowerCase()}`}>
+            <span className="badge-dot"></span>
+            {commitment.status}
+          </span>
+          {commitment.encrypted && (
+            <button
+              type="button"
+              id={`decrypt-btn-${commitment.id}`}
+              onClick={handleDecryptClick}
+              disabled={loadingCiphertext}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: '700',
+                color: '#4f46e5',
+                background: '#eef2ff',
+                border: '1px solid #a5b4fc',
+                borderRadius: '6px',
+                padding: '3px 8px',
+                cursor: loadingCiphertext ? 'wait' : 'pointer',
+              }}
+            >
+              <Lock size={10} />
+              {loadingCiphertext ? 'Loading…' : 'Decrypt Terms'}
+            </button>
+          )}
         </div>
       </div>
-      <div className="commitment-status">
-        <span className={`badge ${commitment.status.toLowerCase()}`}>
-          <span className="badge-dot"></span>
-          {commitment.status}
-        </span>
+
+      {showDecryptModal && ciphertext && connectedAddress && (
+        <DecryptTermsModal
+          commitmentId={commitment.id}
+          ciphertext={ciphertext}
+          issuerAddress={commitment.issuer}
+          counterpartyAddress={commitment.counterparty}
+          viewerAddress={connectedAddress}
+          isFreighter={provider === 'freighter'}
+          onClose={() => setShowDecryptModal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function renderCommitmentItem(
+  commitment: Commitment,
+  connectedAddress: string | null,
+  provider: WalletProvider | null,
+) {
+  return (
+    <CommitmentItem
+      key={commitment.id}
+      commitment={commitment}
+      connectedAddress={connectedAddress}
+      provider={provider}
+    />
+  );
+}
+
+function LocalIndexerNotice() {
+  const { mode, syncState, lastError, retentionGapDetected } = useIndexerMode();
+  if (mode !== 'local') return null;
+
+  if (syncState === 'error') {
+    return (
+      <div className="inline-alert warning">
+        Local Indexer error: {lastError ?? 'unknown error'}. Switch back to Cloud Indexer if this
+        persists.
       </div>
+    );
+  }
+
+  return (
+    <div className="inline-alert info">
+      Local Indexer is active — commitments are read directly from Soroban RPC via this browser's
+      IndexedDB, bypassing the backend.
+      {retentionGapDetected &&
+        " Some older history may be missing (outside the RPC provider's event retention window) — switch to Cloud Indexer for full history."}
     </div>
   );
 }
@@ -45,15 +191,39 @@ function InlineWalletError() {
 }
 
 export default function App() {
+  const wallet = useWallet();
+  // WebRTC peer sync needs a wallet that can sign an arbitrary message to attest its
+  // session key (SEP-53 `signMessage`) — today that's Freighter only, same gating the
+  // encryption flow already uses.
+  useSyncCache(wallet.provider === 'freighter' ? wallet.address : null);
+
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
   const [reputationAddress, setReputationAddress] = useState(
-    'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
+    'GBY54VG5G4A7DC4D6YJ6GHD4X4QW2AR43JLYZ2QVWSHKACWK3BLDR5IX',
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleGenericSubmit = async (actionName: string, actionFn: () => Promise<any>) => {
+    if (!wallet.address || !wallet.provider) {
+      alert('Please connect your wallet first.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await actionFn();
+      alert(`${actionName} successful!`);
+    } catch (e: any) {
+      console.error(e);
+      alert(`Error during ${actionName}: ${e.message}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const commitmentsQuery = useCommitments(commitmentStatus ? { status: commitmentStatus } : {});
-  const wallet = useWallet();
 
   const handleNavigateReputation = (addr: string) => {
     setReputationAddress(addr);
@@ -85,7 +255,13 @@ export default function App() {
 
     handleUrlChange();
     window.addEventListener('popstate', handleUrlChange);
-    return () => window.removeEventListener('popstate', handleUrlChange);
+
+    wsClient.connect();
+
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      wsClient.disconnect();
+    };
   }, []);
 
   if (activePage === 'landing') {
@@ -140,10 +316,10 @@ export default function App() {
             <span className="nav-section-label">Overview</span>
 
             <button
-              className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
+              className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`}
               id="nav-dashboard"
               onClick={() => {
-                setActivePage('dashboard');
+                setActivePage('commitments');
                 setIsMobileMenuOpen(false);
               }}
             >
@@ -196,6 +372,7 @@ export default function App() {
             <button
               className={`nav-item ${activePage === 'create' ? 'active' : ''}`}
               id="nav-create"
+              aria-label="Create Commitment navigation"
               onClick={() => {
                 setActivePage('create');
                 setIsMobileMenuOpen(false);
@@ -369,6 +546,30 @@ export default function App() {
             </button>
 
             <button
+              className={`nav-item ${activePage === 'mesh' ? 'active' : ''}`}
+              id="nav-mesh"
+              onClick={() => {
+                setActivePage('mesh');
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <span className="nav-icon">
+                <svg
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="8" cy="8" r="6" />
+                  <path d="M2 8h12M8 2a10 10 0 010 12M8 2a10 10 0 000 12" />
+                </svg>
+              </span>
+              BFT Mesh Network
+            </button>
+
+            <button
               className={`nav-item ${activePage === 'initialize' ? 'active' : ''}`}
               id="nav-initialize"
               onClick={() => {
@@ -421,6 +622,7 @@ export default function App() {
               </span>
               Home
             </button>
+            <IndexerModeToggle />
             <div className="sidebar-network">
               <span className="network-dot"></span>
               <span className="network-name">Stellar Testnet</span>
@@ -469,15 +671,18 @@ export default function App() {
                             ? 'Resolve Dispute'
                             : activePage === 'lookup'
                               ? 'Get Commitment'
-                              : activePage === 'initialize'
-                                ? 'Initialize'
-                                : 'Dashboard'}
+                              : activePage === 'mesh'
+                                ? 'BFT Mesh Network'
+                                : activePage === 'initialize'
+                                  ? 'Initialize'
+                                  : 'Dashboard'}
               </span>
             </div>
             <div
               className="topbar-actions"
               style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
             >
+              <ThemeSelector />
               <div className="search-bar">
                 <svg
                   viewBox="0 0 16 16"
@@ -818,6 +1023,7 @@ export default function App() {
               </div>
             </div>
             <div className="commitment-list" id="commitments-list-page">
+              <LocalIndexerNotice />
               {commitmentsQuery.isLoading && (
                 <div className="inline-alert info">Loading commitments...</div>
               )}
@@ -826,7 +1032,9 @@ export default function App() {
                   Failed to load commitments from the backend.
                 </div>
               )}
-              {commitmentsQuery.data?.map(renderCommitmentItem)}
+              {commitmentsQuery.data?.map((c) =>
+                renderCommitmentItem(c, wallet.address, wallet.provider),
+              )}
             </div>
           </section>
 
@@ -845,6 +1053,14 @@ export default function App() {
 
             <CreateCommitmentWizard
               onSubmit={(payload) => console.log('commitment payload', payload)}
+              onSuccess={(result) => {
+                console.log('Transaction successful:', result);
+                if (wallet.address) {
+                  handleNavigateReputation(wallet.address);
+                } else {
+                  setActivePage('reputation');
+                }
+              }}
             />
           </section>
 
@@ -928,9 +1144,29 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-attest" onClick={() => {}}>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Submit Attestation</span>
+                  <button
+                    className="btn btn-primary btn-full"
+                    id="btn-attest"
+                    onClick={() => {
+                      const idStr = (document.getElementById('attest-id') as HTMLInputElement)
+                        ?.value;
+                      const outcome = (
+                        document.getElementById('attest-outcome') as HTMLSelectElement
+                      )?.value;
+                      if (!idStr || !outcome) {
+                        alert('Please provide Commitment ID and Outcome');
+                        return;
+                      }
+                      handleGenericSubmit('Attest Commitment', () =>
+                        submitAttest(Number(idStr), outcome, wallet.address!, wallet.provider!),
+                      );
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting && <div className="spinner"></div>}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Submitting...' : 'Submit Attestation'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1051,21 +1287,40 @@ export default function App() {
                   <button
                     className="btn btn-destructive btn-full"
                     id="btn-dispute"
-                    onClick={() => {}}
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      const idStr = (document.getElementById('dispute-id') as HTMLInputElement)
+                        ?.value;
+                      const reason = (
+                        document.getElementById('dispute-reason') as HTMLTextAreaElement
+                      )?.value;
+                      if (!idStr || !reason) {
+                        alert('Please provide Commitment ID and Reason');
+                        return;
+                      }
+                      handleGenericSubmit('Raise Dispute', () =>
+                        submitDispute(Number(idStr), reason, wallet.address!, wallet.provider!),
+                      );
+                    }}
                   >
-                    <svg
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M8 2L1 14h14L8 2z" />
-                      <path d="M8 6v4" />
-                    </svg>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Raise Dispute</span>
+                    {isSubmitting ? (
+                      <div className="spinner"></div>
+                    ) : (
+                      <svg
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M8 2L1 14h14L8 2z" />
+                        <path d="M8 6v4" />
+                      </svg>
+                    )}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Submitting...' : 'Raise Dispute'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1201,9 +1456,29 @@ export default function App() {
                     </select>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-resolve" onClick={() => {}}>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Submit Resolution</span>
+                  <button
+                    className="btn btn-primary btn-full"
+                    id="btn-resolve"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      const idStr = (document.getElementById('resolve-id') as HTMLInputElement)
+                        ?.value;
+                      const outcome = (
+                        document.getElementById('resolve-outcome') as HTMLSelectElement
+                      )?.value;
+                      if (!idStr || !outcome) {
+                        alert('Please provide Commitment ID and Outcome');
+                        return;
+                      }
+                      handleGenericSubmit('Resolve Dispute', () =>
+                        submitResolve(Number(idStr), outcome, wallet.address!, wallet.provider!),
+                      );
+                    }}
+                  >
+                    {isSubmitting && <div className="spinner"></div>}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Submitting...' : 'Submit Resolution'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1266,6 +1541,7 @@ export default function App() {
               onNavigateAddress={(addr) => handleNavigateReputation(addr)}
               onLaunchCreate={() => setActivePage('create')}
             />
+            <RollupStatusPanel demoMode />
           </section>
 
           {/* ──────────────────────────────────────────────
@@ -1308,7 +1584,12 @@ export default function App() {
                         className="btn btn-primary"
                         style={{ flex: '1' }}
                         id="btn-lookup"
-                        onClick={() => {}}
+                        onClick={() => {
+                          const id = (document.getElementById('lookup-id') as HTMLInputElement)
+                            ?.value;
+                          if (!id) return;
+                          alert(`Lookup for ${id} not implemented in frontend yet.`);
+                        }}
                       >
                         <div className="spinner"></div>
                         <span className="btn-text">Fetch Commitment</span>
@@ -1403,9 +1684,20 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button className="btn btn-primary btn-full" id="btn-init" onClick={() => {}}>
-                    <div className="spinner"></div>
-                    <span className="btn-text">Initialize Contract</span>
+                  <button
+                    className="btn btn-primary btn-full"
+                    id="btn-init"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      handleGenericSubmit('Initialize Contract', () =>
+                        submitInitRegistry(wallet.address!, wallet.provider!),
+                      );
+                    }}
+                  >
+                    {isSubmitting && <div className="spinner"></div>}
+                    <span className="btn-text">
+                      {isSubmitting ? 'Initializing...' : 'Initialize Contract'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1456,6 +1748,13 @@ export default function App() {
                 </div>
               </div>
             </div>
+          </section>
+
+          {/* ──────────────────────────────────────────────
+               PAGE: BFT Mesh Network
+               ────────────────────────────────────────────── */}
+          <section className={`page ${activePage === 'mesh' ? 'active' : ''}`} id="page-mesh">
+            <MeshNetworkMonitor />
           </section>
         </main>
       </div>

@@ -81,6 +81,21 @@ export const WalletConnectButton: React.FC<WalletConnectButtonProps> = ({
           title="Click to view wallet details"
         >
           <CheckCircle2 size={14} color="#22c55e" />
+          <span
+            style={{
+              position: 'absolute',
+              width: '1px',
+              height: '1px',
+              padding: 0,
+              margin: '-1px',
+              overflow: 'hidden',
+              clip: 'rect(0,0,0,0)',
+              whiteSpace: 'nowrap',
+              border: 0,
+            }}
+          >
+            Connected
+          </span>
           {truncateAddress(address)}
         </button>
       ) : (
@@ -89,7 +104,7 @@ export const WalletConnectButton: React.FC<WalletConnectButtonProps> = ({
           disabled={isConnecting}
           className={className}
           style={{ ...variantStyles[variant], cursor: isConnecting ? 'wait' : 'pointer' }}
-          title="Connect your Stellar wallet"
+          title="Connect a Stellar wallet or login with social"
         >
           <Wallet size={variant === 'dark' ? 15 : 14} />
           {isConnecting ? 'Connecting...' : 'Connect Wallet'}

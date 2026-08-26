@@ -7,10 +7,13 @@ import {
 } from '@stellar/freighter-api';
 import albedo from '@albedo-link/intent';
 import { isStellarAddress } from './stellar';
+import { LedgerAdapter } from './wallet-adapters/ledger-adapter';
 
-export type WalletProvider = 'freighter' | 'albedo';
+export type WalletProvider = 'freighter' | 'albedo' | 'ledger' | 'web3auth';
 
-export const PACTUM_NETWORK_PASSPHRASE = Networks.TESTNET;
+export const PACTUM_NETWORK_PASSPHRASE =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_STELLAR_NETWORK_PASSPHRASE) ||
+  Networks.TESTNET;
 export const PACTUM_NETWORK_NAME = 'TESTNET';
 export const FREIGHTER_HOMEPAGE = 'https://www.freighter.app/';
 
@@ -53,15 +56,22 @@ export async function isFreighterConnected(): Promise<boolean> {
 function assertTestnetNetwork(network: string | undefined, passphrase: string | undefined): void {
   if (!network) return;
   const normalized = network.toUpperCase();
-  const onTestnet =
-    normalized === PACTUM_NETWORK_NAME ||
+  const allowedPassphrase = PACTUM_NETWORK_PASSPHRASE;
+  const onAllowedNetwork =
+    normalized === 'TESTNET' ||
     normalized === 'TEST' ||
-    (passphrase != null && passphrase === PACTUM_NETWORK_PASSPHRASE);
+    normalized === 'STANDALONE' ||
+    normalized === 'LOCAL' ||
+    (passphrase != null &&
+      (passphrase === allowedPassphrase ||
+        passphrase === Networks.TESTNET ||
+        passphrase === Networks.STANDALONE ||
+        passphrase === 'Standalone Network ; February 2017'));
 
-  if (!onTestnet) {
+  if (!onAllowedNetwork) {
     throw new WalletConnectionError(
       'NETWORK_MISMATCH',
-      `Freighter is connected to ${network}. Pactum requires Stellar Testnet. ` +
+      `Freighter is connected to ${network}. Pactum requires Stellar Testnet or Standalone sandbox. ` +
         'Please switch your wallet network to Testnet (Settings → Network) and try again.',
     );
   }
@@ -171,8 +181,38 @@ export async function connectWithAlbedo(): Promise<WalletConnectionResult> {
   }
 }
 
-export function connectWallet(provider: WalletProvider): Promise<WalletConnectionResult> {
-  return provider === 'albedo' ? connectWithAlbedo() : connectWithFreighter();
+/**
+ * Connects directly to a Ledger Nano hardware wallet over WebUSB/WebBluetooth
+ * (no browser extension involved). Prompts the browser's native device picker,
+ * then reads the Stellar public key from the Ledger Stellar app.
+ */
+export async function connectWithLedger(): Promise<WalletConnectionResult> {
+  try {
+    const address = await LedgerAdapter.connect();
+    if (!address || !isStellarAddress(address)) {
+      throw new WalletConnectionError(
+        'INVALID_ADDRESS',
+        'Ledger returned an invalid Stellar address. Ensure the Stellar app is open on the device.',
+      );
+    }
+    return { address, provider: 'ledger' };
+  } catch (err) {
+    if (err instanceof WalletConnectionError) throw err;
+    throw new WalletConnectionError(
+      'CONNECTION_REJECTED',
+      err instanceof Error ? err.message : 'Failed to connect to Ledger device.',
+    );
+  }
+}
+
+export async function connectWallet(provider: WalletProvider): Promise<WalletConnectionResult> {
+  if (provider === 'albedo') return connectWithAlbedo();
+  if (provider === 'ledger') return connectWithLedger();
+  if (provider === 'web3auth') {
+    const { connectWithWeb3Auth } = await import('./web3auth');
+    return connectWithWeb3Auth();
+  }
+  return connectWithFreighter();
 }
 
 export function truncateAddress(address: string, start = 6, end = 4): string {

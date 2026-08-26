@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use registry::commitments::DISPUTE_STAKE_AMOUNT;
 use registry::errors::Error;
 use registry::RegistryContract;
 use soroban_sdk::testutils::{Address as _, Ledger};
@@ -25,13 +26,26 @@ fn setup_env() -> (
     let resolver_client = MockResolverClient::new(&env, &resolver_id);
 
     let arbitrator = Address::generate(&env);
-    registry_client.initialize(&soroban_sdk::vec![&env, arbitrator]);
+    let admin = Address::generate(&env);
+    registry_client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
+
+    // Configure the dispute token required by the registry's `dispute` function
+    // (error #40 = DisputeTokenNotSet without this).
+    let token = env
+        .register_stellar_asset_contract_v2(arbitrator.clone())
+        .address();
+    registry_client.set_dispute_token(&arbitrator, &token);
 
     let controller = Address::generate(&env);
     resolver_client.init(&controller);
 
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
+
+    // Mint enough dispute tokens to the counterparty so the stake transfer
+    // inside `registry::disputes::dispute` succeeds.
+    soroban_sdk::token::StellarAssetClient::new(&env, &token)
+        .mint(&counterparty, &(DISPUTE_STAKE_AMOUNT * 10));
 
     (
         env,

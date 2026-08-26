@@ -16,6 +16,9 @@ pub const TTL_EXTEND_LEDGERS: u32 = 30 * 17280;
 /// The largest number of milestones a single commitment may be split into.
 pub const MAX_MILESTONES: u32 = 256;
 
+/// Amount of the dispute token required to raise a dispute (10 XLM in stroops).
+pub const DISPUTE_STAKE_AMOUNT: i128 = 100_000_000; // 10 XLM (1 XLM = 10_000_000 stroops)
+
 /// Represents the current lifecycle state of a commitment.
 ///
 /// # Variants
@@ -215,6 +218,14 @@ pub enum DataKey {
     /// Persistent storage key for the running vote tally of a disputed
     /// commitment.
     DisputeTally(u64),
+    /// Persistent storage key for the escrowed dispute stake, keyed by
+    /// commitment ID. Stores the i128 amount locked at dispute time.
+    DisputeStake(u64),
+    /// Instance storage key for the address of the token used for
+    /// dispute staking (defaults to native XLM).
+    DisputeToken,
+    /// Instance storage key for the contract admin address.
+    Admin,
 }
 
 /// Running tally of arbitrator votes on a single disputed commitment.
@@ -301,6 +312,24 @@ pub fn arbitrators(env: &Env) -> Vec<Address> {
         .instance()
         .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
     set
+}
+
+/// Loads the admin address, panicking with [`crate::errors::Error::NotInitialized`]
+/// if the contract has not been initialized.
+pub fn admin(env: &Env) -> Address {
+    env.storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .unwrap_or_else(|| panic_with_error!(env, crate::errors::Error::NotInitialized))
+}
+
+/// Verifies that the caller is the admin, panicking with [`crate::errors::Error::NotAdmin`]
+/// if they are not.
+pub fn require_admin(env: &Env, caller: &Address) {
+    let admin_address = admin(env);
+    if admin_address != *caller {
+        panic_with_error!(env, crate::errors::Error::NotAdmin);
+    }
 }
 
 /// Loads a commitment from persistent storage, transparently migrating legacy records
@@ -614,15 +643,18 @@ pub fn create(
     // 1. Require authorization from the issuer.
     issuer.require_auth();
 
-    // 2. Validate due_at is in the future relative to the current ledger timestamp.
+    // 2. Validate parameters using shared validation rules.
     let now = env.ledger().timestamp();
-    if due_at <= now {
-        soroban_sdk::panic_with_error!(env, crate::errors::Error::DueAtInPast);
-    }
-
-    // 3. Validate the milestone count.
-    if milestone_count == 0 || milestone_count > MAX_MILESTONES {
-        soroban_sdk::panic_with_error!(env, crate::errors::Error::InvalidMilestoneCount);
+    if let Err(err) = pactum_validation::validate_commitment_creation(due_at, now, milestone_count)
+    {
+        match err {
+            pactum_validation::ValidationError::DueAtInPast => {
+                soroban_sdk::panic_with_error!(env, crate::errors::Error::DueAtInPast);
+            }
+            pactum_validation::ValidationError::InvalidMilestoneCount => {
+                soroban_sdk::panic_with_error!(env, crate::errors::Error::InvalidMilestoneCount);
+            }
+        }
     }
 
     // 4. Validate the attestor voting panel: a threshold is only meaningful
@@ -683,4 +715,107 @@ pub fn create(
     crate::reentrancy::exit(env);
 
     id
+}
+
+/// Parameters for creating a commitment in batch
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommitmentParams {
+    pub issuer: Address,
+    pub counterparty: Address,
+    pub terms_hash: BytesN<32>,
+    pub due_at: u64,
+    pub resolver_address: Address,
+    pub oracle: Option<Address>,
+    pub schema_id: Option<u32>,
+    pub attestors: Vec<Address>,
+    pub vote_threshold: u32,
+}
+
+/// Creates multiple commitments in a single transaction.
+///
+/// # Authorization
+/// * Each `issuer` in the batch must authorize individually via `require_auth`.
+///
+/// # Arguments
+/// * `env` - The Soroban execution environment.
+/// * `params` - A vector of `CommitmentParams`.
+///
+/// # Returns
+/// * `Vec<u64>` - The unique identifiers assigned to each created commitment.
+///
+/// # Panics
+/// * Panics with `Error::BatchTooLarge` if batch size > 50.
+/// * Panics with `Error::DueAtInPast` if any `due_at` is in the past.
+pub fn create_batch(env: &soroban_sdk::Env, params: Vec<CommitmentParams>) -> Vec<u64> {
+    crate::reentrancy::enter(env);
+
+    let batch_size = params.len();
+    if batch_size > 50 {
+        soroban_sdk::panic_with_error!(env, crate::errors::Error::BatchTooLarge);
+    }
+
+    let mut ids = Vec::new(env);
+    let now = env.ledger().timestamp();
+
+    for param in params.iter() {
+        param.issuer.require_auth();
+
+        if param.due_at <= now {
+            soroban_sdk::panic_with_error!(env, crate::errors::Error::DueAtInPast);
+        }
+
+        let has_panel = !param.attestors.is_empty();
+        if has_panel != (param.vote_threshold > 0) || param.vote_threshold > param.attestors.len() {
+            soroban_sdk::panic_with_error!(env, crate::errors::Error::ThresholdInvalid);
+        }
+
+        let id: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(1);
+        let next_id = id
+            .checked_add(1)
+            .unwrap_or_else(|| soroban_sdk::panic_with_error!(env, crate::errors::Error::Overflow));
+        env.storage().instance().set(&DataKey::NextId, &next_id);
+        env.storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD_LEDGERS, TTL_EXTEND_LEDGERS);
+
+        let commitment = Commitment {
+            id,
+            issuer: param.issuer.clone(),
+            counterparty: param.counterparty.clone(),
+            terms_hash: param.terms_hash.clone(),
+            due_at: param.due_at,
+            status: CommitmentStatus::Pending,
+            created_at: now,
+            attested_at: None,
+            resolver_address: param.resolver_address.clone(),
+            oracle: param.oracle.clone(),
+            schema_id: param.schema_id,
+            counters: Commitment::pack_counters(env, 1, 0, 0, param.vote_threshold),
+            attestors: param.attestors.clone(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Commitment(id), &commitment);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Commitment(id),
+            TTL_THRESHOLD_LEDGERS,
+            TTL_EXTEND_LEDGERS,
+        );
+
+        crate::events::commitment_created(
+            env,
+            id,
+            &param.issuer,
+            &param.counterparty,
+            &param.oracle,
+            param.schema_id,
+        );
+
+        ids.push_back(id);
+    }
+
+    crate::reentrancy::exit(env);
+    ids
 }
