@@ -2,11 +2,17 @@ import { Contract, rpc, TransactionBuilder, xdr } from '@stellar/stellar-sdk';
 import { signTransaction } from '@stellar/freighter-api';
 import type { WalletProvider } from './wallet';
 import { signTransactionWithLedger } from './wallet-adapters/ledger-adapter';
+import {
+  SorobanSimulationError,
+  extractDiagnosticEventBlobs,
+  resolveSorobanRpcUrls,
+  DEFAULT_NETWORK_PASSPHRASE,
+  DEFAULT_CONTRACT_ID,
+  getOrCreatePool,
+} from './soroban';
+import { decodeSimulationError } from './xdrDecode';
 
 const BASE_FEE = '100000';
-const DEFAULT_SOROBAN_RPC_URL = 'https://soroban-testnet.stellar.org:443';
-const DEFAULT_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
-const DEFAULT_CONTRACT_ID = 'CBADTVTJ6IN332HIKZ7LWUYMYTLPZYCEBV3X2HS47VHR5UDBHQ3GAA7E';
 
 export async function submitGenericSorobanTx({
   methodName,
@@ -14,7 +20,8 @@ export async function submitGenericSorobanTx({
   signerAddress,
   walletProvider = 'freighter',
   onStatusUpdate,
-  rpcUrl = import.meta.env.VITE_SOROBAN_RPC_URL || DEFAULT_SOROBAN_RPC_URL,
+  rpcUrls,
+  rpcUrl,
   contractId = import.meta.env.VITE_PACTUM_CONTRACT_ID || DEFAULT_CONTRACT_ID,
   networkPassphrase = import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || DEFAULT_NETWORK_PASSPHRASE,
 }: {
@@ -23,17 +30,20 @@ export async function submitGenericSorobanTx({
   signerAddress: string;
   walletProvider?: WalletProvider;
   onStatusUpdate?: (msg: string) => void;
+  /** Ordered list of Soroban RPC endpoints (connection pool). */
+  rpcUrls?: string[];
+  /** @deprecated Use `rpcUrls`. */
   rpcUrl?: string;
   contractId?: string;
   networkPassphrase?: string;
 }) {
-  onStatusUpdate?.('Initializing Soroban RPC connection...');
-  const server = new rpc.Server(rpcUrl, { allowHttp: true });
+  onStatusUpdate?.('Initializing Soroban RPC connection pool...');
+  const pool = getOrCreatePool(resolveSorobanRpcUrls(rpcUrls, rpcUrl), onStatusUpdate);
 
   onStatusUpdate?.('Fetching sequence number for account...');
   let account: any = null;
   try {
-    account = await server.getAccount(signerAddress);
+    account = await pool.getAccount(signerAddress);
   } catch {
     throw new Error(
       `Connected account (${signerAddress.substring(0, 8)}...) is not funded on Stellar Testnet.`,
@@ -47,13 +57,30 @@ export async function submitGenericSorobanTx({
     .build();
 
   onStatusUpdate?.('Simulating transaction on Soroban RPC...');
-  const preparedTx = await server.prepareTransaction(tx);
+  let preparedTx: Awaited<ReturnType<typeof pool.prepareTransaction>>;
+  try {
+    preparedTx = await pool.prepareTransaction(tx);
+  } catch (prepareErr: unknown) {
+    const errMsg = prepareErr instanceof Error ? prepareErr.message : String(prepareErr);
+    const diagBlobs = extractDiagnosticEventBlobs({ error: errMsg });
+    const decoded = decodeSimulationError(errMsg, diagBlobs, methodName);
+    throw new SorobanSimulationError(
+      decoded.message ?? `Transaction simulation failed: ${errMsg}`,
+      errMsg,
+      diagBlobs,
+      methodName,
+    );
+  }
   const unsignedXdr = preparedTx.toXDR();
 
   let signedXdr = '';
   if (walletProvider === 'ledger') {
     onStatusUpdate?.('Awaiting signature on Ledger device...');
     signedXdr = await signTransactionWithLedger(unsignedXdr, networkPassphrase);
+  } else if (walletProvider === 'web3auth') {
+    onStatusUpdate?.('Signing with your social-login Stellar key...');
+    const { signTransactionWithWeb3Auth } = await import('./web3auth');
+    signedXdr = signTransactionWithWeb3Auth(unsignedXdr, networkPassphrase);
   } else {
     onStatusUpdate?.('Awaiting signature in Freighter wallet...');
     const signResult = await signTransaction(unsignedXdr, {
@@ -72,7 +99,7 @@ export async function submitGenericSorobanTx({
 
   onStatusUpdate?.('Submitting transaction to Stellar Testnet...');
   const signedTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase);
-  const sendResult = await server.sendTransaction(signedTx);
+  const sendResult = await pool.sendTransaction(signedTx);
   if (sendResult.status === 'ERROR' || sendResult.errorResult) {
     throw new Error(`RPC submission error: ${sendResult.errorResult || sendResult.status}`);
   }
@@ -86,11 +113,29 @@ export async function submitGenericSorobanTx({
   while (attempts < 25) {
     attempts++;
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    txResult = await server.getTransaction(txHash);
+    txResult = await pool.getTransaction(txHash);
     txStatus = txResult.status;
     if (txStatus === rpc.Api.GetTransactionStatus.SUCCESS) break;
     else if (txStatus === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error(`Transaction execution failed on Stellar Testnet. Hash: ${txHash}`);
+      const failedTx = txResult as rpc.Api.GetFailedTransactionResponse | null;
+      let diagBlobs: string[] = [];
+      if (failedTx?.diagnosticEventsXdr) {
+        diagBlobs = failedTx.diagnosticEventsXdr
+          .map((e: any) => {
+            try {
+              return (e as any).toXDR?.('base64') ?? String(e);
+            } catch {
+              return null;
+            }
+          })
+          .filter((b: string | null): b is string => b !== null);
+      }
+      throw new SorobanSimulationError(
+        `Transaction execution failed on Stellar Testnet. Hash: ${txHash}`,
+        `Transaction execution failed on Stellar Testnet. Hash: ${txHash}`,
+        diagBlobs,
+        methodName,
+      );
     }
   }
 

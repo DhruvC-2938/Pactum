@@ -252,7 +252,8 @@ fn test_restore_reputation_works_with_v2_schema() {
 
     // Bootstrap the contract so upgrades are possible.
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 
     score_issuer(&env, &client, &issuer, &counterparty);
 

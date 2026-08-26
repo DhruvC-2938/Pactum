@@ -1,13 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 
 import './App.css';
 import LandingPage from './components/LandingPage';
 import DocsPage from './components/DocsPage';
-import CreateCommitmentWizard from './components/CreateCommitmentWizard';
-import ReputationDashboard from './components/ReputationDashboard';
+import RemoteErrorBoundary from './components/RemoteErrorBoundary';
 import FreighterInstallModal from './components/FreighterInstallModal';
 import WalletConnectButton from './components/WalletConnectButton';
 import DecryptTermsModal from './components/DecryptTermsModal';
+import RollupStatusPanel from './components/RollupStatusPanel';
 import { useCommitments } from './hooks/useCommitments';
 import { useSyncCache } from './hooks/useSyncCache';
 import { fetchEncryptedTerms } from './lib/api';
@@ -22,6 +22,7 @@ import {
   submitInitRegistry,
 } from './lib/sorobanTxHelpers';
 import { ThemeSelector } from './context/ThemeContext';
+import { IndexerModeToggle, useIndexerMode } from './context/IndexerModeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
 import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
 
@@ -157,11 +158,43 @@ function renderCommitmentItem(
   );
 }
 
+function LocalIndexerNotice() {
+  const { mode, syncState, lastError, retentionGapDetected } = useIndexerMode();
+  if (mode !== 'local') return null;
+
+  if (syncState === 'error') {
+    return (
+      <div className="inline-alert warning">
+        Local Indexer error: {lastError ?? 'unknown error'}. Switch back to Cloud Indexer if this
+        persists.
+      </div>
+    );
+  }
+
+  return (
+    <div className="inline-alert info">
+      Local Indexer is active — commitments are read directly from Soroban RPC via this browser's
+      IndexedDB, bypassing the backend.
+      {retentionGapDetected &&
+        " Some older history may be missing (outside the RPC provider's event retention window) — switch to Cloud Indexer for full history."}
+    </div>
+  );
+}
+
 function InlineWalletError() {
   const { error, errorCode, clearError } = useWallet();
   return errorCode === 'NOT_INSTALLED' ? (
     <FreighterInstallModal error={error} onDismiss={clearError} />
   ) : null;
+}
+
+// Loaded at runtime from independently compiled/deployed remotes over Module Federation, not
+// bundled into the host — see vite.config.ts `remotes` and docs/module-federation.md.
+const CreateCommitmentWizard = lazy(() => import('wizard/CreateCommitmentWizard'));
+const ReputationDashboard = lazy(() => import('dashboard/ReputationDashboard'));
+
+function RemoteFallback({ label }: { label: string }) {
+  return <div className="inline-alert info">Loading {label}…</div>;
 }
 
 export default function App() {
@@ -174,7 +207,7 @@ export default function App() {
   const [activePage, setActivePage] = useState('landing');
   const [commitmentStatus, setCommitmentStatus] = useState<CommitmentStatus>();
   const [reputationAddress, setReputationAddress] = useState(
-    'GAJKUMA6V4MJKQPFM4MXNMWQZX3CTMK2KMMCSZQPK5JXBZWBZM7S4C',
+    'GBY54VG5G4A7DC4D6YJ6GHD4X4QW2AR43JLYZ2QVWSHKACWK3BLDR5IX',
   );
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
 
@@ -290,10 +323,10 @@ export default function App() {
             <span className="nav-section-label">Overview</span>
 
             <button
-              className={`nav-item ${activePage === 'dashboard' ? 'active' : ''}`}
+              className={`nav-item ${activePage === 'commitments' ? 'active' : ''}`}
               id="nav-dashboard"
               onClick={() => {
-                setActivePage('dashboard');
+                setActivePage('commitments');
                 setIsMobileMenuOpen(false);
               }}
             >
@@ -596,6 +629,7 @@ export default function App() {
               </span>
               Home
             </button>
+            <IndexerModeToggle />
             <div className="sidebar-network">
               <span className="network-dot"></span>
               <span className="network-name">Stellar Testnet</span>
@@ -996,6 +1030,7 @@ export default function App() {
               </div>
             </div>
             <div className="commitment-list" id="commitments-list-page">
+              <LocalIndexerNotice />
               {commitmentsQuery.isLoading && (
                 <div className="inline-alert info">Loading commitments...</div>
               )}
@@ -1023,17 +1058,21 @@ export default function App() {
               </div>
             </div>
 
-            <CreateCommitmentWizard
-              onSubmit={(payload) => console.log('commitment payload', payload)}
-              onSuccess={(result) => {
-                console.log('Transaction successful:', result);
-                if (wallet.address) {
-                  handleNavigateReputation(wallet.address);
-                } else {
-                  setActivePage('reputation');
-                }
-              }}
-            />
+            <RemoteErrorBoundary remoteName="wizard">
+              <Suspense fallback={<RemoteFallback label="Create Commitment wizard" />}>
+                <CreateCommitmentWizard
+                  onSubmit={(payload) => console.log('commitment payload', payload)}
+                  onSuccess={(result) => {
+                    console.log('Transaction successful:', result);
+                    if (wallet.address) {
+                      handleNavigateReputation(wallet.address);
+                    } else {
+                      setActivePage('reputation');
+                    }
+                  }}
+                />
+              </Suspense>
+            </RemoteErrorBoundary>
           </section>
 
           {/* ──────────────────────────────────────────────
@@ -1508,11 +1547,16 @@ export default function App() {
             className={`page ${activePage === 'reputation' ? 'active' : ''}`}
             id="page-reputation"
           >
-            <ReputationDashboard
-              initialAddress={reputationAddress}
-              onNavigateAddress={(addr) => handleNavigateReputation(addr)}
-              onLaunchCreate={() => setActivePage('create')}
-            />
+            <RemoteErrorBoundary remoteName="dashboard">
+              <Suspense fallback={<RemoteFallback label="Reputation Dashboard" />}>
+                <ReputationDashboard
+                  initialAddress={reputationAddress}
+                  onNavigateAddress={(addr) => handleNavigateReputation(addr)}
+                  onLaunchCreate={() => setActivePage('create')}
+                />
+              </Suspense>
+            </RemoteErrorBoundary>
+            <RollupStatusPanel demoMode />
           </section>
 
           {/* ──────────────────────────────────────────────

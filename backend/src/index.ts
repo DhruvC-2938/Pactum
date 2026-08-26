@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import commitmentsRouter from './routes/commitments';
 import { createReputationRouter } from './routes/reputation';
 import analyticsRoutes from './routes/analytics';
+import heReputationRouter from './routes/he_reputation';
 import { createProofsRouter } from './routes/proofs';
 import { RelayerService } from './relayer/relayerService';
 import pool from './db/timescale';
@@ -94,6 +95,53 @@ app.use((req: Request, res: Response, next: NextFunction): void => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Security headers (helmet-equivalent)
+// Sets HSTS, X-Content-Type-Options, X-Frame-Options, and related headers on
+// every response to harden the API against common web vulnerabilities.
+// ---------------------------------------------------------------------------
+app.use((_req: Request, res: Response, next: NextFunction): void => {
+  // Strict-Transport-Security: enforce HTTPS for 1 year, include subdomains
+  res.setHeader(
+    'Strict-Transport-Security',
+    'max-age=31536000; includeSubDomains',
+  );
+  // Prevent MIME-type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Disallow framing of this page (clickjacking protection)
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Disable legacy X-XSS-Protection header (modern browsers ignore it; setting
+  // to 0 prevents a known IE vulnerability)
+  res.setHeader('X-XSS-Protection', '0');
+  // Restrict what can be loaded by the page
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; frame-ancestors 'none'",
+  );
+  // Hide the server implementation detail
+  res.removeHeader('X-Powered-By');
+  // Control referrer information leakage
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  // Prevent browsers from requesting permission-gated features
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+// POST / PUT / PATCH / DELETE requests use the strict limiter (10 req/min).
+// All other requests (GET, HEAD, OPTIONS) use the standard limiter (100 req/min).
+// ---------------------------------------------------------------------------
+app.use((req: Request, res: Response, next: NextFunction): void => {
+  const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  if (writeMethods.has(req.method)) {
+    strictLimiter(req, res, next);
+  } else {
+    standardLimiter(req, res, next);
+  }
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(requestLogger);
@@ -121,11 +169,13 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/commitments', commitmentsRouter);
 const redis = createRedisClientFromEnv();
 redis.on('error', (error) => console.error('Redis connection error', error));
-const reputationCache = new ReputationCache(
-  redis,
-  new PostgresReputationRepository(pool),
-  { ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300) },
-);
+const reputationCache = new ReputationCache(redis, new PostgresReputationRepository(pool), {
+  ttlSeconds: Number(process.env.REPUTATION_CACHE_TTL_SECONDS ?? 300),
+});
+
+// Homomorphic encryption layer — Issue #190
+app.use('/reputation', heReputationRouter);
+app.use('/api/reputation', heReputationRouter);
 
 // ── Soroban client (shared by reputation router + TTL monitor) ─────────────
 // Built once from env so both the trust-score API endpoint and the TTL monitor
@@ -156,8 +206,13 @@ app.use('/api-docs', createOpenApiRouter());
 
 const relayerService = new RelayerService({
   rpcUrl: process.env.SOROBAN_RPC_URL,
-  contractId: process.env.REGISTRY_CONTRACT_ID || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  contractId:
+    process.env.REGISTRY_CONTRACT_ID || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015',
+  maxBatchSize: Number(process.env.RELAYER_MAX_BATCH_SIZE) || 32,
+  batchTtlMs: Number(process.env.RELAYER_BATCH_TTL_MS) || 10_000,
+  persistPath: process.env.RELAYER_BATCH_QUEUE_PATH,
+  autoStart: process.env.RELAYER_AUTO_START === 'on' || process.env.RELAYER_AUTO_START === '1',
 });
 const proofsRouter = createProofsRouter(relayerService);
 app.use('/proofs', proofsRouter);
@@ -186,7 +241,7 @@ if (process.env.INDEXER_ENABLED !== 'off') {
   } else {
     console.warn(
       '[TTL Monitor] Skipping TTL monitor cron: SOROBAN_RPC_URL, SOROBAN_CONTRACT_ID, ' +
-      'ORACLE_PRIVATE_KEY, or SOROBAN_NETWORK_PASSPHRASE is not set.',
+        'ORACLE_PRIVATE_KEY, or SOROBAN_NETWORK_PASSPHRASE is not set.',
     );
   }
 }
@@ -204,6 +259,7 @@ async function init() {
 init();
 
 export const stop = async () => {
+  await relayerService.shutdown();
   wsService?.close();
   server?.close();
 };

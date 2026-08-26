@@ -11,13 +11,21 @@ import App from './App.tsx';
 import { queryClient } from './lib/queryClient';
 import { WalletProvider } from './context/WalletContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { IndexerModeProvider } from './context/IndexerModeContext';
 
+// WalletProvider and QueryClientProvider wrap the whole tree here, in the host, exactly once —
+// not per-remote — since the host owns the single WalletContext and QueryClient instances that
+// dashboard/wizard remotes consume over Module Federation (see vite.config.ts `exposes` and
+// docs/module-federation.md). A remote wrapping itself in its own instance of either provider
+// would defeat the singleton sharing this architecture depends on.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
         <ThemeProvider>
-          <App />
+          <IndexerModeProvider>
+            <App />
+          </IndexerModeProvider>
         </ThemeProvider>
       </WalletProvider>
     </QueryClientProvider>

@@ -109,9 +109,9 @@ SELECT add_continuous_aggregate_policy('mv_trust_score_trends_cagg',
 SELECT add_retention_policy('commitment_outcomes',    INTERVAL '90 days');
 SELECT add_retention_policy('trust_score_snapshots',  INTERVAL '90 days');
 
--- Initial backfill
-CALL refresh_continuous_aggregate('reputation_snapshots_daily',     NULL, NOW());
-CALL refresh_continuous_aggregate('mv_daily_fulfillment_rates_cagg', NULL, NOW());
-CALL refresh_continuous_aggregate('mv_weekly_fulfillment_rates_cagg', NULL, NOW());
-CALL refresh_continuous_aggregate('mv_monthly_fulfillment_rates_cagg', NULL, NOW());
-CALL refresh_continuous_aggregate('mv_trust_score_trends_cagg',      NULL, NOW());
+-- No initial CALL refresh_continuous_aggregate(...) backfill here: runMigrations (timescale.ts)
+-- applies every migration inside BEGIN/COMMIT, and TimescaleDB refuses to run
+-- refresh_continuous_aggregate() inside a transaction block at all, so this file could never
+-- succeed with an eager backfill included. The add_continuous_aggregate_policy calls above
+-- already schedule the first refresh within their schedule_interval (as little as 1 minute), so
+-- this only delays population, not correctness.

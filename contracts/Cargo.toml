@@ -5,6 +5,8 @@ members = [
     "mock_resolver",
     "timelock",
     "upgrade-fixture",
+    "state_channel",
+    "fraud_verifier",
 ]
 resolver = "2"
 

@@ -453,10 +453,12 @@ fn setup_test_with_arbitrator() -> (
     Address,
     Address,
     Address,
+    Address,
 ) {
     let (env, client, issuer, counterparty, resolver) = setup_test();
     let arbitrator = Address::generate(&env);
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
     let token = env
         .register_stellar_asset_contract_v2(arbitrator.clone())
         .address();
@@ -467,7 +469,7 @@ fn setup_test_with_arbitrator() -> (
         &counterparty,
         &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
     );
-    (env, client, issuer, counterparty, resolver)
+    (env, client, issuer, counterparty, resolver, admin)
 }
 
 /// Initializes the contract with a committee of `count` fresh arbitrators and
@@ -481,13 +483,15 @@ fn setup_test_with_arbitrators(
     Address,
     Address,
     Address,
+    Address,
 ) {
     let (env, client, issuer, counterparty, resolver) = setup_test();
     let mut arbitrators = soroban_sdk::Vec::new(&env);
     for _ in 0..count {
         arbitrators.push_back(Address::generate(&env));
     }
-    client.initialize(&arbitrators);
+    let admin = Address::generate(&env);
+    client.initialize(&arbitrators, &admin);
     if let Some(arb) = arbitrators.first() {
         let token = env
             .register_stellar_asset_contract_v2(arb.clone())
@@ -500,14 +504,23 @@ fn setup_test_with_arbitrators(
             &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
         );
     }
-    (env, client, arbitrators, issuer, counterparty, resolver)
+    (
+        env,
+        client,
+        arbitrators,
+        issuer,
+        counterparty,
+        resolver,
+        admin,
+    )
 }
 
 #[test]
 fn test_initialize_can_only_run_once() {
-    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
+    let (env, client, _issuer, _counterparty, _resolver, _admin) = setup_test_with_arbitrator();
     let arbitrator = client.get_arbitrator();
-    let res = client.try_initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    let admin = Address::generate(&env);
+    let res = client.try_initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
     assert_eq!(res, Err(Ok(Error::AlreadyInitialized.into())));
     assert_eq!(client.get_arbitrator(), arbitrator);
 }
@@ -515,7 +528,8 @@ fn test_initialize_can_only_run_once() {
 #[test]
 fn test_initialize_rejects_an_empty_arbitrator_set() {
     let (env, client, _issuer, _counterparty, _resolver) = setup_test();
-    let res = client.try_initialize(&soroban_sdk::Vec::new(&env));
+    let admin = Address::generate(&env);
+    let res = client.try_initialize(&soroban_sdk::Vec::new(&env), &admin);
     assert_eq!(res, Err(Ok(Error::EmptyArbitratorSet.into())));
 }
 
@@ -526,13 +540,14 @@ fn test_initialize_stores_and_deduplicates_the_arbitrator_set() {
     let a = Address::generate(&env);
     let b = Address::generate(&env);
     let c = Address::generate(&env);
+    let admin = Address::generate(&env);
     let mut input = soroban_sdk::Vec::new(&env);
     input.push_back(a.clone());
     input.push_back(b.clone());
     input.push_back(a.clone()); // duplicate: must be dropped
     input.push_back(c.clone());
 
-    client.initialize(&input);
+    client.initialize(&input, &admin);
 
     let expected = soroban_sdk::vec![&env, a.clone(), b.clone(), c.clone()];
     assert_eq!(client.get_arbitrators(), expected);
@@ -549,7 +564,7 @@ fn test_get_arbitrators_fails_if_uninitialized() {
 
 #[test]
 fn test_dispute_and_resolution_end_to_end() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -590,7 +605,7 @@ fn test_dispute_and_resolution_end_to_end() {
 
 #[test]
 fn test_dispute_fails_outside_dispute_window() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -620,7 +635,7 @@ fn test_dispute_fails_outside_dispute_window() {
 
 #[test]
 fn test_dispute_succeeds_at_window_boundary() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -651,7 +666,7 @@ fn test_dispute_succeeds_at_window_boundary() {
 
 #[test]
 fn test_dispute_fails_if_caller_not_issuer_or_counterparty() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -685,7 +700,7 @@ fn test_dispute_fails_if_caller_not_issuer_or_counterparty() {
 }
 #[test]
 fn test_resolve_dispute_fails_if_caller_not_arbitrator() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -720,7 +735,7 @@ fn test_resolve_dispute_fails_if_caller_not_arbitrator() {
 
 #[test]
 fn test_resolve_dispute_fails_if_commitment_not_disputed() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -750,7 +765,7 @@ fn test_resolve_dispute_fails_if_commitment_not_disputed() {
 
 #[test]
 fn test_resolve_dispute_rejects_invalid_final_outcome() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -812,7 +827,7 @@ fn setup_disputed_commitment(
 
 #[test]
 fn test_resolve_dispute_requires_a_majority_vote() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
     let arb1 = arbitrators.get(1).unwrap();
@@ -844,7 +859,7 @@ fn test_resolve_dispute_requires_a_majority_vote() {
 
 #[test]
 fn test_resolve_dispute_majority_wins_over_dissent() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
     let arb1 = arbitrators.get(1).unwrap();
@@ -876,7 +891,7 @@ fn test_resolve_dispute_majority_wins_over_dissent() {
 
 #[test]
 fn test_resolve_dispute_arbitrator_cannot_vote_twice() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
 
@@ -897,7 +912,7 @@ fn test_resolve_dispute_arbitrator_cannot_vote_twice() {
 
 #[test]
 fn test_resolve_dispute_half_the_committee_is_not_enough() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(2);
     let arb0 = arbitrators.get(0).unwrap();
     let arb1 = arbitrators.get(1).unwrap();
@@ -920,7 +935,7 @@ fn test_resolve_dispute_half_the_committee_is_not_enough() {
 
 #[test]
 fn test_resolve_dispute_single_arbitrator_finalizes_on_first_vote() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(1);
     let arb0 = arbitrators.get(0).unwrap();
 
@@ -936,7 +951,7 @@ fn test_resolve_dispute_single_arbitrator_finalizes_on_first_vote() {
 
 #[test]
 fn test_resolve_dispute_committee_cannot_vote_on_custom_resolver_commitment() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
 
@@ -958,7 +973,7 @@ fn test_resolve_dispute_committee_cannot_vote_on_custom_resolver_commitment() {
 
 #[test]
 fn test_dispute_fails_if_pending() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -982,7 +997,7 @@ fn test_dispute_fails_if_pending() {
 
 #[test]
 fn test_dispute_fails_if_already_disputed() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1036,7 +1051,7 @@ fn test_dispute_events_emitted() {
     use soroban_sdk::testutils::Events;
     use soroban_sdk::{symbol_short, FromVal, IntoVal, Val, Vec};
 
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1117,10 +1132,11 @@ fn test_resolve_dispute_requires_auth() {
     let counterparty = Address::generate(&env);
     let arbitrator = Address::generate(&env);
     let resolver = Address::generate(&env);
+    let admin = Address::generate(&env);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
     env.mock_all_auths();
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
     let id = client.create_commitment(
         &issuer,
         &counterparty,
@@ -1146,8 +1162,9 @@ fn test_initialize_requires_auth() {
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
+    let admin = Address::generate(&env);
 
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 }
 
 // -----------------------------------------------------------------------------
@@ -1232,7 +1249,7 @@ fn test_reputation_increments_direct_attestation() {
 
 #[test]
 fn test_reputation_not_incremented_when_disputed() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1263,7 +1280,7 @@ fn test_reputation_not_incremented_when_disputed() {
 
 #[test]
 fn test_reputation_reflects_final_outcome_after_dispute() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let id = client.create_commitment(
@@ -1300,7 +1317,7 @@ fn test_reputation_reflects_final_outcome_after_dispute() {
 
 #[test]
 fn test_reputation_aggregates_multiple_commitments() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
@@ -1396,7 +1413,7 @@ fn test_create_commitment_fails_if_due_at_is_current_timestamp() {
 
 #[test]
 fn test_dispute_fails_if_already_resolved() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1425,7 +1442,7 @@ fn test_dispute_fails_if_already_resolved() {
 #[test]
 fn test_realistic_sequence() {
     // create -> attest late -> dispute -> resolve fulfilled -> verify reputation
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1479,8 +1496,9 @@ fn test_reentrancy_attack_during_resolve_dispute_is_blocked() {
     // __check_auth implementation is genuinely invoked.
     let attacker_id = env.register(AttackerGate, ());
     let attacker_client = AttackerGateClient::new(&env, &attacker_id);
+    let admin = Address::generate(&env);
 
-    client.initialize(&soroban_sdk::vec![&env, attacker_id.clone()]);
+    client.initialize(&soroban_sdk::vec![&env, attacker_id.clone()], &admin);
     let token = env
         .register_stellar_asset_contract_v2(attacker_id.clone())
         .address();
@@ -1582,7 +1600,7 @@ fn test_reentrant_attest_call_is_rejected() {
 
 #[test]
 fn test_get_trust_score_reflects_outcomes() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
@@ -1636,7 +1654,7 @@ fn test_get_trust_score_reflects_outcomes() {
 
 #[test]
 fn test_pause_blocks_write_functions() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
     let arbitrator = client.get_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
@@ -1656,7 +1674,7 @@ fn test_pause_blocks_write_functions() {
     );
     client.attest(&issuer, &id, &CommitmentStatus::Fulfilled);
 
-    client.pause(&arbitrator);
+    client.pause(&admin);
     assert!(client.is_paused());
 
     // create_commitment reverts with ProtocolPaused
@@ -1692,7 +1710,7 @@ fn test_pause_blocks_write_functions() {
 
 #[test]
 fn test_read_functions_succeed_while_paused() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
     let arbitrator = client.get_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
@@ -1708,7 +1726,7 @@ fn test_read_functions_succeed_while_paused() {
         &0,
     );
 
-    client.pause(&arbitrator);
+    client.pause(&admin);
 
     // get_commitment continues to work.
     let commitment = client.get_commitment(&id);
@@ -1734,19 +1752,25 @@ fn test_read_functions_succeed_while_paused() {
 }
 
 #[test]
-fn test_pause_requires_arbitrator() {
-    let (_env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
-    let arbitrator = client.get_arbitrator();
+fn test_pause_requires_admin() {
+    let (_env, client, _issuer, _counterparty, _resolver, admin) = setup_test_with_arbitrator();
 
     let stranger = Address::generate(&_env);
     let res = client.try_pause(&stranger);
-    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+    assert_eq!(res, Err(Ok(Error::NotAdmin.into())));
 
     let res = client.try_unpause(&stranger);
-    assert_eq!(res, Err(Ok(Error::NotArbitrator.into())));
+    assert_eq!(res, Err(Ok(Error::NotAdmin.into())));
 
     assert!(!client.is_paused());
-    let _ = arbitrator; // suppress unused warning
+
+    // Admin can pause
+    client.pause(&admin);
+    assert!(client.is_paused());
+
+    // Admin can unpause
+    client.unpause(&admin);
+    assert!(!client.is_paused());
 }
 
 #[test]
@@ -1763,13 +1787,12 @@ fn test_pause_fails_if_not_initialized() {
 
 #[test]
 fn test_unpause_restores_write_functions() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
-    let arbitrator = client.get_arbitrator();
+    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
 
-    client.pause(&arbitrator);
+    client.pause(&admin);
     let res = client.try_create_commitment(
         &issuer,
         &counterparty,
@@ -1783,7 +1806,7 @@ fn test_unpause_restores_write_functions() {
     );
     assert_eq!(res, Err(Ok(Error::ProtocolPaused.into())));
 
-    client.unpause(&arbitrator);
+    client.unpause(&admin);
     assert!(!client.is_paused());
 
     let id = client.create_commitment(
@@ -1810,12 +1833,13 @@ fn test_pause_requires_auth() {
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
+    let admin = Address::generate(&env);
 
     env.mock_all_auths();
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 
     env.mock_auths(&[]);
-    client.pause(&arbitrator);
+    client.pause(&admin);
 }
 
 #[test]
@@ -1825,13 +1849,14 @@ fn test_unpause_requires_auth() {
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
+    let admin = Address::generate(&env);
 
     env.mock_all_auths();
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
-    client.pause(&arbitrator);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
+    client.pause(&admin);
 
     env.mock_auths(&[]);
-    client.unpause(&arbitrator);
+    client.unpause(&admin);
 }
 
 #[test]
@@ -1839,10 +1864,9 @@ fn test_pause_and_unpause_events_emitted() {
     use soroban_sdk::testutils::Events;
     use soroban_sdk::{symbol_short, IntoVal, Val, Vec};
 
-    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
-    let arbitrator = client.get_arbitrator();
+    let (env, client, _issuer, _counterparty, _resolver, admin) = setup_test_with_arbitrator();
 
-    client.pause(&arbitrator);
+    client.pause(&admin);
 
     let events_after_pause = env.events().all();
     let paused_event = events_after_pause
@@ -1851,7 +1875,7 @@ fn test_pause_and_unpause_events_emitted() {
     let expected_paused_topics: Vec<Val> = (symbol_short!("paused"),).into_val(&env);
     assert_eq!(paused_event.1, expected_paused_topics);
 
-    client.unpause(&arbitrator);
+    client.unpause(&admin);
 
     let events_after_unpause = env.events().all();
     let unpaused_event = events_after_unpause
@@ -1863,10 +1887,9 @@ fn test_pause_and_unpause_events_emitted() {
 
 #[test]
 fn test_admin_lifecycle_operations_exempt_from_pause() {
-    let (env, client, _issuer, _counterparty, _resolver) = setup_test_with_arbitrator();
-    let arbitrator = client.get_arbitrator();
+    let (env, client, _issuer, _counterparty, _resolver, admin) = setup_test_with_arbitrator();
 
-    client.pause(&arbitrator);
+    client.pause(&admin);
     assert!(client.is_paused());
 
     // upgrade is an admin lifecycle operation exempt from the pause: with no
@@ -1877,15 +1900,16 @@ fn test_admin_lifecycle_operations_exempt_from_pause() {
     assert_eq!(res, Err(Ok(Error::UpgradeAdminNotSet.into())));
 
     // pause/unpause remain callable by the admin while paused.
-    client.pause(&arbitrator);
+    client.pause(&admin);
     assert!(client.is_paused());
-    client.unpause(&arbitrator);
+    client.unpause(&admin);
     assert!(!client.is_paused());
 }
 
 #[test]
 fn test_custom_resolver_delegation() {
-    let (env, client, issuer, counterparty, _default_resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, _default_resolver, _admin) =
+        setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[9u8; 32]);
@@ -1939,7 +1963,8 @@ struct PreOracleCommitment {
 
 #[test]
 fn test_legacy_commitment_storage_migration() {
-    let (env, client, issuer, counterparty, _default_resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, _default_resolver, _admin) =
+        setup_test_with_arbitrator();
 
     // Directly seed a LegacyCommitment in persistent storage (simulating pre-upgrade storage)
     let arbitrator = client.get_arbitrator();
@@ -2001,7 +2026,7 @@ struct PreAttestorVotingCommitment {
 
 #[test]
 fn test_mid_tier_milestone_commitment_migration_preserves_counters() {
-    let (env, client, issuer, counterparty, resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     let mid_id = 77u64;
     let mid_comm = PreAttestorVotingCommitment {
@@ -2073,7 +2098,7 @@ fn test_legacy_commitment_migration_fails_if_uninitialized() {
 
 #[test]
 fn test_legacy_commitment_migration_fails_if_payload_id_mismatch() {
-    let (env, client, issuer, counterparty, _resolver) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, _resolver, _admin) = setup_test_with_arbitrator();
 
     let storage_key_id = 200u64;
     let payload_id = 999u64; // Inconsistent with storage key
@@ -2654,7 +2679,8 @@ fn test_dispute_requires_stake_transfer() {
     let resolver = Address::generate(&env);
     let arbitrator = Address::generate(&env);
 
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    let admin = Address::generate(&env);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 
     // Register a Stellar asset and configure it as the dispute token.
     let token = env
@@ -2706,8 +2732,9 @@ fn test_dispute_stake_released_to_winner_on_resolution() {
     let counterparty = Address::generate(&env);
     let resolver = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let admin = Address::generate(&env);
 
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 
     let token = env
         .register_stellar_asset_contract_v2(arbitrator.clone())
@@ -2758,9 +2785,10 @@ fn test_dispute_fails_without_dispute_token_set() {
     let issuer = Address::generate(&env);
     let counterparty = Address::generate(&env);
     let resolver = Address::generate(&env);
+    let admin = Address::generate(&env);
     let arbitrator = Address::generate(&env);
 
-    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()]);
+    client.initialize(&soroban_sdk::vec![&env, arbitrator.clone()], &admin);
 
     // Do NOT call set_dispute_token.
 
@@ -2784,4 +2812,138 @@ fn test_dispute_fails_without_dispute_token_set() {
     env.ledger().with_mut(|l| l.timestamp = 1600);
     let res = client.try_dispute(&counterparty, &id);
     assert_eq!(res, Err(Ok(Error::DisputeTokenNotSet.into())));
+}
+
+// -----------------------------------------------------------------------------
+// Batch Commitment Creation Tests (Issue #17)
+// -----------------------------------------------------------------------------
+
+#[test]
+fn test_batch_create_commitments_success() {
+    let (env, client, _issuer, _counterparty, resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let issuer1 = Address::generate(&env);
+    let issuer2 = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    let params = soroban_sdk::vec![
+        &env,
+        commitments::CommitmentParams {
+            issuer: issuer1.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 2000,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+        commitments::CommitmentParams {
+            issuer: issuer2.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 3000,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+    ];
+
+    env.mock_all_auths();
+    let ids = client.batch_create_commitments(&params);
+
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids.get(0).unwrap(), 1);
+    assert_eq!(ids.get(1).unwrap(), 2);
+}
+
+#[test]
+fn test_batch_create_commitments_fails_when_batch_too_large() {
+    let (env, client, _issuer, _counterparty, resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+    let mut params = soroban_sdk::Vec::new(&env);
+
+    for i in 0..51 {
+        let issuer = Address::generate(&env);
+        let counterparty = Address::generate(&env);
+        params.push_back(commitments::CommitmentParams {
+            issuer,
+            counterparty,
+            terms_hash: terms_hash.clone(),
+            due_at: 2000 + i as u64,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        });
+    }
+
+    env.mock_all_auths();
+    let res = client.try_batch_create_commitments(&params);
+    assert_eq!(res, Err(Ok(Error::BatchTooLarge.into())));
+}
+
+#[test]
+fn test_batch_create_commitments_fails_if_any_due_at_in_past() {
+    let (env, client, _issuer, _counterparty, resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let issuer1 = Address::generate(&env);
+    let issuer2 = Address::generate(&env);
+    let counterparty = Address::generate(&env);
+    let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
+
+    let params = soroban_sdk::vec![
+        &env,
+        commitments::CommitmentParams {
+            issuer: issuer1.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 2000,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+        commitments::CommitmentParams {
+            issuer: issuer2.clone(),
+            counterparty: counterparty.clone(),
+            terms_hash: terms_hash.clone(),
+            due_at: 500,
+            resolver_address: resolver.clone(),
+            oracle: None,
+            schema_id: None,
+            attestors: Vec::new(&env),
+            vote_threshold: 0,
+        },
+    ];
+
+    env.mock_all_auths();
+    let res = client.try_batch_create_commitments(&params);
+    assert_eq!(res, Err(Ok(Error::DueAtInPast.into())));
+}
+
+#[test]
+fn test_batch_create_commitments_handles_empty_batch() {
+    let (env, client, _issuer, _counterparty, _resolver) = setup_test();
+
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let empty_params = soroban_sdk::Vec::new(&env);
+    env.mock_all_auths();
+
+    let ids = client.batch_create_commitments(&empty_params);
+    assert_eq!(ids.len(), 0);
 }

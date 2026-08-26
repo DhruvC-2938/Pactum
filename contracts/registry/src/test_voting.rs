@@ -28,6 +28,7 @@ fn setup_voting(
     Address,
     Address,
     Address,
+    Address,
     Vec<Address>,
 ) {
     env.mock_all_auths();
@@ -36,7 +37,8 @@ fn setup_voting(
     let client = RegistryContractClient::new(env, &contract_id);
 
     let arbitrator = Address::generate(env);
-    client.initialize(&soroban_sdk::vec![env, arbitrator.clone()]);
+    let admin = Address::generate(env);
+    client.initialize(&soroban_sdk::vec![env, arbitrator.clone()], &admin);
 
     let token = env
         .register_stellar_asset_contract_v2(arbitrator.clone())
@@ -70,7 +72,15 @@ fn setup_voting(
 
     env.ledger().with_mut(|l| l.timestamp = T0);
 
-    (client, token, arbitrator, issuer, counterparty, attestors)
+    (
+        client,
+        token,
+        arbitrator,
+        admin,
+        issuer,
+        counterparty,
+        attestors,
+    )
 }
 
 /// Creates a panel-governed commitment, attests it as `Fulfilled`, and raises
@@ -104,7 +114,7 @@ fn disputed_panel_commitment(
 #[test]
 fn test_vote_threshold_resolves_and_slashes_dissenters() {
     let env = Env::default();
-    let (client, _token, _arbitrator, issuer, counterparty, attestors) = setup_voting(&env);
+    let (client, _token, _arbitrator, _admin, issuer, counterparty, attestors) = setup_voting(&env);
     let (a1, a2, a3, a4, a5) = (
         attestors.get(0).unwrap(),
         attestors.get(1).unwrap(),
@@ -166,7 +176,7 @@ fn test_vote_threshold_resolves_and_slashes_dissenters() {
 #[test]
 fn test_vote_rejects_double_vote() {
     let env = Env::default();
-    let (client, _token, _arbitrator, issuer, counterparty, attestors) = setup_voting(&env);
+    let (client, _token, _arbitrator, _admin, issuer, counterparty, attestors) = setup_voting(&env);
     let a1 = attestors.get(0).unwrap();
 
     let id = disputed_panel_commitment(
@@ -187,7 +197,7 @@ fn test_vote_rejects_double_vote() {
 #[test]
 fn test_vote_rejects_unstaked_caller() {
     let env = Env::default();
-    let (client, token, _arbitrator, issuer, counterparty, attestors) = setup_voting(&env);
+    let (client, token, _arbitrator, _admin, issuer, counterparty, attestors) = setup_voting(&env);
     let stranger = Address::generate(&env);
 
     // A panel containing a member with no stake at all.
@@ -219,7 +229,7 @@ fn test_vote_rejects_unstaked_caller() {
 #[test]
 fn test_vote_rejects_invalid_outcome_and_non_disputed() {
     let env = Env::default();
-    let (client, _token, _arbitrator, issuer, counterparty, attestors) = setup_voting(&env);
+    let (client, _token, _arbitrator, _admin, issuer, counterparty, attestors) = setup_voting(&env);
     let a1 = attestors.get(0).unwrap();
 
     let terms = BytesN::from_array(&env, &[8u8; 32]);
@@ -249,7 +259,7 @@ fn test_vote_rejects_invalid_outcome_and_non_disputed() {
 #[test]
 fn test_vote_timeout_falls_back_to_breached() {
     let env = Env::default();
-    let (client, _token, _arbitrator, issuer, counterparty, attestors) = setup_voting(&env);
+    let (client, _token, _arbitrator, _admin, issuer, counterparty, attestors) = setup_voting(&env);
     let a1 = attestors.get(0).unwrap();
 
     let id = disputed_panel_commitment(
@@ -294,7 +304,7 @@ fn test_vote_timeout_falls_back_to_breached() {
 #[test]
 fn test_resolve_dispute_rejected_for_panel_commitment() {
     let env = Env::default();
-    let (client, _token, _arbitrator, issuer, counterparty, attestors) = setup_voting(&env);
+    let (client, _token, _arbitrator, _admin, issuer, counterparty, attestors) = setup_voting(&env);
 
     let id = disputed_panel_commitment(
         &env,
@@ -317,7 +327,7 @@ fn test_resolve_dispute_rejected_for_panel_commitment() {
 #[test]
 fn test_create_rejects_invalid_thresholds() {
     let env = Env::default();
-    let (client, _token, arbitrator, issuer, counterparty, attestors) = setup_voting(&env);
+    let (client, _token, arbitrator, _admin, issuer, counterparty, attestors) = setup_voting(&env);
     let terms = BytesN::from_array(&env, &[7u8; 32]);
 
     // Threshold above panel size.
@@ -383,7 +393,8 @@ fn test_create_rejects_invalid_thresholds() {
 #[test]
 fn test_vote_balance_unaffected_by_threshold_vote() {
     let env = Env::default();
-    let (client, token, _arbitrator, _issuer, _counterparty, attestors) = setup_voting(&env);
+    let (client, token, _arbitrator, _admin, _issuer, _counterparty, attestors) =
+        setup_voting(&env);
     let (a1, a2) = (attestors.get(0).unwrap(), attestors.get(1).unwrap());
     let resolver = attestors.get(4).unwrap();
 
