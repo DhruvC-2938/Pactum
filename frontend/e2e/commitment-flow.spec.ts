@@ -222,7 +222,6 @@ test.beforeEach(async ({ page }) => {
 
   await mockSorobanRpc(page);
 
-
   // Offline Soroban RPC mock: account lookup, simulation, submission and
   // confirmation all succeed; create_commitment returns commitment id 42.
   await installSuccessfulSorobanRpc(page, { commitmentId: 42 });
@@ -637,9 +636,7 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
   // Wait until the upload actually happened (sign -> submit -> confirm ->
   // store-encrypted), then assert on its body.
-  await expect
-    .poll(() => encryptedRequests.length, { timeout: 30_000 })
-    .toBeGreaterThan(0);
+  await expect.poll(() => encryptedRequests.length, { timeout: 30_000 }).toBeGreaterThan(0);
   await page.waitForTimeout(3000);
 
   // Assert: the encrypted request has ciphertext not plaintext

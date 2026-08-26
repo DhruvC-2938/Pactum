@@ -177,6 +177,13 @@ jobs:
             echo "No valid test script defined in backend/package.json yet. Skipping test execution."
           fi
 
+      # Testcontainers boots its own ephemeral Postgres via the Docker daemon
+      # already available on ubuntu-latest -- no services: entry needed.
+      - name: Run backend integration tests (Testcontainers)
+        if: steps.check_backend.outputs.ready == 'true'
+        working-directory: backend
+        run: npm run test:integration
+
   frontend-checks:
     name: Frontend Checks
     runs-on: ubuntu-latest
