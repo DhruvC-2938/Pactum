@@ -100,4 +100,8 @@ pub enum Error {
     /// The fee oracle has not yet received enough observations to produce a
     /// recommendation.
     OracleNotInitialized = 44,
+    /// The caller is not the contract admin.
+    NotAdmin = 45,
+    /// The admin address has already been set.
+    AdminAlreadySet = 46,
 }

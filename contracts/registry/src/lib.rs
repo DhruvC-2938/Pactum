@@ -56,7 +56,26 @@ pub struct RegistryContract;
 #[contractimpl]
 #[allow(clippy::too_many_arguments)]
 impl RegistryContract {
-    pub fn initialize(env: Env, arbitrators: Vec<Address>) {
+    /// Initializes the contract with a committee of designated arbitrators and an admin.
+    /// Can only be called once.
+    ///
+    /// Disputes on commitments that delegate to the committee are settled by a
+    /// majority vote of this set rather than by a single point of trust.
+    ///
+    /// # Authorization
+    /// * Authorized caller: every address in `arbitrators` and the `admin` (via `require_auth`).
+    /// * Why: Requiring each designated arbitrator to authorize initialization
+    ///   ensures that no address can be appointed to the committee without its
+    ///   explicit consent. The admin must also authorize to ensure they consent
+    ///   to their role.
+    ///
+    /// # Panics
+    /// * Panics with `Error::AlreadyInitialized` if called more than once.
+    /// * Panics with `Error::EmptyArbitratorSet` if `arbitrators` is empty.
+    /// * Panics with `Error::AdminAlreadySet` if an admin is already set.
+    pub fn initialize(env: Env, arbitrators: Vec<Address>, admin: Address) {
+        // A legacy single-arbitrator deployment recorded a bare Address under
+        // DataKey::Arbitrator; either key means the contract is already live.
         if env.storage().instance().has(&DataKey::ArbitratorSet)
             || env.storage().instance().has(&DataKey::Arbitrator)
         {
@@ -69,6 +88,19 @@ impl RegistryContract {
 
         reentrancy::enter(&env);
 
+        // Require admin authorization
+        admin.require_auth();
+
+        // Set the admin first
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic_with_error!(&env, Error::AdminAlreadySet);
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+
+        // Deduplicate first (so no address authorizes twice in the same
+        // invocation) and require every distinct arbitrator to consent to their
+        // appointment. Deduplicating also keeps the majority threshold computed
+        // over distinct members.
         let mut deduped = Vec::new(&env);
         for a in arbitrators.iter() {
             if !deduped.contains(&a) {
@@ -240,15 +272,26 @@ impl RegistryContract {
         pausable::is_paused(&env)
     }
 
+    /// Pauses the protocol, halting every state-mutating entry point with
+    /// `Error::ProtocolPaused` while leaving reads fully operational.
+    ///
+    /// This is the emergency kill-switch used in the event of a zero-day
+    /// exploit. Admin lifecycle operations (`pause`, `unpause`, `upgrade`)
+    /// are deliberately exempt so the admin can end the halt or deploy an
+    /// emergency patch while the protocol is paused.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), the contract admin.
+    /// * Why: Only the designated admin is authorized to trigger the emergency halt.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotAdmin` if `admin` is not the contract admin.
     pub fn pause(env: Env, admin: Address) {
         reentrancy::enter(&env);
 
         admin.require_auth();
-
-        let committee = commitments::arbitrators(&env);
-        if !committee.contains(admin.clone()) {
-            panic_with_error!(&env, Error::NotArbitrator);
-        }
+        commitments::require_admin(&env, &admin);
 
         pausable::set_paused(&env, true);
         events::protocol_paused(&env);
@@ -256,15 +299,20 @@ impl RegistryContract {
         reentrancy::exit(&env);
     }
 
+    /// Unpauses the protocol, restoring its state-mutating entry points.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `admin` (via `require_auth`), the contract admin.
+    /// * Why: Only the designated admin is authorized to end the halt.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotAdmin` if `admin` is not the contract admin.
     pub fn unpause(env: Env, admin: Address) {
         reentrancy::enter(&env);
 
         admin.require_auth();
-
-        let committee = commitments::arbitrators(&env);
-        if !committee.contains(admin.clone()) {
-            panic_with_error!(&env, Error::NotArbitrator);
-        }
+        commitments::require_admin(&env, &admin);
 
         pausable::set_paused(&env, false);
         events::protocol_unpaused(&env);
@@ -280,14 +328,64 @@ impl RegistryContract {
         upgrade::upgrade_admin(&env)
     }
 
-    pub fn init_upgrade_admin(env: Env, admin: Address) {
+    /// Installs the initial upgrade admin — in production, the Timelock contract.
+    ///
+    /// # Authorization
+    /// * Authorized caller: `caller` (via `require_auth`), who must be the contract admin.
+    /// * Why: the contract admin is the authority responsible for managing upgrade
+    ///   permissions. The path closes permanently once used; later changes go through
+    ///   `set_upgrade_admin`, which only the admin can call.
+    ///
+    /// # Panics
+    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotAdmin` if `caller` is not the contract admin.
+    /// * Panics with `Error::UpgradeAdminAlreadySet` if an upgrade admin is installed.
+    pub fn init_upgrade_admin(env: Env, caller: Address, admin: Address) {
+        caller.require_auth();
+        commitments::require_admin(&env, &caller);
         upgrade::init_upgrade_admin(&env, admin);
     }
 
+    /// Transfers upgrade authority to a different address.
+    ///
+    /// # Authorization
+    /// * Authorized caller: the current upgrade admin (in production, the Timelock
+    ///   contract), via `require_auth` inside `upgrade::set_upgrade_admin`.
+    /// * Why: rotating the owner of every future upgrade is as consequential as an
+    ///   upgrade, so it stays gated by the same authority rather than the plain
+    ///   contract admin — otherwise the admin key could bypass the timelock delay
+    ///   entirely by handing upgrade authority to itself.
+    ///
+    /// # Panics
+    /// * Panics with `Error::UpgradeAdminNotSet` if no upgrade admin is installed.
     pub fn set_upgrade_admin(env: Env, new_admin: Address) {
         upgrade::set_upgrade_admin(&env, new_admin);
     }
 
+    /// Replaces this contract's executable and moves the storage schema forward,
+    /// atomically and without changing the contract ID or touching stored state.
+    ///
+    /// # Authorization
+    /// * Authorized caller: the upgrade admin (in production, the Timelock
+    ///   contract), via `require_auth` inside `upgrade::upgrade`.
+    /// * Why: this entrypoint can change the behaviour of every other entrypoint, so
+    ///   it stays gated by the same delayed, vetoable governance path rather than
+    ///   the plain contract admin — the admin key must not be able to bypass the
+    ///   timelock and upgrade instantly.
+    ///
+    /// # Arguments
+    /// * `new_wasm_hash` - Hash of an already-uploaded Wasm blob. Pinned by the
+    ///   timelock at proposal time, so the code reviewed during the delay is the code
+    ///   that executes.
+    /// * `new_schema_version` - Schema version to move to in the same transaction.
+    ///   Pass the current version to swap the executable without a schema change.
+    ///
+    /// # Panics
+    /// * Panics with `Error::UpgradeAdminNotSet` if no upgrade admin is installed.
+    /// * Panics with `Error::SchemaDowngrade` if `new_schema_version` is below the
+    ///   version currently in force.
+    /// * Panics with `Error::UnsupportedSchemaVersion` if `new_schema_version` is
+    ///   above what this executable understands.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>, new_schema_version: u32) {
         upgrade::upgrade(&env, new_wasm_hash, new_schema_version);
     }
