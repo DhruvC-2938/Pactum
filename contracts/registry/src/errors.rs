@@ -104,4 +104,6 @@ pub enum Error {
     NotAdmin = 45,
     /// The admin address has already been set.
     AdminAlreadySet = 46,
+    /// The submitted zero-knowledge range proof did not verify.
+    InvalidRangeProof = 47,
 }
