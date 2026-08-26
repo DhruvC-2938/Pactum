@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Custom runner reads TIMESCALEDB_* env vars; point them at the ephemeral
-      # postgres:16 service container spun up for this job.
+      # timescaledb service container spun up for this job.
       TIMESCALEDB_HOST: localhost
       TIMESCALEDB_PORT: 5432
       TIMESCALEDB_DATABASE: pactum_migration_test
@@ -116,7 +116,10 @@ jobs:
       TIMESCALEDB_PASSWORD: postgres
     services:
       postgres:
-        image: postgres:16
+        # Same image docker-compose.yml uses for the real service, so
+        # CREATE EXTENSION timescaledb (001_timescale_setup.sql) succeeds here
+        # instead of only in the full docker-compose e2e stack.
+        image: timescale/timescaledb:latest-pg16
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: pactum_migration_test
@@ -158,14 +161,8 @@ jobs:
         working-directory: backend
         run: npm run build
 
-      - name: Run migration dry-run against ephemeral PostgreSQL
+      - name: Run migration dry-run against ephemeral TimescaleDB
         working-directory: backend
-        # Note: TimescaleDB-specific DDL (CREATE EXTENSION timescaledb,
-        # create_hypertable, time_bucket) requires the timescaledb extension
-        # which is not available in plain postgres:16. The dry-run validates
-        # checksum integrity and sequential ordering; TimescaleDB-specific
-        # syntax is exercised in the full integration stack (docker compose).
-        # Any migration that fails basic PostgreSQL parsing will still fail here.
         run: node dist/db/migrate-dry-run.js
 
 

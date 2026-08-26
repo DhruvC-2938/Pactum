@@ -177,36 +177,48 @@ export const dryRunMigrations = async (
       ]),
     );
 
-    for (const file of migrationFiles) {
-      const filePath = path.join(migrationsDir, file);
-      const sql = fs.readFileSync(filePath, 'utf8');
-      const checksum = calculateMigrationChecksum(sql);
+    // Pending migrations are applied inside one outer transaction, each under its
+    // own savepoint, so a migration sees the cumulative schema left by the pending
+    // migrations before it — exactly as a real sequential apply would. Rolling back
+    // the outer transaction at the end (rather than each migration individually)
+    // means nothing is ever persisted, while dependencies between migrations (e.g.
+    // an index migration referencing a table an earlier migration creates) still
+    // validate correctly instead of spuriously failing with "relation does not
+    // exist".
+    await client.query('BEGIN');
+    try {
+      for (const file of migrationFiles) {
+        const filePath = path.join(migrationsDir, file);
+        const sql = fs.readFileSync(filePath, 'utf8');
+        const checksum = calculateMigrationChecksum(sql);
 
-      if (appliedMap.has(file)) {
-        const recordedChecksum = appliedMap.get(file);
-        if (recordedChecksum !== checksum) {
-          const msg = `Immutable migration '${file}' has been altered! Recorded: ${recordedChecksum}, Current: ${checksum}`;
-          logger.error(`[dry-run] TAMPERED: ${msg}`);
-          report.push({ file, status: 'tampered', message: msg });
+        if (appliedMap.has(file)) {
+          const recordedChecksum = appliedMap.get(file);
+          if (recordedChecksum !== checksum) {
+            const msg = `Immutable migration '${file}' has been altered! Recorded: ${recordedChecksum}, Current: ${checksum}`;
+            logger.error(`[dry-run] TAMPERED: ${msg}`);
+            report.push({ file, status: 'tampered', message: msg });
+          } else {
+            logger.info(`[dry-run] OK (applied): ${file}`);
+            report.push({ file, status: 'applied' });
+          }
         } else {
-          logger.info(`[dry-run] OK (applied): ${file}`);
-          report.push({ file, status: 'applied' });
-        }
-      } else {
-        // Validate the SQL parses cleanly using a savepoint that we always roll back.
-        await client.query('BEGIN');
-        try {
-          await client.query(sql);
-          logger.info(`[dry-run] OK (pending, syntax valid): ${file}`);
-          report.push({ file, status: 'pending' });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          logger.error(`[dry-run] SYNTAX ERROR in ${file}: ${msg}`);
-          report.push({ file, status: 'error', message: msg });
-        } finally {
-          await client.query('ROLLBACK');
+          await client.query('SAVEPOINT dry_run_migration');
+          try {
+            await client.query(sql);
+            await client.query('RELEASE SAVEPOINT dry_run_migration');
+            logger.info(`[dry-run] OK (pending, syntax valid): ${file}`);
+            report.push({ file, status: 'pending' });
+          } catch (err) {
+            await client.query('ROLLBACK TO SAVEPOINT dry_run_migration');
+            const msg = err instanceof Error ? err.message : String(err);
+            logger.error(`[dry-run] SYNTAX ERROR in ${file}: ${msg}`);
+            report.push({ file, status: 'error', message: msg });
+          }
         }
       }
+    } finally {
+      await client.query('ROLLBACK');
     }
 
     return report;
