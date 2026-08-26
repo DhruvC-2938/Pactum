@@ -43,7 +43,7 @@ export class MerkleTree {
     if (leaves.length === 0) {
       throw new Error('MerkleTree requires at least one leaf');
     }
-    this.leaves = leaves.map(l => Buffer.from(l));
+    this.leaves = leaves.map((l) => Buffer.from(l));
     this.layers = [this.leaves];
     this.buildTree();
   }
@@ -89,7 +89,9 @@ export class MerkleTree {
       const layer = this.layers[level];
       const isRight = currentIndex % 2 === 0;
       const siblingIndex = isRight
-        ? (currentIndex + 1 < layer.length ? currentIndex + 1 : currentIndex)
+        ? currentIndex + 1 < layer.length
+          ? currentIndex + 1
+          : currentIndex
         : currentIndex - 1;
 
       const sibling = layer[siblingIndex];
@@ -133,11 +135,7 @@ export class MerkleTree {
   /**
    * Cryptographically verifies a proof against a known Merkle root.
    */
-  public static verify(
-    leaf: Buffer,
-    proof: MerkleProofNode[],
-    expectedRoot: Buffer
-  ): boolean {
+  public static verify(leaf: Buffer, proof: MerkleProofNode[], expectedRoot: Buffer): boolean {
     let current: Buffer = Buffer.from(leaf);
 
     for (const node of proof) {
@@ -158,7 +156,7 @@ export class MerkleTree {
   public static verifyMultiProof(
     leaves: Buffer[],
     proofs: MerkleProofNode[][],
-    expectedRoot: Buffer
+    expectedRoot: Buffer,
   ): boolean {
     if (leaves.length === 0 || leaves.length !== proofs.length) {
       return false;

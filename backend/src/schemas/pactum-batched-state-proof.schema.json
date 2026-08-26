@@ -39,13 +39,27 @@
       "maxItems": 128,
       "items": {
         "type": "object",
-        "required": ["sequenceId", "stellarAddress", "scoreData", "leafHash", "merkleProof", "aggregationProof"],
+        "required": [
+          "sequenceId",
+          "stellarAddress",
+          "scoreData",
+          "leafHash",
+          "merkleProof",
+          "aggregationProof"
+        ],
         "properties": {
           "sequenceId": { "type": "integer", "minimum": 0 },
           "stellarAddress": { "type": "string" },
           "scoreData": {
             "type": "object",
-            "required": ["score", "fulfilledCount", "lateCount", "breachedCount", "epoch", "sourceLedgerSeq"],
+            "required": [
+              "score",
+              "fulfilledCount",
+              "lateCount",
+              "breachedCount",
+              "epoch",
+              "sourceLedgerSeq"
+            ],
             "additionalProperties": false
           },
           "leafHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },

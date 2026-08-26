@@ -55,7 +55,7 @@ export function addressToBytes32(address: string): Buffer {
 export function encodeLeafPayload(
   contractIdBytes: Buffer,
   stellarAddressBytes: Buffer,
-  scoreData: ScoreData
+  scoreData: ScoreData,
 ): Buffer {
   const buf = Buffer.alloc(92);
 
@@ -79,7 +79,7 @@ export function encodeLeafPayload(
 export function computeLeafHash(
   contractId: string,
   stellarAddress: string,
-  scoreData: ScoreData
+  scoreData: ScoreData,
 ): Buffer {
   const contractIdBytes = addressToBytes32(contractId);
   const stellarAddressBytes = addressToBytes32(stellarAddress);
@@ -96,10 +96,7 @@ export function computeLeafHash(
  * - uint32 ledgerVersion (4 bytes, BE)
  * Total: 104 bytes
  */
-export function encodeHeaderPayload(
-  ledgerSeq: number,
-  headerProof: HeaderProof
-): Buffer {
+export function encodeHeaderPayload(ledgerSeq: number, headerProof: HeaderProof): Buffer {
   const buf = Buffer.alloc(104);
 
   buf.writeUInt32BE(ledgerSeq, 0);
@@ -119,10 +116,7 @@ export function encodeHeaderPayload(
 /**
  * Computes the SHA-256 header hash from ledger sequence and header proof fields.
  */
-export function computeHeaderHash(
-  ledgerSeq: number,
-  headerProof: HeaderProof
-): Buffer {
+export function computeHeaderHash(ledgerSeq: number, headerProof: HeaderProof): Buffer {
   const payload = encodeHeaderPayload(ledgerSeq, headerProof);
   return sha256(payload);
 }
@@ -140,7 +134,7 @@ export function encodeAggregationPayload(
   stellarAddressBytes: Buffer,
   leafHash: Buffer,
   score: number,
-  sourceLedgerSeq: number
+  sourceLedgerSeq: number,
 ): Buffer {
   const buf = Buffer.alloc(84);
   buf.writeBigUInt64BE(BigInt(sequenceId), 0);
@@ -159,14 +153,14 @@ export function computeAggregationLeaf(
   stellarAddress: string,
   leafHash: Buffer,
   score: number,
-  sourceLedgerSeq: number
+  sourceLedgerSeq: number,
 ): Buffer {
   const payload = encodeAggregationPayload(
     sequenceId,
     addressToBytes32(stellarAddress),
     leafHash,
     score,
-    sourceLedgerSeq
+    sourceLedgerSeq,
   );
   return doubleSha256(payload);
 }
@@ -195,19 +189,17 @@ export interface EvmBatchedStateProof {
 /**
  * Maps an off-chain batched proof onto the compact ABI the Solidity verifier expects.
  */
-export function toEvmBatchedStateProof(
-  batch: {
-    ledgerSeq: number;
-    ledgerHeaderHash: string;
-    contractId: string;
-    aggregationRoot: string;
-    headerProof: HeaderProof;
-    entries: Array<{
-      stellarAddress: string;
-      scoreData: ScoreData;
-    }>;
-  }
-): EvmBatchedStateProof {
+export function toEvmBatchedStateProof(batch: {
+  ledgerSeq: number;
+  ledgerHeaderHash: string;
+  contractId: string;
+  aggregationRoot: string;
+  headerProof: HeaderProof;
+  entries: Array<{
+    stellarAddress: string;
+    scoreData: ScoreData;
+  }>;
+}): EvmBatchedStateProof {
   return {
     version: 1,
     ledgerSeq: batch.ledgerSeq,

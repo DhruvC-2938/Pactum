@@ -1,27 +1,27 @@
-import React, { useMemo, useState } from 'react'
-import { Layers, CheckCircle2, Clock, AlertTriangle, Hash } from 'lucide-react'
-import { useOptimisticRollup } from '../hooks/useOptimisticRollup'
-import type { RollupCommitmentRecord } from '../lib/optimisticRollup'
+import React, { useMemo, useState } from 'react';
+import { Layers, CheckCircle2, Clock, AlertTriangle, Hash } from 'lucide-react';
+import { useOptimisticRollup } from '../hooks/useOptimisticRollup';
+import type { RollupCommitmentRecord } from '../lib/optimisticRollup';
 
 function shorten(hex: string, n = 6): string {
-  if (hex.length <= n * 2 + 2) return hex
-  return `${hex.slice(0, n + 2)}…${hex.slice(-n)}`
+  if (hex.length <= n * 2 + 2) return hex;
+  return `${hex.slice(0, n + 2)}…${hex.slice(-n)}`;
 }
 
 function statusLabel(status: RollupCommitmentRecord['status']): string {
   switch (status) {
     case 'PendingRollup':
-      return 'Pending rollup'
+      return 'Pending rollup';
     case 'OnChainFinalized':
-      return 'On-chain finalized'
+      return 'On-chain finalized';
     case 'ForceIncludePending':
-      return 'Force-include pending'
+      return 'Force-include pending';
     case 'ForceIncluded':
-      return 'Force-included'
+      return 'Force-included';
     case 'Buffered':
-      return 'Buffered'
+      return 'Buffered';
     default:
-      return status
+      return status;
   }
 }
 
@@ -29,13 +29,13 @@ function statusClass(status: RollupCommitmentRecord['status']): string {
   switch (status) {
     case 'OnChainFinalized':
     case 'ForceIncluded':
-      return 'rollup-badge finalized'
+      return 'rollup-badge finalized';
     case 'ForceIncludePending':
-      return 'rollup-badge force'
+      return 'rollup-badge force';
     case 'PendingRollup':
-      return 'rollup-badge pending'
+      return 'rollup-badge pending';
     default:
-      return 'rollup-badge'
+      return 'rollup-badge';
   }
 }
 
@@ -44,7 +44,7 @@ function statusClass(status: RollupCommitmentRecord['status']): string {
  * per-commitment PendingRollup vs OnChainFinalized (plus forced-inclusion).
  */
 export const RollupStatusPanel: React.FC<{ demoMode?: boolean }> = ({ demoMode = true }) => {
-  const [seeded, setSeeded] = useState(false)
+  const [seeded, setSeeded] = useState(false);
   const { state, pending, finalized, enqueue, tick } = useOptimisticRollup(
     demoMode
       ? {
@@ -56,17 +56,17 @@ export const RollupStatusPanel: React.FC<{ demoMode?: boolean }> = ({ demoMode =
         }
       : { maxBatchSize: 64, batchTtlMs: 15_000, challengeWindowMs: 60_000 },
     1_000,
-  )
+  );
 
   const etaMs = useMemo(() => {
-    if (pending.length === 0) return null
-    const oldest = Math.min(...pending.map((r) => r.enqueuedAt))
-    const remaining = Math.max(0, 12_000 - (Date.now() - oldest))
-    return remaining
-  }, [pending])
+    if (pending.length === 0) return null;
+    const oldest = Math.min(...pending.map((r) => r.enqueuedAt));
+    const remaining = Math.max(0, 12_000 - (Date.now() - oldest));
+    return remaining;
+  }, [pending]);
 
   const seedDemo = () => {
-    const now = Math.floor(Date.now() / 1000)
+    const now = Math.floor(Date.now() / 1000);
     void (async () => {
       for (let i = 0; i < 3; i++) {
         await enqueue({
@@ -75,11 +75,11 @@ export const RollupStatusPanel: React.FC<{ demoMode?: boolean }> = ({ demoMode =
           termsHash: `0x${(i + 1).toString(16).padStart(64, '0')}`,
           dueAt: now + 86400,
           createdAt: now,
-        })
+        });
       }
-      setSeeded(true)
-    })()
-  }
+      setSeeded(true);
+    })();
+  };
 
   return (
     <div className="rollup-panel card" style={{ marginBottom: 16 }}>
@@ -112,7 +112,8 @@ export const RollupStatusPanel: React.FC<{ demoMode?: boolean }> = ({ demoMode =
           <div className="rollup-stat">
             <Hash size={14} />
             <span title={state.lastAcceptedRoot ?? undefined}>
-              On-chain root: <code>{state.lastAcceptedRoot ? shorten(state.lastAcceptedRoot) : '—'}</code>
+              On-chain root:{' '}
+              <code>{state.lastAcceptedRoot ? shorten(state.lastAcceptedRoot) : '—'}</code>
             </span>
           </div>
         </div>
@@ -129,35 +130,38 @@ export const RollupStatusPanel: React.FC<{ demoMode?: boolean }> = ({ demoMode =
         )}
 
         <div className="rollup-list">
-          {[...pending, ...finalized].slice(-12).reverse().map((r) => (
-            <div key={r.commitment.sequenceId} className="rollup-row">
-              <span className={statusClass(r.status)}>
-                {r.status === 'ForceIncludePending' ? <AlertTriangle size={12} /> : null}
-                {statusLabel(r.status)}
-              </span>
-              <span className="rollup-seq">#{r.commitment.sequenceId}</span>
-              <code className="rollup-leaf" title={r.leafHash}>
-                {shorten(r.leafHash)}
-              </code>
-              {r.onChainTxId ? (
-                <span className="rollup-tx" title={r.onChainTxId}>
-                  tx {shorten(r.onChainTxId, 4)}
+          {[...pending, ...finalized]
+            .slice(-12)
+            .reverse()
+            .map((r) => (
+              <div key={r.commitment.sequenceId} className="rollup-row">
+                <span className={statusClass(r.status)}>
+                  {r.status === 'ForceIncludePending' ? <AlertTriangle size={12} /> : null}
+                  {statusLabel(r.status)}
                 </span>
-              ) : null}
-              {r.forceIncludeTxId ? (
-                <span className="rollup-tx force" title={r.forceIncludeTxId}>
-                  force {shorten(r.forceIncludeTxId, 4)}
-                </span>
-              ) : null}
-            </div>
-          ))}
+                <span className="rollup-seq">#{r.commitment.sequenceId}</span>
+                <code className="rollup-leaf" title={r.leafHash}>
+                  {shorten(r.leafHash)}
+                </code>
+                {r.onChainTxId ? (
+                  <span className="rollup-tx" title={r.onChainTxId}>
+                    tx {shorten(r.onChainTxId, 4)}
+                  </span>
+                ) : null}
+                {r.forceIncludeTxId ? (
+                  <span className="rollup-tx force" title={r.forceIncludeTxId}>
+                    force {shorten(r.forceIncludeTxId, 4)}
+                  </span>
+                ) : null}
+              </div>
+            ))}
           {pending.length === 0 && finalized.length === 0 ? (
             <div className="rollup-empty">No micro-commitments in the rollup queue yet.</div>
           ) : null}
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default RollupStatusPanel
+export default RollupStatusPanel;

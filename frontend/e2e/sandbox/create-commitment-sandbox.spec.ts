@@ -152,12 +152,18 @@ test.describe('create_commitment against local Soroban sandbox (#8)', () => {
     // the wizard succeeding doesn't guarantee the list's separate read path agrees.
     // Clear any success toast first so it can't intercept the sidebar nav click,
     // then navigate and wait for the commitments view to actually become active.
-    await page.locator('#toast-container .toast').first().waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
+    await page
+      .locator('#toast-container .toast')
+      .first()
+      .waitFor({ state: 'hidden', timeout: 10_000 })
+      .catch(() => {});
     await page.locator('#nav-commitments').click();
     await expect(page.locator('#page-commitments')).toHaveClass(/active/, { timeout: 15_000 });
     await expect(page.locator('#commitments-list-page')).toBeVisible({ timeout: 15_000 });
 
-    const commitmentCard = page.locator('.commitment-item', { hasText: `Commitment #${commitmentId}` });
+    const commitmentCard = page.locator('.commitment-item', {
+      hasText: `Commitment #${commitmentId}`,
+    });
     await expect(commitmentCard).toBeVisible({ timeout: 25_000 }); // indexer poll latency
     await expect(commitmentCard.locator('.badge')).toHaveText(/Pending/i);
     // The in-app "Dashboard" nav item (#nav-dashboard) is also wired to the

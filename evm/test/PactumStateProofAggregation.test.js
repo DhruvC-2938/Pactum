@@ -1,18 +1,18 @@
-const { expect } = require("chai");
-const { ethers } = require("hardhat");
-const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
-const crypto = require("crypto");
+const { expect } = require('chai');
+const { ethers } = require('hardhat');
+const { loadFixture } = require('@nomicfoundation/hardhat-network-helpers');
+const crypto = require('crypto');
 
 function sha256(buf) {
-  return crypto.createHash("sha256").update(buf).digest();
+  return crypto.createHash('sha256').update(buf).digest();
 }
 
 function hexToBuf(hex) {
-  return Buffer.from(hex.replace(/^0x/, ""), "hex");
+  return Buffer.from(hex.replace(/^0x/, ''), 'hex');
 }
 
 function bufToHex(buf) {
-  return "0x" + buf.toString("hex");
+  return '0x' + buf.toString('hex');
 }
 
 function padAddr(n) {
@@ -79,8 +79,8 @@ function computeHeaderHash(ledgerSeq, headerProof) {
   return bufToHex(sha256(buf));
 }
 
-describe("PactumStateProof aggregation pipeline", function () {
-  const REGISTRY_CONTRACT_ID = ethers.id("soroban-registry-pactum");
+describe('PactumStateProof aggregation pipeline', function () {
+  const REGISTRY_CONTRACT_ID = ethers.id('soroban-registry-pactum');
   const BATCH_SIZE = 8;
 
   function createValidStateProof(overrides = {}) {
@@ -94,19 +94,21 @@ describe("PactumStateProof aggregation pipeline", function () {
       ...(overrides.scoreData || {}),
     };
 
-    const contractId = overrides.contractId !== undefined ? overrides.contractId : REGISTRY_CONTRACT_ID;
-    const stellarAddress = overrides.stellarAddress !== undefined ? overrides.stellarAddress : padAddr(0x1234);
+    const contractId =
+      overrides.contractId !== undefined ? overrides.contractId : REGISTRY_CONTRACT_ID;
+    const stellarAddress =
+      overrides.stellarAddress !== undefined ? overrides.stellarAddress : padAddr(0x1234);
     const ledgerSeq = overrides.ledgerSeq !== undefined ? overrides.ledgerSeq : 5050;
 
     const leafHash = computeLeafHash(contractId, stellarAddress, scoreData);
     const merkleProof = overrides.merkleProof || [
-      { sibling: "0x" + "aa".repeat(32), isRight: true },
-      { sibling: "0x" + "bb".repeat(32), isRight: false },
+      { sibling: '0x' + 'aa'.repeat(32), isRight: true },
+      { sibling: '0x' + 'bb'.repeat(32), isRight: false },
     ];
     const stateRootHash = computeMerkleRoot(leafHash, merkleProof);
     const headerProof = {
-      previousLedgerHash: "0x" + "11".repeat(32),
-      txSetResultHash: "0x" + "22".repeat(32),
+      previousLedgerHash: '0x' + '11'.repeat(32),
+      txSetResultHash: '0x' + '22'.repeat(32),
       bucketListHash: stateRootHash,
       ledgerVersion: 21,
       ...(overrides.headerProof || {}),
@@ -124,8 +126,8 @@ describe("PactumStateProof aggregation pipeline", function () {
     } = overrides;
 
     return {
-      version: "1.0.0",
-      networkPassphrase: "Test SDF Network ; September 2015",
+      version: '1.0.0',
+      networkPassphrase: 'Test SDF Network ; September 2015',
       ledgerSeq,
       ledgerHeaderHash,
       stateRootHash,
@@ -166,15 +168,21 @@ describe("PactumStateProof aggregation pipeline", function () {
       });
       stateLeaves.push(leafHash);
       aggLeaves.push(
-        computeAggregationLeaf(i - 1, stellarAddress, leafHash, scoreData.score, scoreData.sourceLedgerSeq)
+        computeAggregationLeaf(
+          i - 1,
+          stellarAddress,
+          leafHash,
+          scoreData.score,
+          scoreData.sourceLedgerSeq,
+        ),
       );
     }
 
     const stateRoot = computeRootFromLeaves(stateLeaves);
     const aggregationRoot = computeRootFromLeaves(aggLeaves);
     const headerProof = {
-      previousLedgerHash: "0x" + "11".repeat(32),
-      txSetResultHash: "0x" + "22".repeat(32),
+      previousLedgerHash: '0x' + '11'.repeat(32),
+      txSetResultHash: '0x' + '22'.repeat(32),
       bucketListHash: stateRoot,
       ledgerVersion: 21,
     };
@@ -192,14 +200,14 @@ describe("PactumStateProof aggregation pipeline", function () {
 
   async function deployFixture() {
     const [owner, relayer] = await ethers.getSigners();
-    const Oracle = await ethers.getContractFactory("PactumZeroTrustOracle");
+    const Oracle = await ethers.getContractFactory('PactumZeroTrustOracle');
     const oracle = await Oracle.deploy(owner.address, REGISTRY_CONTRACT_ID);
-    const Harness = await ethers.getContractFactory("StateProofVerifierHarness");
+    const Harness = await ethers.getContractFactory('StateProofVerifierHarness');
     const harness = await Harness.deploy();
     return { oracle, harness, owner, relayer };
   }
 
-  it("unpacks a batched proof and caches every trust score", async function () {
+  it('unpacks a batched proof and caches every trust score', async function () {
     const { oracle, owner, relayer } = await loadFixture(deployFixture);
     const batch = createValidBatch(4);
 
@@ -207,7 +215,7 @@ describe("PactumStateProof aggregation pipeline", function () {
 
     const tx = await oracle.connect(relayer).submitBatchedStateProof(batch);
     await expect(tx)
-      .to.emit(oracle, "BatchedStateProofVerified")
+      .to.emit(oracle, 'BatchedStateProofVerified')
       .withArgs(batch.aggregationRoot, 4, batch.ledgerSeq, batch.ledgerHeaderHash, relayer.address);
 
     for (const entry of batch.entries) {
@@ -219,18 +227,18 @@ describe("PactumStateProof aggregation pipeline", function () {
     }
   });
 
-  it("rejects a batched proof with a tampered score", async function () {
+  it('rejects a batched proof with a tampered score', async function () {
     const { oracle, owner, relayer } = await loadFixture(deployFixture);
     const batch = createValidBatch(4);
     await oracle.connect(owner).setTrustedLedgerHeader(batch.ledgerSeq, batch.ledgerHeaderHash);
     batch.entries[0].score = 99;
 
     await expect(
-      oracle.connect(relayer).submitBatchedStateProof(batch)
-    ).to.be.revertedWithCustomError(oracle, "BucketListMismatch");
+      oracle.connect(relayer).submitBatchedStateProof(batch),
+    ).to.be.revertedWithCustomError(oracle, 'BucketListMismatch');
   });
 
-  it("rejects unsorted batch entries", async function () {
+  it('rejects unsorted batch entries', async function () {
     const { oracle, owner, relayer } = await loadFixture(deployFixture);
     const batch = createValidBatch(4);
     const tmp = batch.entries[0];
@@ -239,11 +247,11 @@ describe("PactumStateProof aggregation pipeline", function () {
     await oracle.connect(owner).setTrustedLedgerHeader(batch.ledgerSeq, batch.ledgerHeaderHash);
 
     await expect(
-      oracle.connect(relayer).submitBatchedStateProof(batch)
-    ).to.be.revertedWithCustomError(oracle, "UnsortedBatchEntries");
+      oracle.connect(relayer).submitBatchedStateProof(batch),
+    ).to.be.revertedWithCustomError(oracle, 'UnsortedBatchEntries');
   });
 
-  it("reduces per-entry verification gas by at least 75% versus discrete proofs", async function () {
+  it('reduces per-entry verification gas by at least 75% versus discrete proofs', async function () {
     const { harness } = await loadFixture(deployFixture);
     const discreteProofs = [];
     for (let i = 1; i <= BATCH_SIZE; i++) {
@@ -259,7 +267,7 @@ describe("PactumStateProof aggregation pipeline", function () {
             epoch: 2,
             sourceLedgerSeq: 4000 + i,
           },
-        })
+        }),
       );
     }
 
@@ -276,7 +284,7 @@ describe("PactumStateProof aggregation pipeline", function () {
     const reductionBps = ((discretePerEntry - batchPerEntry) * 10000n) / discretePerEntry;
     // eslint-disable-next-line no-console
     console.log(
-      `verification gas: discrete ${discretePerEntry} /entry, batched ${batchPerEntry} /entry, reduction ${Number(reductionBps) / 100}%`
+      `verification gas: discrete ${discretePerEntry} /entry, batched ${batchPerEntry} /entry, reduction ${Number(reductionBps) / 100}%`,
     );
 
     expect(batchPerEntry * 4n).to.be.lte(discretePerEntry);

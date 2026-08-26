@@ -42,6 +42,7 @@ pactum auth SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
 **Options:**
+
 - `--network <network>`: Associate credentials with `testnet`, `standalone`, or `mainnet` (default: `testnet`).
 - `--status`: Display current authentication status and active public address.
 - `--clear`: Delete stored credentials.
@@ -62,18 +63,20 @@ pactum reputation get
 ```
 
 **Options:**
+
 - `-n, --network <network>`: Target network (`testnet`, `standalone`, `mainnet`).
 - `--rpc-url <url>`: Custom Soroban RPC endpoint.
 - `--contract-id <id>`: Custom Pactum registry contract address.
 - `--json`: Output as raw JSON.
 
 **Output Example:**
+
 ```text
   Pactum Trust Layer — Reputation Scorecard
 
   Target Address:   GB4UFB7S4CZ6YJ4G77HHZX4C3R7L64UK7Q
   Network:          testnet
-  Trust Score:       92 / 100 (High Trust) 
+  Trust Score:       92 / 100 (High Trust)
 
   Fulfillment Breakdown:
     ✔ Fulfilled:    12 commitments
@@ -97,12 +100,14 @@ pactum commitments list
 ```
 
 **Options:**
+
 - `-s, --status <status>`: Filter by `Pending`, `Fulfilled`, `Late`, `Breached`, or `Disputed`.
 - `-l, --limit <number>`: Limit number of returned commitments (default: 20).
 - `--api-url <url>`: Backend API endpoint (default: `http://localhost:3000`).
 - `--json`: Output as JSON with `address`, `count`, and `commitments` fields.
 
 **Output Example:**
+
 ```text
 ┌────────┬────────────────┬────────────────┬──────────────┬──────────────────┬────────────┐
 │ ID     │ Issuer         │ Counterparty   │ Status       │ Due Date (UTC)   │ Encrypted  │

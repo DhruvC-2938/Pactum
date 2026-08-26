@@ -94,7 +94,7 @@ export class StateProofGenerator {
             contract: contractAddr.toScAddress(),
             key: keyScVal,
             durability: xdr.ContractDataDurability.persistent(),
-          })
+          }),
         );
 
         const response = await this.rpcServer.getLedgerEntries(ledgerKey);
@@ -139,15 +139,12 @@ export class StateProofGenerator {
    */
   public async generateProof(
     stellarAddress: string,
-    options?: GenerateProofOptions
+    options?: GenerateProofOptions,
   ): Promise<PactumStateProof> {
     const scoreData = await this.fetchScoreData(stellarAddress);
     const ledgerSeq = options?.targetLedgerSeq || scoreData.sourceLedgerSeq || 1;
 
-    const entries = this.collectSortedEntries(
-      options?.allEntries,
-      { stellarAddress, scoreData }
-    );
+    const entries = this.collectSortedEntries(options?.allEntries, { stellarAddress, scoreData });
 
     const { leaves, tree, targetIndex } = this.buildStateTree(entries, stellarAddress);
     const merkleProof = tree.getProof(targetIndex);
@@ -186,7 +183,7 @@ export class StateProofGenerator {
     options?: {
       targetLedgerSeq?: number;
       headerProof?: HeaderProof;
-    }
+    },
   ): Promise<PactumBatchedStateProof> {
     if (targets.length === 0) {
       throw new Error('generateBatchProof requires at least one state transition');
@@ -210,8 +207,7 @@ export class StateProofGenerator {
     }
 
     const ledgerSeq =
-      options?.targetLedgerSeq ||
-      Math.max(...entries.map((e) => e.scoreData.sourceLedgerSeq || 1));
+      options?.targetLedgerSeq || Math.max(...entries.map((e) => e.scoreData.sourceLedgerSeq || 1));
 
     const { leaves, tree } = this.buildStateTree(entries);
     const stateMerkleProofs = tree.getAllProofs();
@@ -236,8 +232,8 @@ export class StateProofGenerator {
           entry.stellarAddress,
           leaves[i],
           entry.scoreData.score,
-          entry.scoreData.sourceLedgerSeq
-        )
+          entry.scoreData.sourceLedgerSeq,
+        ),
       );
     }
 
@@ -282,7 +278,7 @@ export class StateProofGenerator {
 
   private collectSortedEntries(
     allEntries?: TrustScoreEntryRecord[],
-    extra?: TrustScoreEntryRecord
+    extra?: TrustScoreEntryRecord,
   ): TrustScoreEntryRecord[] {
     const byAddress = new Map<string, TrustScoreEntryRecord>();
     const source = allEntries && allEntries.length > 0 ? allEntries : [];
@@ -297,16 +293,16 @@ export class StateProofGenerator {
     }
 
     return [...byAddress.values()].sort((a, b) =>
-      addressToBytes32(a.stellarAddress).compare(addressToBytes32(b.stellarAddress))
+      addressToBytes32(a.stellarAddress).compare(addressToBytes32(b.stellarAddress)),
     );
   }
 
   private buildStateTree(
     entries: TrustScoreEntryRecord[],
-    targetAddress?: string
+    targetAddress?: string,
   ): { leaves: Buffer[]; tree: MerkleTree; targetIndex: number } {
     const leaves = entries.map((e) =>
-      computeLeafHash(this.contractId, e.stellarAddress, e.scoreData)
+      computeLeafHash(this.contractId, e.stellarAddress, e.scoreData),
     );
     const tree = new MerkleTree(leaves);
     const targetIndex = targetAddress

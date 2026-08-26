@@ -18,9 +18,7 @@
       "check_suite_node_id": "CS_kwDOT-RlP88AAAAUjhchdQ",
       "url": "https://api.github.com/repos/Soldier224K/Pactum/actions/runs/32571076816",
       "html_url": "https://github.com/Soldier224K/Pactum/actions/runs/32571076816",
-      "pull_requests": [
-
-      ],
+      "pull_requests": [],
       "created_at": "2026-08-22T11:44:00Z",
       "updated_at": "2026-08-22T11:44:00Z",
       "actor": {
@@ -45,9 +43,7 @@
         "site_admin": false
       },
       "run_attempt": 1,
-      "referenced_workflows": [
-
-      ],
+      "referenced_workflows": [],
       "run_started_at": "2026-08-22T11:44:00Z",
       "triggering_actor": {
         "login": "Soldier224K",
@@ -246,9 +242,7 @@
       "check_suite_node_id": "CS_kwDOT-RlP88AAAAUjhCVrQ",
       "url": "https://api.github.com/repos/Soldier224K/Pactum/actions/runs/32570888094",
       "html_url": "https://github.com/Soldier224K/Pactum/actions/runs/32570888094",
-      "pull_requests": [
-
-      ],
+      "pull_requests": [],
       "created_at": "2026-08-22T11:39:49Z",
       "updated_at": "2026-08-22T11:39:49Z",
       "actor": {
@@ -273,9 +267,7 @@
         "site_admin": false
       },
       "run_attempt": 1,
-      "referenced_workflows": [
-
-      ],
+      "referenced_workflows": [],
       "run_started_at": "2026-08-22T11:39:49Z",
       "triggering_actor": {
         "login": "Soldier224K",
@@ -474,9 +466,7 @@
       "check_suite_node_id": "CS_kwDOT-RlP88AAAAUjg2R_w",
       "url": "https://api.github.com/repos/Soldier224K/Pactum/actions/runs/32570801965",
       "html_url": "https://github.com/Soldier224K/Pactum/actions/runs/32570801965",
-      "pull_requests": [
-
-      ],
+      "pull_requests": [],
       "created_at": "2026-08-22T11:37:54Z",
       "updated_at": "2026-08-22T11:39:22Z",
       "actor": {
@@ -501,9 +491,7 @@
         "site_admin": false
       },
       "run_attempt": 1,
-      "referenced_workflows": [
-
-      ],
+      "referenced_workflows": [],
       "run_started_at": "2026-08-22T11:37:54Z",
       "triggering_actor": {
         "login": "Soldier224K",
@@ -702,9 +690,7 @@
       "check_suite_node_id": "CS_kwDOT-RlP88AAAAUjg2MDw",
       "url": "https://api.github.com/repos/Soldier224K/Pactum/actions/runs/32570801300",
       "html_url": "https://github.com/Soldier224K/Pactum/actions/runs/32570801300",
-      "pull_requests": [
-
-      ],
+      "pull_requests": [],
       "created_at": "2026-08-22T11:37:53Z",
       "updated_at": "2026-08-22T11:37:53Z",
       "actor": {
@@ -729,9 +715,7 @@
         "site_admin": false
       },
       "run_attempt": 1,
-      "referenced_workflows": [
-
-      ],
+      "referenced_workflows": [],
       "run_started_at": "2026-08-22T11:37:53Z",
       "triggering_actor": {
         "login": "Soldier224K",
@@ -930,9 +914,7 @@
       "check_suite_node_id": "CS_kwDOT-RlP88AAAAUjcx3PQ",
       "url": "https://api.github.com/repos/Soldier224K/Pactum/actions/runs/32568980599",
       "html_url": "https://github.com/Soldier224K/Pactum/actions/runs/32568980599",
-      "pull_requests": [
-
-      ],
+      "pull_requests": [],
       "created_at": "2026-08-22T10:57:21Z",
       "updated_at": "2026-08-22T10:58:14Z",
       "actor": {
@@ -957,9 +939,7 @@
         "site_admin": false
       },
       "run_attempt": 1,
-      "referenced_workflows": [
-
-      ],
+      "referenced_workflows": [],
       "run_started_at": "2026-08-22T10:57:21Z",
       "triggering_actor": {
         "login": "Soldier224K",

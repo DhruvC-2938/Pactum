@@ -58,7 +58,10 @@ export class ProofBatchEngine {
   /**
    * Buffer a state transition. Flushes immediately when the batch is full.
    */
-  public async enqueue(stellarAddress: string, scoreData: ScoreData): Promise<PactumBatchedStateProof | null> {
+  public async enqueue(
+    stellarAddress: string,
+    scoreData: ScoreData,
+  ): Promise<PactumBatchedStateProof | null> {
     await this.restore();
     this.generator.setScoreData(stellarAddress, scoreData);
     await this.queue.enqueue(stellarAddress, scoreData, this.now());
@@ -94,7 +97,7 @@ export class ProofBatchEngine {
         items.map((item) => ({
           stellarAddress: item.stellarAddress,
           scoreData: item.scoreData,
-        }))
+        })),
       );
       if (this.onBatchReady) {
         await this.onBatchReady(batch);

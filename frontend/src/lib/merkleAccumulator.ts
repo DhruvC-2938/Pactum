@@ -77,7 +77,11 @@ export function computeRootFromLeaves(leafHexes: Hex32[]): Hex32 {
   return toHex(layer[0]!);
 }
 
-export function verifyMerkleProof(leafHex: Hex32, proof: MerkleProofNode[], expectedRoot: Hex32): boolean {
+export function verifyMerkleProof(
+  leafHex: Hex32,
+  proof: MerkleProofNode[],
+  expectedRoot: Hex32,
+): boolean {
   let current = fromHex(leafHex);
   for (const node of proof) {
     const sibling = fromHex(node.sibling);

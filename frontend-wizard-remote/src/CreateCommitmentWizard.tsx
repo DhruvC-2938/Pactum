@@ -2,25 +2,29 @@ import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+// Both consumed from the host over Module Federation, not local relative imports — the host owns
+// and exposes the single WalletContext and QueryClient module instances so every remote reads
+// and writes the exact same Provider state and cache. See docs/module-federation.md.
+import { queryClient } from 'host/queryClient';
 
-import { sha256Hex } from '../lib/hash';
-import { encryptCommitmentTerms, type EncryptResult } from '../lib/crypto';
-import { stellarAddressSchema } from '../lib/stellar';
-import { decodeRegistryContractError } from '../lib/errors';
-import { createAstResolver, composeResolvers } from '../lib/ast';
-import { useValidationRules } from '../hooks/useValidationRules';
-import { useWallet } from '../context/WalletContext';
-import { useWasmValidation } from '../hooks/useWasmValidation';
+import { sha256Hex } from './lib/hash';
+import { encryptCommitmentTerms, type EncryptResult } from './lib/crypto';
+import { stellarAddressSchema } from './lib/stellar';
+import { decodeRegistryContractError } from './lib/errors';
+import { createAstResolver, composeResolvers } from './lib/ast';
+import { useValidationRules } from './hooks/useValidationRules';
+import { useWallet } from 'host/WalletContext';
+import { useWasmValidation } from './hooks/useWasmValidation';
 import {
   submitCreateCommitment,
   fundTestnetAccount,
   type CreateCommitmentResult,
-} from '../lib/soroban';
-import { postEncryptedTerms, createCommitment } from '../lib/api';
-import UserProfile from './UserProfile';
-import EncryptionConsentModal from './EncryptionConsentModal';
-import { SorobanErrorModal } from './SorobanErrorModal';
-import { SorobanSimulationError } from '../lib/soroban';
+  SorobanSimulationError,
+} from './lib/soroban';
+import { postEncryptedTerms, createCommitment } from './lib/api';
+import UserProfile from './components/UserProfile';
+import EncryptionConsentModal from './components/EncryptionConsentModal';
+import { SorobanErrorModal } from './components/SorobanErrorModal';
 import {
   CheckCircle2,
   ExternalLink,
@@ -111,7 +115,17 @@ export default function CreateCommitmentWizard({
   onSubmit,
   onSuccess,
 }: CreateCommitmentWizardProps) {
-  const { address: connectedAddress, isConnected, connectWallet, provider } = useWallet();
+  // Read from the host's federated WalletContext, not a local copy — see the import comment
+  // above. Also used by the e2e suite to prove this remote shares the exact same Provider
+  // instance as the host, by comparing `contextModuleId` to window.__PACTUM_WALLET_PROVIDER_MODULE_ID__.
+  const wallet = useWallet();
+  const {
+    address: connectedAddress,
+    isConnected,
+    connectWallet,
+    provider,
+    contextModuleId,
+  } = wallet;
   const { validateCommitmentWithWasm } = useWasmValidation();
 
   // Dynamic, governance-controlled validation rules (downloaded as a JSON AST,
@@ -145,6 +159,15 @@ export default function CreateCommitmentWizard({
   const [xdrError, setXdrError] = useState<SorobanSimulationError | null>(null);
 
   const isFreighter = provider === 'freighter';
+
+  useEffect(() => {
+    // VITE_E2E_DIAGNOSTICS, not DEV: needs to be readable from a real production build served
+    // via `vite preview` too. See frontend/src/contexts/WalletContext.tsx for the full rationale.
+    if (import.meta.env.VITE_E2E_DIAGNOSTICS === 'true') {
+      (window as unknown as Record<string, unknown>).__PACTUM_WIZARD_SEEN_WALLET_MODULE_ID__ =
+        contextModuleId;
+    }
+  }, [contextModuleId]);
 
   const {
     register,
@@ -329,6 +352,12 @@ export default function CreateCommitmentWizard({
 
       setTxResult(result);
       onSuccess?.(result);
+
+      // Invalidate the shared `commitments` cache on the host's QueryClient — this remote never
+      // fetched into it directly, so a subsequent refetch succeeding here (rather than acting on
+      // an empty, separately-instantiated cache) is a functional proof that this is the same
+      // QueryClient the host and dashboard remote read. See docs/module-federation.md.
+      await queryClient.invalidateQueries({ queryKey: ['commitments'] });
     } catch (err: unknown) {
       console.error('[CreateCommitmentWizard] Soroban error:', err);
       // Show rich modal for Soroban XDR simulation errors, simple toast for everything else
@@ -376,6 +405,20 @@ export default function CreateCommitmentWizard({
 
   return (
     <div className="wizard">
+      {/* Wallet status, read from the host's shared WalletContext singleton (see useWallet import above). */}
+      <div
+        id="wizard-remote-wallet-status"
+        data-connected={wallet.isConnected}
+        style={{
+          fontSize: '12px',
+          color: 'var(--text-secondary, #64748b)',
+          marginBottom: '10px',
+          fontFamily: 'monospace',
+        }}
+      >
+        {wallet.isConnected ? `Issuing as: ${wallet.address}` : 'Wallet: not connected'}
+      </div>
+
       {/* Step Indicator */}
       <ol className="wizard-steps">
         {STEPS.map((s, index) => {
@@ -428,87 +471,87 @@ export default function CreateCommitmentWizard({
           </p>
 
           {txResult && (
-          <div
-            style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '14px',
-              padding: '18px',
-              textAlign: 'left',
-              marginBottom: '24px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-            }}
-          >
-            {txResult.commitmentId !== undefined && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                <span style={{ color: '#64748b', fontWeight: '600' }}>Commitment ID:</span>
-                <span style={{ fontWeight: '800', color: '#0f172a' }}>
-                  #{String(txResult.commitmentId)}
-                </span>
-              </div>
-            )}
             <div
               style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '18px',
+                textAlign: 'left',
+                marginBottom: '24px',
                 display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '13px',
-                alignItems: 'center',
+                flexDirection: 'column',
+                gap: '10px',
               }}
             >
-              <span style={{ color: '#64748b', fontWeight: '600' }}>Tx Hash:</span>
-              <span style={{ fontFamily: 'monospace', fontWeight: '700', color: '#334155' }}>
-                {txResult.hash.substring(0, 10)}...
-                {txResult.hash.substring(txResult.hash.length - 8)}
-              </span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '13px',
-                alignItems: 'center',
-              }}
-            >
-              <span style={{ color: '#64748b', fontWeight: '600' }}>Network:</span>
-              <span
+              {txResult.commitmentId !== undefined && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                  <span style={{ color: '#64748b', fontWeight: '600' }}>Commitment ID:</span>
+                  <span style={{ fontWeight: '800', color: '#0f172a' }}>
+                    #{String(txResult.commitmentId)}
+                  </span>
+                </div>
+              )}
+              <div
                 style={{
-                  fontSize: '11px',
-                  fontWeight: '800',
-                  color: '#16a34a',
-                  background: '#dcfce7',
-                  padding: '2px 8px',
-                  borderRadius: '100px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '13px',
+                  alignItems: 'center',
                 }}
               >
-                Stellar Testnet
-              </span>
+                <span style={{ color: '#64748b', fontWeight: '600' }}>Tx Hash:</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: '700', color: '#334155' }}>
+                  {txResult.hash.substring(0, 10)}...
+                  {txResult.hash.substring(txResult.hash.length - 8)}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '13px',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ color: '#64748b', fontWeight: '600' }}>Network:</span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    color: '#16a34a',
+                    background: '#dcfce7',
+                    padding: '2px 8px',
+                    borderRadius: '100px',
+                  }}
+                >
+                  Stellar Testnet
+                </span>
+              </div>
             </div>
-          </div>
           )}
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
             {txResult && (
-            <a
-              href={`https://stellar.expert/explorer/testnet/tx/${txResult.hash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: '#0f172a',
-                color: '#ffffff',
-                fontWeight: '700',
-                fontSize: '13px',
-                padding: '10px 18px',
-                borderRadius: '10px',
-                textDecoration: 'none',
-              }}
-            >
-              View on Stellar Expert <ExternalLink size={14} />
-            </a>
+              <a
+                href={`https://stellar.expert/explorer/testnet/tx/${txResult.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: '#0f172a',
+                  color: '#ffffff',
+                  fontWeight: '700',
+                  fontSize: '13px',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  textDecoration: 'none',
+                }}
+              >
+                View on Stellar Expert <ExternalLink size={14} />
+              </a>
             )}
             <button
               onClick={handleReset}

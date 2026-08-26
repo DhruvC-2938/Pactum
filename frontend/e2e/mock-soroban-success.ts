@@ -167,8 +167,8 @@ export async function installSuccessfulSorobanRpc(
       }
 
       case 'getLedgerEntries': {
-        const keys = ((body.params?.keys as string[] | undefined) ?? []).map(
-          (k) => mockAccountLedgerEntry(k),
+        const keys = ((body.params?.keys as string[] | undefined) ?? []).map((k) =>
+          mockAccountLedgerEntry(k),
         );
         await respond({ entries: keys.filter(Boolean), latestLedger: MOCK_LEDGER });
         return;

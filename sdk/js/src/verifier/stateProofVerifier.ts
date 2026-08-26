@@ -123,7 +123,7 @@ export function addressToBytes32(address: string): Uint8Array {
 export function computeLeafHash(
   contractId: string,
   stellarAddress: string,
-  scoreData: ScoreData
+  scoreData: ScoreData,
 ): Uint8Array {
   const buf = new Uint8Array(92);
   const view = new DataView(buf.buffer);
@@ -151,10 +151,7 @@ export function computeLeafHash(
 /**
  * Computes the Merkle Root by hashing the leaf along the audit path.
  */
-export function computeMerkleRoot(
-  leaf: Uint8Array,
-  merkleProof: MerkleProofNode[]
-): Uint8Array {
+export function computeMerkleRoot(leaf: Uint8Array, merkleProof: MerkleProofNode[]): Uint8Array {
   let current = leaf;
 
   for (const node of merkleProof) {
@@ -178,10 +175,7 @@ export function computeMerkleRoot(
 /**
  * Computes the header hash from ledger sequence and header proof fields (104 bytes).
  */
-export function computeHeaderHash(
-  ledgerSeq: number,
-  headerProof: HeaderProof
-): Uint8Array {
+export function computeHeaderHash(ledgerSeq: number, headerProof: HeaderProof): Uint8Array {
   const buf = new Uint8Array(104);
   const view = new DataView(buf.buffer);
 
@@ -203,7 +197,7 @@ export function computeHeaderHash(
  */
 export function verifyPactumStateProof(
   proof: PactumStateProof,
-  trustedLedgerHeaderHash?: string
+  trustedLedgerHeaderHash?: string,
 ): VerificationResult {
   try {
     if (!proof || proof.version !== '1.0.0') {
@@ -218,11 +212,7 @@ export function verifyPactumStateProof(
     }
 
     // 1. Verify Leaf Hash
-    const expectedLeaf = computeLeafHash(
-      proof.contractId,
-      proof.stellarAddress,
-      proof.scoreData
-    );
+    const expectedLeaf = computeLeafHash(proof.contractId, proof.stellarAddress, proof.scoreData);
     const expectedLeafHex = normalizeHex32(bytesToHex(expectedLeaf));
     const proofLeafHex = normalizeHex32(proof.leafHash);
 
@@ -351,7 +341,7 @@ export function computeAggregationLeaf(
   stellarAddress: string,
   leafHash: Uint8Array,
   score: number,
-  sourceLedgerSeq: number
+  sourceLedgerSeq: number,
 ): Uint8Array {
   const buf = new Uint8Array(84);
   const view = new DataView(buf.buffer);
@@ -373,7 +363,7 @@ export function computeAggregationLeaf(
  */
 export function verifyPactumBatchedStateProof(
   batch: PactumBatchedStateProof,
-  trustedLedgerHeaderHash?: string
+  trustedLedgerHeaderHash?: string,
 ): BatchVerificationResult {
   try {
     if (!batch || batch.version !== BATCH_PROOF_VERSION) {
@@ -422,11 +412,14 @@ export function verifyPactumBatchedStateProof(
         entry.stellarAddress,
         expectedLeaf,
         entry.scoreData.score,
-        entry.scoreData.sourceLedgerSeq
+        entry.scoreData.sourceLedgerSeq,
       );
       const computedAgg = computeMerkleRoot(aggLeaf, entry.aggregationProof);
       if (normalizeHex32(bytesToHex(computedAgg)) !== expectedAggRootHex) {
-        return { valid: false, error: `Aggregation Merkle root mismatch for ${entry.stellarAddress}` };
+        return {
+          valid: false,
+          error: `Aggregation Merkle root mismatch for ${entry.stellarAddress}`,
+        };
       }
 
       scores.push(entry.scoreData.score);
@@ -441,7 +434,10 @@ export function verifyPactumBatchedStateProof(
     const proofHeaderHex = normalizeHex32(batch.ledgerHeaderHash);
 
     if (computedHeaderHex !== proofHeaderHex) {
-      return { valid: false, error: `Ledger header hash mismatch. Claimed ${batch.ledgerHeaderHash}` };
+      return {
+        valid: false,
+        error: `Ledger header hash mismatch. Claimed ${batch.ledgerHeaderHash}`,
+      };
     }
 
     if (proofHeaderHex !== normalizeHex32(trustedLedgerHeaderHash)) {

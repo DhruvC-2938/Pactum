@@ -51,7 +51,14 @@ Location: `backend/src/schemas/pactum-state-proof.schema.json`
     "stellarAddress": { "type": "string" },
     "scoreData": {
       "type": "object",
-      "required": ["score", "fulfilledCount", "lateCount", "breachedCount", "epoch", "sourceLedgerSeq"],
+      "required": [
+        "score",
+        "fulfilledCount",
+        "lateCount",
+        "breachedCount",
+        "epoch",
+        "sourceLedgerSeq"
+      ],
       "properties": {
         "score": { "type": "integer", "minimum": 0, "maximum": 100 },
         "fulfilledCount": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
@@ -153,11 +160,13 @@ IPactumZeroTrustOracle.TrustScoreRecord memory record = oracle.getVerifiedTrustS
 ### Relayer Service API
 
 Query proof by address:
+
 ```http
 GET /api/v1/proofs/trust-score/:address?ledgerSeq=12050
 ```
 
 Generate a batched aggregation proof:
+
 ```http
 POST /api/v1/proofs/batch
 { "addresses": ["G...", "G..."], "ledgerSeq": 12050 }

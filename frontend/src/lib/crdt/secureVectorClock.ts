@@ -1,4 +1,4 @@
-import { signFrame, verifyFrame } from './signing'
+import { signFrame, verifyFrame } from './signing';
 
 /**
  * Cryptographically signed vector clock entry. Each peer signs their own
@@ -6,9 +6,9 @@ import { signFrame, verifyFrame } from './signing'
  * another peer's causality without breaking the signature.
  */
 export interface SignedClockEntry {
-  readonly address: string
-  readonly counter: number
-  readonly signature: Uint8Array
+  readonly address: string;
+  readonly counter: number;
+  readonly signature: Uint8Array;
 }
 
 /**
@@ -20,21 +20,21 @@ export interface SignedClockEntry {
  * - Forwarding another peer counter beyond reality (causality fabrication)
  */
 export interface SecureVectorClock {
-  readonly entries: Record<string, SignedClockEntry>
-  readonly serialized: string
+  readonly entries: Record<string, SignedClockEntry>;
+  readonly serialized: string;
 }
 
-const CLOCK_PREFIX = 'PACTUM_CLOCK_V1'
+const CLOCK_PREFIX = 'PACTUM_CLOCK_V1';
 
 /** Serialize a clock entry to a deterministic signable string. */
 function serializeClockEntry(address: string, counter: number): string {
-  return `${CLOCK_PREFIX}:${address}:${counter}`
+  return `${CLOCK_PREFIX}:${address}:${counter}`;
 }
 
 /** Serialize an entire clock deterministically for hashing and signing. */
 function serializeClock(entries: Record<string, number>): string {
-  const sorted = Object.keys(entries).sort()
-  return sorted.map((k) => `${k}=${entries[k]}`).join(';')
+  const sorted = Object.keys(entries).sort();
+  return sorted.map((k) => `${k}=${entries[k]}`).join(';');
 }
 
 /**
@@ -47,42 +47,42 @@ export async function createSecureVectorClock(
   /** Counters from known peers (e.g. received in previous sync frames). */
   peerCounters: Record<string, number> = {},
 ): Promise<SecureVectorClock> {
-  const entries: Record<string, SignedClockEntry> = {}
+  const entries: Record<string, SignedClockEntry> = {};
 
   // Sign our own entry.
-  const payload = serializeClockEntry(identity.address, localCounter)
-  const signable = new TextEncoder().encode(payload)
-  const signature = await signFrame(identity.keyPair.privateKey, signable)
+  const payload = serializeClockEntry(identity.address, localCounter);
+  const signable = new TextEncoder().encode(payload);
+  const signature = await signFrame(identity.keyPair.privateKey, signable);
   entries[identity.address] = {
     address: identity.address,
     counter: localCounter,
     signature,
-  }
+  };
 
   // Re-sign peer entries using our own key — this is a "witness" signature
   // that attests we observed these values. The original peer signature is
   // verified separately when the entry first arrived.
   for (const [address, counter] of Object.entries(peerCounters)) {
-    if (address === identity.address) continue
-    const peerPayload = serializeClockEntry(address, counter)
-    const peerSignable = new TextEncoder().encode(peerPayload)
-    const peerSig = await signFrame(identity.keyPair.privateKey, peerSignable)
+    if (address === identity.address) continue;
+    const peerPayload = serializeClockEntry(address, counter);
+    const peerSignable = new TextEncoder().encode(peerPayload);
+    const peerSig = await signFrame(identity.keyPair.privateKey, peerSignable);
     entries[address] = {
       address,
       counter,
       signature: peerSig,
-    }
+    };
   }
 
-  const allCounters: Record<string, number> = {}
+  const allCounters: Record<string, number> = {};
   for (const [addr, entry] of Object.entries(entries)) {
-    allCounters[addr] = entry.counter
+    allCounters[addr] = entry.counter;
   }
 
   return {
     entries,
     serialized: serializeClock(allCounters),
-  }
+  };
 }
 
 /**
@@ -96,18 +96,18 @@ export async function verifySecureVectorClock(
   publicKeys: Map<string, CryptoKey>,
 ): Promise<boolean> {
   for (const [address, entry] of Object.entries(clock.entries)) {
-    if (entry.address !== address) return false
-    if (entry.counter < 0) return false
+    if (entry.address !== address) return false;
+    if (entry.counter < 0) return false;
 
-    const publicKey = publicKeys.get(address)
-    if (!publicKey) return false
+    const publicKey = publicKeys.get(address);
+    if (!publicKey) return false;
 
-    const signablePayload = serializeClockEntry(address, entry.counter)
-    const signableBytes = new TextEncoder().encode(signablePayload)
-    const valid = await verifyFrame(publicKey, signableBytes, entry.signature)
-    if (!valid) return false
+    const signablePayload = serializeClockEntry(address, entry.counter);
+    const signableBytes = new TextEncoder().encode(signablePayload);
+    const valid = await verifyFrame(publicKey, signableBytes, entry.signature);
+    if (!valid) return false;
   }
-  return true
+  return true;
 }
 
 /**
@@ -119,18 +119,18 @@ export function mergeVectorClocks(
   a: Record<string, number>,
   b: Record<string, number>,
 ): { merged: Record<string, number>; advanced: boolean } {
-  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)])
-  const merged: Record<string, number> = {}
-  let advanced = false
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const merged: Record<string, number> = {};
+  let advanced = false;
 
   for (const key of allKeys) {
-    const va = a[key] ?? 0
-    const vb = b[key] ?? 0
-    merged[key] = Math.max(va, vb)
-    if (merged[key] > va || merged[key] > vb) advanced = true
+    const va = a[key] ?? 0;
+    const vb = b[key] ?? 0;
+    merged[key] = Math.max(va, vb);
+    if (merged[key] > va || merged[key] > vb) advanced = true;
   }
 
-  return { merged, advanced }
+  return { merged, advanced };
 }
 
 /**
@@ -139,36 +139,30 @@ export function mergeVectorClocks(
  *   - For every peer, A[peer] <= B[peer]
  *   - At least one peer has A[peer] < B[peer]
  */
-export function happensBefore(
-  a: Record<string, number>,
-  b: Record<string, number>,
-): boolean {
-  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)])
-  let hasStrictlyLess = false
+export function happensBefore(a: Record<string, number>, b: Record<string, number>): boolean {
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  let hasStrictlyLess = false;
   for (const key of allKeys) {
-    const va = a[key] ?? 0
-    const vb = b[key] ?? 0
-    if (va > vb) return false
-    if (va < vb) hasStrictlyLess = true
+    const va = a[key] ?? 0;
+    const vb = b[key] ?? 0;
+    if (va > vb) return false;
+    if (va < vb) hasStrictlyLess = true;
   }
-  return hasStrictlyLess
+  return hasStrictlyLess;
 }
 
 /**
  * Check if two clocks are concurrent (neither causally dominates the other).
  */
-export function areConcurrent(
-  a: Record<string, number>,
-  b: Record<string, number>,
-): boolean {
-  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)])
-  let hasStrictlyLess = false
-  let hasStrictlyGreater = false
+export function areConcurrent(a: Record<string, number>, b: Record<string, number>): boolean {
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  let hasStrictlyLess = false;
+  let hasStrictlyGreater = false;
   for (const key of allKeys) {
-    const va = a[key] ?? 0
-    const vb = b[key] ?? 0
-    if (va < vb) hasStrictlyLess = true
-    if (va > vb) hasStrictlyGreater = true
+    const va = a[key] ?? 0;
+    const vb = b[key] ?? 0;
+    if (va < vb) hasStrictlyLess = true;
+    if (va > vb) hasStrictlyGreater = true;
   }
-  return hasStrictlyLess && hasStrictlyGreater
+  return hasStrictlyLess && hasStrictlyGreater;
 }

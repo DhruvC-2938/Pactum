@@ -36,7 +36,7 @@ function providerDisplayName(provider: WalletProvider | null): string {
 function isSocialLoginConfigured(): boolean {
   return Boolean(
     typeof import.meta !== 'undefined' &&
-      String(import.meta.env?.VITE_WEB3AUTH_CLIENT_ID ?? '').trim(),
+    String(import.meta.env?.VITE_WEB3AUTH_CLIENT_ID ?? '').trim(),
   );
 }
 
@@ -284,9 +284,11 @@ export const WalletConnectModal: React.FC<WalletConnectModalProps> = ({ isOpen, 
               {truncateAddress(address, 8, 8)}
             </div>
             {isSocialLogin && (
-              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', lineHeight: 1.4 }}>
-                Non-custodial Stellar keypair provisioned via social login. Transactions sign
-                in-app — no Freighter popup.
+              <div
+                style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', lineHeight: 1.4 }}
+              >
+                Non-custodial Stellar keypair provisioned via social login. Transactions sign in-app
+                — no Freighter popup.
               </div>
             )}
           </div>

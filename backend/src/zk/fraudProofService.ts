@@ -1,6 +1,15 @@
-import { Address, Contract, Networks, TransactionBuilder, BASE_FEE, rpc, xdr, Keypair } from '@stellar/stellar-sdk';
+import {
+  Address,
+  Contract,
+  Networks,
+  TransactionBuilder,
+  BASE_FEE,
+  rpc,
+  xdr,
+  Keypair,
+} from '@stellar/stellar-sdk';
 
-declare var console: any;
+declare let console: any;
 
 export interface CommitmentOp {
   issuerAddress: string;
@@ -38,14 +47,13 @@ export class FraudProofService {
   async challenge(
     challengerKeypair: Keypair,
     batchLedgerSeq: number,
-    inputs: FraudProofInputs
+    inputs: FraudProofInputs,
   ): Promise<{ success: boolean; txHash?: string }> {
-
     console.log('Generating fraud proof...');
     // Dynamically import the ESM module from the zk package
     const zkModule = await import('../../../zk/scripts/generate_proof.js' as any);
     const { generateFraudProof } = zkModule;
-    
+
     const { isFraud } = await generateFraudProof(inputs);
 
     if (!isFraud) {
@@ -58,27 +66,45 @@ export class FraudProofService {
     const server = new rpc.Server(this.rpcUrl);
     const account = await server.getAccount(challengerKeypair.publicKey());
     const contract = new Contract(this.verifierContractId);
-    
+
     // Soroban structs represented as ScMap must have keys sorted alphabetically
     const commitmentScVal = xdr.ScVal.scvMap([
-      new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('counterparty'), val: Address.fromString(inputs.operation.counterpartyAddress).toScVal() }),
-      new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('due_at'), val: xdr.ScVal.scvU64(new xdr.Uint64(Number(inputs.operation.dueAt))) }),
-      new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('issuer'), val: Address.fromString(inputs.operation.issuerAddress).toScVal() }),
-      new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('terms_hash'), val: xdr.ScVal.scvBytes(Buffer.from(inputs.operation.termsHash.toString(16).padStart(64, '0'), 'hex')) }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol('counterparty'),
+        val: Address.fromString(inputs.operation.counterpartyAddress).toScVal(),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol('due_at'),
+        val: xdr.ScVal.scvU64(new xdr.Uint64(Number(inputs.operation.dueAt))),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol('issuer'),
+        val: Address.fromString(inputs.operation.issuerAddress).toScVal(),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol('terms_hash'),
+        val: xdr.ScVal.scvBytes(
+          Buffer.from(inputs.operation.termsHash.toString(16).padStart(64, '0'), 'hex'),
+        ),
+      }),
     ]);
 
-    const siblingsScVec = inputs.merkleWitness.siblings.map(sib => 
-      xdr.ScVal.scvBytes(Buffer.from(sib.toString(16).padStart(64, '0'), 'hex'))
+    const siblingsScVec = inputs.merkleWitness.siblings.map((sib) =>
+      xdr.ScVal.scvBytes(Buffer.from(sib.toString(16).padStart(64, '0'), 'hex')),
     );
-    const pathBitsScVec = inputs.merkleWitness.pathBits.map(bit => 
-      xdr.ScVal.scvU32(bit)
-    );
+    const pathBitsScVec = inputs.merkleWitness.pathBits.map((bit) => xdr.ScVal.scvU32(bit));
 
     const merkleProofScVal = xdr.ScVal.scvMap([
-      new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('path_bits'), val: xdr.ScVal.scvVec(pathBitsScVec) }),
-      new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('siblings'), val: xdr.ScVal.scvVec(siblingsScVec) }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol('path_bits'),
+        val: xdr.ScVal.scvVec(pathBitsScVec),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol('siblings'),
+        val: xdr.ScVal.scvVec(siblingsScVec),
+      }),
     ]);
-    
+
     const tx = new TransactionBuilder(account, {
       fee: BASE_FEE,
       networkPassphrase: Networks.TESTNET,
@@ -90,8 +116,8 @@ export class FraudProofService {
           xdr.ScVal.scvU32(batchLedgerSeq),
           xdr.ScVal.scvU32(Number(inputs.merkleWitness.leafPos)),
           commitmentScVal,
-          merkleProofScVal
-        )
+          merkleProofScVal,
+        ),
       )
       .setTimeout(30)
       .build();

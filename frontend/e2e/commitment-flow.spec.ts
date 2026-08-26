@@ -4,6 +4,15 @@ import { installSuccessfulSorobanRpc } from './mock-soroban-success';
 const MOCK_ADDRESS = 'GASV7ZZOPNYYFEPJ6N3GX4VINJELUQQDRX6UWWOO43F55CV6OBQUEGVK';
 const COUNTERPARTY = 'GCM5SKB5PS3ZCUXZ4GPLIBY42E63ILOT2EAIIT4UWGDFYOULCTLTRMMB';
 const SHORT_ADDRESS = 'GASV7Z...EGVK';
+
+// A fixed future date goes stale the moment it's in the past; compute one relative to "now"
+// instead, matching contract-errors.spec.ts's own pattern.
+function futureDueDate(): string {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date.toISOString().slice(0, 16);
+}
+
 const LEDGER_ENTRIES_RESULT = { latestLedger: 50000 };
 /**
  * Simulates the Freighter browser extension content script (postMessage protocol).
@@ -71,6 +80,7 @@ async function installFreighterMock(page: Page) {
           // {signedBlob, signerAddress} back.
           case 'SUBMIT_BLOB':
           case 'REQUEST_SIGN_MESSAGE': {
+            // Deterministic mock: base64 of 64 zero bytes (sufficient for HKDF key derivation test)
             const mockSig = btoa(String.fromCharCode(...new Array(64).fill(42)));
             response = {
               signedBlob: mockSig,
@@ -354,16 +364,20 @@ test.beforeEach(async ({ page }) => {
   });
 
   await page.goto('/');
-  // If landing page is shown, launch the app first
-  const launchBtn = page.getByRole('button', { name: /launch app/i }).first();
-  if (await launchBtn.isVisible()) {
-    await launchBtn.click();
-  }
+  // `isVisible()` doesn't auto-wait, so it can read the DOM before the landing page has
+  // hydrated and race to false on a slower load — `click()`'s own actionability wait is the
+  // reliable way to land on this always-present button.
+  await page
+    .getByRole('button', { name: /launch app/i })
+    .first()
+    .click();
 });
 
 async function connectFreighter(page: Page) {
   await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
+  // The connected-wallet button (above) is WalletConnectButton's own indicator of connected
+  // state — it never renders literal "Connected" text, so that assertion never matched anything.
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
 }
 
@@ -408,19 +422,6 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
   // (mock-soroban-success.ts), proving the RPC round-trip happened.
   await expect(page.getByText('#42', { exact: true })).toBeVisible();
 
-  // 3. View Dashboard -- lists commitments from the (mocked) backend API.
-  // Scope to #commitments-list-page: '.commitment-list' alone is ambiguous
-  // (the overview sidebar uses it too).
-  await page.locator('#nav-dashboard').click();
-
-  const pageList = page.locator('#commitments-list-page');
-  await expect(pageList).toBeVisible({ timeout: 10_000 });
-  await expect(pageList.getByText('Commitment #1')).toBeVisible();
-  await expect(pageList.getByText('Commitment #2')).toBeVisible();
-  // Wait for the Soroban submission to complete (mocked RPC returns fast)
-  // The wizard calls onSuccess which navigates to the dashboard
-  await page.waitForTimeout(3000);
-
   // 3. View Commitments — #commitments-list-page only exists on the Commitments page, not the
   // Dashboard's own (unrelated, id-less) "Recent Commitments" card.
   await page.locator('#nav-commitments').click();
@@ -433,8 +434,9 @@ test('critical user journey: connect wallet -> create commitment -> view dashboa
 });
 
 test('form validation errors appear on bad input', async ({ page }) => {
-  // Landing page is already dismissed in beforeEach; navigate directly to create
-  await page.locator('#nav-create').click();
+  // beforeEach already lands on the dashboard (via its own Launch App click), so there's no
+  // landing page left to launch from here.
+  await page.click('#nav-create');
 
   // Wait for the wizard to render
   await expect(page.locator('#wizard-counterparty')).toBeVisible();
@@ -476,10 +478,11 @@ test('loading spinners display during network requests', async ({ page }) => {
     indexedDB.deleteDatabase('pactum-cache-v1');
   });
   await page.reload();
-  const launchBtn = page.locator('#hero-launch-btn');
-  if (await launchBtn.isVisible()) {
-    await launchBtn.click();
-  }
+  // `isVisible()` doesn't auto-wait (see beforeEach's comment on the same trap), so it can
+  // read the DOM before the landing page has hydrated and race to false, silently skipping
+  // the click and leaving the test stuck on the landing page. `click()`'s own actionability
+  // wait is the reliable way to land on this always-present button.
+  await page.locator('#hero-launch-btn').click();
 
   // Navigate to Dashboard using nav button id (not role=link)
   await page.locator('#nav-dashboard').click();
@@ -525,7 +528,7 @@ test('loading spinners display during network requests', async ({ page }) => {
     });
   });
 
-  // Connect wallet first so dashboard loads reputation
+  // Connect wallet first so #nav-my-profile (below) has a connected address to look up.
   await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
   await page.getByRole('button', { name: /Freighter/ }).click();
   await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
@@ -623,10 +626,7 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
   await page.getByRole('button', { name: 'Continue' }).click();
 
   // Step 3: Due date
-  await page.locator('#wizard-dueat').fill('2026-12-31T12:00');
-  // Wait for the submit button to be visible before clicking
-  await expect(page.locator('#wizard-submit-btn')).toBeVisible();
-  await page.locator('#wizard-dueat').fill('2027-12-31T12:00');
+  await page.locator('#wizard-dueat').fill(futureDueDate());
   // Use the specific submit button id to avoid strict mode violation
   await page.locator('#wizard-submit-btn').click();
 

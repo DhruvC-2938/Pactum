@@ -12,7 +12,12 @@
  */
 
 import { Keypair, TransactionBuilder } from '@stellar/stellar-sdk';
-import { WEB3AUTH_NETWORK, CHAIN_NAMESPACES, type IProvider, type CustomChainConfig } from '@web3auth/base';
+import {
+  WEB3AUTH_NETWORK,
+  CHAIN_NAMESPACES,
+  type IProvider,
+  type CustomChainConfig,
+} from '@web3auth/base';
 import { CommonPrivateKeyProvider } from '@web3auth/base-provider';
 import { Web3Auth } from '@web3auth/modal';
 import { isStellarAddress } from './stellar';
@@ -165,9 +170,7 @@ export function signTransactionWithWeb3Auth(
 ): string {
   const keypair = activeKeypair;
   if (!keypair) {
-    throw new Error(
-      'Social-login wallet is not ready to sign. Please Login with Google again.',
-    );
+    throw new Error('Social-login wallet is not ready to sign. Please Login with Google again.');
   }
   const tx = TransactionBuilder.fromXDR(unsignedXdr, networkPassphrase);
   if (!('sign' in tx) || typeof (tx as { sign?: unknown }).sign !== 'function') {

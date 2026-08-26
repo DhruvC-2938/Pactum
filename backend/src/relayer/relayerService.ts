@@ -1,4 +1,8 @@
-import { StateProofGenerator, ProofGeneratorConfig, TrustScoreEntryRecord } from './stateProofGenerator';
+import {
+  StateProofGenerator,
+  ProofGeneratorConfig,
+  TrustScoreEntryRecord,
+} from './stateProofGenerator';
 import { PactumBatchedStateProof, PactumStateProof, ScoreData } from '../schemas/stateProof';
 import { DEFAULT_BATCH_TTL_MS, DEFAULT_MAX_BATCH_SIZE, ProofBatchEngine } from './proofBatchEngine';
 
@@ -80,7 +84,7 @@ export class RelayerService {
    */
   public async bufferScore(
     stellarAddress: string,
-    scoreData: ScoreData
+    scoreData: ScoreData,
   ): Promise<PactumBatchedStateProof | null> {
     this.proofCache.delete(stellarAddress);
     return this.batchEngine.enqueue(stellarAddress, scoreData);
@@ -95,7 +99,7 @@ export class RelayerService {
     options?: {
       targetLedgerSeq?: number;
       allEntries?: TrustScoreEntryRecord[];
-    }
+    },
   ): Promise<PactumStateProof> {
     const proof = await this.generator.generateProof(stellarAddress, options);
     this.proofCache.set(stellarAddress, proof);
@@ -107,11 +111,10 @@ export class RelayerService {
    */
   public async getBatchProof(
     addresses?: string[],
-    options?: { targetLedgerSeq?: number }
+    options?: { targetLedgerSeq?: number },
   ): Promise<PactumBatchedStateProof> {
-    const targets = addresses && addresses.length > 0
-      ? addresses
-      : this.generator.getTrackedAddresses();
+    const targets =
+      addresses && addresses.length > 0 ? addresses : this.generator.getTrackedAddresses();
     const batch = await this.generator.generateBatchProof(targets, options);
     this.latestBatch = batch;
     return batch;
@@ -129,7 +132,7 @@ export class RelayerService {
     this.isRunning = true;
     void this.batchEngine.restore();
     console.log(
-      `[RelayerService] Started poll=${this.pollIntervalMs}ms maxBatch=${this.batchEngine.getMaxBatchSize()} ttl=${this.batchEngine.getBatchTtlMs()}ms`
+      `[RelayerService] Started poll=${this.pollIntervalMs}ms maxBatch=${this.batchEngine.getMaxBatchSize()} ttl=${this.batchEngine.getBatchTtlMs()}ms`,
     );
 
     this.intervalTimer = setInterval(async () => {

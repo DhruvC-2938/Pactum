@@ -27,7 +27,9 @@ describe('Pactum CLI Commitments Command', () => {
   });
 
   it('truncates address cleanly', () => {
-    expect(truncateAddress('GB4UFB7S4CZ6YJ4G77HHZX4C3R7L64UK7Q4GB4UFB7S4CZ6YJ4G77HHZX4C')).toBe('GB4UFB...ZX4C');
+    expect(truncateAddress('GB4UFB7S4CZ6YJ4G77HHZX4C3R7L64UK7Q4GB4UFB7S4CZ6YJ4G77HHZX4C')).toBe(
+      'GB4UFB...ZX4C',
+    );
     expect(truncateAddress('SHORT')).toBe('SHORT');
     expect(truncateAddress(undefined)).toBe('—');
   });

@@ -6,12 +6,12 @@ full host.
 
 ## What is proved
 
-| Invariant | Module | Tool |
-|-----------|--------|------|
-| Slash cut is bounded (`0 ≤ cut ≤ stake`) and conserves mass | `economics/slash.rs` | Unit tests + Kani |
-| Slash does **not** drain vault tokens (forfeit stays in vault) | `economics/slash.rs` | Unit tests + Kani |
-| Weak TVL: `vault_tokens ≥ Σ recorded_stake` after slash | `economics/vault.rs` | Unit tests + Kani |
-| Only dissenting voters are slashed; timeout spares everyone | `economics/policy.rs` | Unit tests + Kani |
+| Invariant                                                      | Module                | Tool              |
+| -------------------------------------------------------------- | --------------------- | ----------------- |
+| Slash cut is bounded (`0 ≤ cut ≤ stake`) and conserves mass    | `economics/slash.rs`  | Unit tests + Kani |
+| Slash does **not** drain vault tokens (forfeit stays in vault) | `economics/slash.rs`  | Unit tests + Kani |
+| Weak TVL: `vault_tokens ≥ Σ recorded_stake` after slash        | `economics/vault.rs`  | Unit tests + Kani |
+| Only dissenting voters are slashed; timeout spares everyone    | `economics/policy.rs` | Unit tests + Kani |
 
 Production `staking::slash` calls `economics::slash_cut`, so the proved
 arithmetic is the same path the contract uses.

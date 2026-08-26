@@ -10,7 +10,11 @@ import { ProofBatchEngine } from '../src/relayer/proofBatchEngine';
 import { DurableProofQueue } from '../src/relayer/durableQueue';
 import { verifyPactumStateProof, verifyPactumBatchedStateProof } from '../src/relayer/verifier';
 import { computeHeaderHash, toEvmBatchedStateProof } from '../src/relayer/encoder';
-import { pactumStateProofSchema, pactumBatchedStateProofSchema, ScoreData } from '../src/schemas/stateProof';
+import {
+  pactumStateProofSchema,
+  pactumBatchedStateProofSchema,
+  ScoreData,
+} from '../src/schemas/stateProof';
 
 describe('Zero-Trust Oracle Relayer and State Proofs', () => {
   const contractId = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM';
@@ -148,7 +152,7 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
       // 2. Tampered sibling
       const corruptedProof = {
         ...proof,
-        merkleProof: proof.merkleProof.map(node => ({
+        merkleProof: proof.merkleProof.map((node) => ({
           ...node,
           sibling: '0x' + '00'.repeat(32),
         })),
@@ -190,9 +194,9 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
         MerkleTree.verifyMultiProof(
           compact.leaves.map((h) => Buffer.from(h.replace(/^0x/, ''), 'hex')),
           compact.proofs,
-          Buffer.from(compact.root.replace(/^0x/, ''), 'hex')
+          Buffer.from(compact.root.replace(/^0x/, ''), 'hex'),
         ),
-        true
+        true,
       );
     });
 
@@ -221,9 +225,12 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
         generator.setScoreData(t.stellarAddress, t.scoreData);
       }
 
-      const batch = await generator.generateBatchProof(targets.map((t) => t.stellarAddress), {
-        targetLedgerSeq: 13000,
-      });
+      const batch = await generator.generateBatchProof(
+        targets.map((t) => t.stellarAddress),
+        {
+          targetLedgerSeq: 13000,
+        },
+      );
 
       const parsed = pactumBatchedStateProofSchema.parse(batch);
       assert.equal(parsed.version, '1.1.0');
@@ -234,16 +241,19 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
       const result = verifyPactumBatchedStateProof(batch, trusted);
       assert.equal(result.valid, true);
       assert.equal(result.entryCount, 4);
-      assert.deepEqual(result.scores, targets.map((t) => t.scoreData.score).sort((a, b) => a - b));
+      assert.deepEqual(
+        result.scores,
+        targets.map((t) => t.scoreData.score).sort((a, b) => a - b),
+      );
 
       for (const entry of batch.entries) {
         assert.equal(
           MerkleTree.verify(
             Buffer.from(entry.leafHash.replace(/^0x/, ''), 'hex'),
             entry.merkleProof,
-            Buffer.from(batch.stateRootHash.replace(/^0x/, ''), 'hex')
+            Buffer.from(batch.stateRootHash.replace(/^0x/, ''), 'hex'),
           ),
-          true
+          true,
         );
       }
 
@@ -266,7 +276,7 @@ describe('Zero-Trust Oracle Relayer and State Proofs', () => {
       const tampered = {
         ...batch,
         entries: batch.entries.map((e, i) =>
-          i === 0 ? { ...e, scoreData: { ...e.scoreData, score: 99 } } : e
+          i === 0 ? { ...e, scoreData: { ...e.scoreData, score: 99 } } : e,
         ),
       };
       assert.equal(verifyPactumBatchedStateProof(tampered, trusted).valid, false);

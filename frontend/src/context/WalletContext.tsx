@@ -1,5 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
-
 import React, {
   createContext,
   useContext,
@@ -31,9 +29,25 @@ export interface WalletContextType {
   connectWallet: (provider?: WalletProviderName) => Promise<void>;
   disconnectWallet: () => void;
   clearError: () => void;
+  /**
+   * Identity marker for this WalletContext *module instance*, not just its data. This module is
+   * exposed to the dashboard/wizard remotes over Module Federation (see
+   * frontend/vite.config.ts `exposes`) so every remote imports the same evaluated module instead
+   * of bundling its own copy — if one did, `useContext()` there would silently read that copy's
+   * default value (`undefined`, throwing in `useWallet`) rather than this Provider's. Every
+   * consumer reading the same `contextModuleId` is a direct, referential proof that they share
+   * this one module instance, not just similarly-behaving independent copies. See
+   * docs/module-federation.md.
+   */
+  contextModuleId: string;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
+
+const WALLET_CONTEXT_MODULE_ID =
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `wallet-${Date.now()}-${Math.random()}`;
 
 const LOCAL_STORAGE_KEY = 'pactum_wallet_state';
 
@@ -43,12 +57,7 @@ interface PersistedWalletState {
 }
 
 function isKnownProvider(value: unknown): value is WalletProviderName {
-  return (
-    value === 'freighter' ||
-    value === 'albedo' ||
-    value === 'ledger' ||
-    value === 'web3auth'
-  );
+  return value === 'freighter' || value === 'albedo' || value === 'ledger' || value === 'web3auth';
 }
 
 function loadPersistedState(): PersistedWalletState | null {
@@ -202,6 +211,17 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, [provider]);
 
+  useEffect(() => {
+    // VITE_E2E_DIAGNOSTICS, not DEV: needs to be readable from a real production build served
+    // via `vite preview` too, since `import.meta.env.DEV` is false for any built bundle
+    // regardless of --mode. Off by default in every real deployment. See
+    // docs/module-federation.md.
+    if (import.meta.env.VITE_E2E_DIAGNOSTICS === 'true') {
+      (window as unknown as Record<string, unknown>).__PACTUM_WALLET_PROVIDER_MODULE_ID__ =
+        WALLET_CONTEXT_MODULE_ID;
+    }
+  }, []);
+
   return (
     <WalletContext.Provider
       value={{
@@ -216,6 +236,7 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         connectWallet,
         disconnectWallet,
         clearError,
+        contextModuleId: WALLET_CONTEXT_MODULE_ID,
       }}
     >
       {children}

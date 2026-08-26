@@ -5,7 +5,12 @@ import {
   PactumStateProof,
   VerificationResult,
 } from '../schemas/stateProof';
-import { addressToBytes32, computeAggregationLeaf, computeLeafHash, computeHeaderHash } from './encoder';
+import {
+  addressToBytes32,
+  computeAggregationLeaf,
+  computeLeafHash,
+  computeHeaderHash,
+} from './encoder';
 import { MerkleTree } from './merkleTree';
 
 export function normalizeHex32(hex: string): string {
@@ -21,7 +26,7 @@ export function normalizeHex32(hex: string): string {
  */
 export function verifyPactumStateProof(
   proof: PactumStateProof,
-  trustedLedgerHeaderHash?: string
+  trustedLedgerHeaderHash?: string,
 ): VerificationResult {
   try {
     if (!proof || proof.version !== '1.0.0') {
@@ -36,11 +41,7 @@ export function verifyPactumStateProof(
     }
 
     // 1. Verify Leaf Hash
-    const expectedLeaf = computeLeafHash(
-      proof.contractId,
-      proof.stellarAddress,
-      proof.scoreData
-    );
+    const expectedLeaf = computeLeafHash(proof.contractId, proof.stellarAddress, proof.scoreData);
     const expectedLeafHex = normalizeHex32(expectedLeaf.toString('hex'));
     const proofLeafHex = normalizeHex32(proof.leafHash);
 
@@ -114,7 +115,7 @@ export function verifyPactumStateProof(
  */
 export function verifyPactumBatchedStateProof(
   batch: PactumBatchedStateProof,
-  trustedLedgerHeaderHash?: string
+  trustedLedgerHeaderHash?: string,
 ): BatchVerificationResult {
   try {
     if (!batch || batch.version !== BATCH_PROOF_VERSION) {
@@ -149,15 +150,14 @@ export function verifyPactumBatchedStateProof(
         const prev = addressToBytes32(batch.entries[i - 1].stellarAddress);
         const curr = addressToBytes32(entry.stellarAddress);
         if (curr.compare(prev) <= 0) {
-          return { valid: false, error: `Batch entries are not strictly sorted by address at index ${i}` };
+          return {
+            valid: false,
+            error: `Batch entries are not strictly sorted by address at index ${i}`,
+          };
         }
       }
 
-      const expectedLeaf = computeLeafHash(
-        batch.contractId,
-        entry.stellarAddress,
-        entry.scoreData
-      );
+      const expectedLeaf = computeLeafHash(batch.contractId, entry.stellarAddress, entry.scoreData);
       const expectedLeafHex = normalizeHex32(expectedLeaf.toString('hex'));
       if (expectedLeafHex !== normalizeHex32(entry.leafHash)) {
         return {
@@ -178,7 +178,7 @@ export function verifyPactumBatchedStateProof(
         entry.stellarAddress,
         expectedLeaf,
         entry.scoreData.score,
-        entry.scoreData.sourceLedgerSeq
+        entry.scoreData.sourceLedgerSeq,
       );
       if (!MerkleTree.verify(aggLeaf, entry.aggregationProof, expectedAggRoot)) {
         return {
@@ -191,7 +191,7 @@ export function verifyPactumBatchedStateProof(
     }
 
     const reconstructedState = MerkleTree.computeRootFromLeaves(
-      batch.entries.map((e) => Buffer.from(e.leafHash.replace(/^0x/, ''), 'hex'))
+      batch.entries.map((e) => Buffer.from(e.leafHash.replace(/^0x/, ''), 'hex')),
     );
     if (!reconstructedState.equals(expectedRoot)) {
       return { valid: false, error: 'Reconstructed state root does not match stateRootHash' };
