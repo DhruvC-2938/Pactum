@@ -44,9 +44,6 @@ pub enum Error {
     MigrationNotEnabled = 18,
     /// The requested migration batch exceeds the maximum batch size.
     BatchTooLarge = 19,
-    /// The submitted zero-knowledge range proof did not verify.
-    InvalidRangeProof = 45,
-
     /// The requested milestone count is zero or above `MAX_MILESTONES`.
     InvalidMilestoneCount = 20,
     /// The requested milestone index is outside the commitment's milestone range.
@@ -107,4 +104,6 @@ pub enum Error {
     NotAdmin = 45,
     /// The admin address has already been set.
     AdminAlreadySet = 46,
+    /// The submitted zero-knowledge range proof did not verify.
+    InvalidRangeProof = 47,
 }

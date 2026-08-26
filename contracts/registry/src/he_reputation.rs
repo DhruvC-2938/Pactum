@@ -639,7 +639,7 @@ mod tests {
         // Build a valid proof for v=1, r=999.
         let proof = make_valid_proof(1, 999, pk_n);
 
-        let contract_id = env.register_contract(None, crate::RegistryContract);
+        let contract_id = env.register(crate::RegistryContract, ());
         env.as_contract(&contract_id, || {
             // Accumulate a fulfilled outcome.
             accumulate_encrypted_outcome(&env, &address, enc_one, 0, proof, pk_n);
@@ -657,12 +657,13 @@ mod tests {
     fn get_encrypted_score_no_history_returns_base() {
         let env = Env::default();
         let address = Address::generate(&env);
-        
-        let contract_id = env.register_contract(None, crate::RegistryContract);
+
+        let contract_id = env.register(crate::RegistryContract, ());
         env.as_contract(&contract_id, || {
             let score = get_encrypted_score(&env, &address);
             // Should be Enc(BASE_SCORE) = (1 + 50*n) mod n²
-            let expected = (1u128 + (crate::trust_score::BASE_SCORE as u128) * (PAILLIER_N as u128))
+            let expected = (1u128
+                + (crate::trust_score::BASE_SCORE as u128) * (PAILLIER_N as u128))
                 % PAILLIER_N_SQ;
             assert_eq!(score.to_u128(), expected);
             assert_eq!(score.count, 0);
@@ -697,7 +698,7 @@ mod tests {
     fn compute_encrypted_score_is_deterministic() {
         let n_sq = PAILLIER_N_SQ;
         let enc_f = EncryptedScore::from_u128((1 + 3 * PAILLIER_N as u128) % n_sq, 3);
-        let enc_l = EncryptedScore::from_u128((1 + 1 * PAILLIER_N as u128) % n_sq, 1);
+        let enc_l = EncryptedScore::from_u128((1 + PAILLIER_N as u128) % n_sq, 1);
         let enc_b = EncryptedScore::from_u128(1, 0); // Enc(0)
 
         let s1 = compute_encrypted_score(&enc_f, &enc_l, &enc_b);
