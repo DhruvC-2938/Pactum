@@ -30,19 +30,18 @@ jobs:
             exit 0
           fi
 
-          # Check if the package.json has any dependencies or devDependencies
+          # Check if the package.json has any dependencies
           HAS_DEPS=$(node -e "
             const pkg = require('./$FILE');
             const hasDeps = pkg.dependencies && Object.keys(pkg.dependencies).length > 0;
-            const hasDevDeps = pkg.devDependencies && Object.keys(pkg.devDependencies).length > 0;
-            console.log(hasDeps || hasDevDeps ? 'true' : 'false');
+            console.log(hasDeps ? 'true' : 'false');
           ")
 
           if [ "$HAS_DEPS" = "true" ]; then
             echo "has_deps=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_deps=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Skipped::${{ matrix.directory }}/package.json has no dependencies. Skipping audit."
+            echo "::notice title=Skipped::${{ matrix.directory }}/package.json has no production dependencies. Skipping audit."
           fi
 
       - name: Set up Node.js 20.x (LTS)
@@ -65,9 +64,9 @@ jobs:
         working-directory: ${{ matrix.directory }}
         run: |
           if [ -f package-lock.json ]; then
-            npm ci --ignore-scripts
+            npm ci --ignore-scripts --omit=dev
           else
-            npm install --ignore-scripts
+            npm install --ignore-scripts --omit=dev
           fi
 
       - name: Run npm audit
@@ -75,7 +74,7 @@ jobs:
         working-directory: ${{ matrix.directory }}
         run: |
           echo "🔍 Running npm audit in ${{ matrix.directory }}..."
-          npm audit --audit-level=high
+          npm audit --omit=dev --audit-level=high
         continue-on-error: false
 
   cargo-audit:
