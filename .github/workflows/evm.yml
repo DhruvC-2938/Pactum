@@ -1,0 +1,32 @@
+name: EVM Oracle (proof of concept)
+
+on:
+  push:
+    branches: [main, 'fix/**', 'feat/**']
+    paths:
+      - 'evm/**'
+  pull_request:
+    paths:
+      - 'evm/**'
+
+jobs:
+  hardhat-test:
+    name: Hardhat Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: evm/package-lock.json
+
+      - name: Install dependencies
+        working-directory: evm
+        run: npm ci
+
+      - name: Run Hardhat test suite
+        working-directory: evm
+        run: npx hardhat test
