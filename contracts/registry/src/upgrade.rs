@@ -99,7 +99,8 @@ fn require_upgrade_admin(env: &Env) -> Address {
 /// Installs the initial upgrade admin. Bootstrap path only.
 ///
 /// # Authorization
-/// * Authorized caller: the contract admin (via `require_auth`).
+/// * Authorized caller: the contract admin (via `require_auth`), checked by the
+///   caller in `lib.rs` before this is invoked.
 /// * Why: the contract admin is the authority responsible for managing upgrade
 ///   permissions. Once an upgrade admin is installed this path is permanently
 ///   closed and further changes must go through [`set_upgrade_admin`] — that is,
@@ -108,8 +109,6 @@ pub fn init_upgrade_admin(env: &Env, admin: Address) {
     if env.storage().instance().has(&UpgradeKey::UpgradeAdmin) {
         panic_with_error!(env, Error::UpgradeAdminAlreadySet);
     }
-
-    admin.require_auth();
 
     env.storage()
         .instance()

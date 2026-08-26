@@ -331,32 +331,34 @@ impl RegistryContract {
     /// Installs the initial upgrade admin — in production, the Timelock contract.
     ///
     /// # Authorization
-    /// * Authorized caller: the contract admin (via `require_auth`).
+    /// * Authorized caller: `caller` (via `require_auth`), who must be the contract admin.
     /// * Why: the contract admin is the authority responsible for managing upgrade
     ///   permissions. The path closes permanently once used; later changes go through
     ///   `set_upgrade_admin`, which only the admin can call.
     ///
     /// # Panics
     /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
+    /// * Panics with `Error::NotAdmin` if `caller` is not the contract admin.
     /// * Panics with `Error::UpgradeAdminAlreadySet` if an upgrade admin is installed.
-    pub fn init_upgrade_admin(env: Env, admin: Address) {
+    pub fn init_upgrade_admin(env: Env, caller: Address, admin: Address) {
+        caller.require_auth();
+        commitments::require_admin(&env, &caller);
         upgrade::init_upgrade_admin(&env, admin);
     }
 
     /// Transfers upgrade authority to a different address.
     ///
     /// # Authorization
-    /// * Authorized caller: the contract admin (via `require_auth`).
+    /// * Authorized caller: the current upgrade admin (in production, the Timelock
+    ///   contract), via `require_auth` inside `upgrade::set_upgrade_admin`.
     /// * Why: rotating the owner of every future upgrade is as consequential as an
-    ///   upgrade, so it is restricted to the contract admin.
+    ///   upgrade, so it stays gated by the same authority rather than the plain
+    ///   contract admin — otherwise the admin key could bypass the timelock delay
+    ///   entirely by handing upgrade authority to itself.
     ///
     /// # Panics
-    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
-    /// * Panics with `Error::NotAdmin` if the caller is not the contract admin.
     /// * Panics with `Error::UpgradeAdminNotSet` if no upgrade admin is installed.
-    pub fn set_upgrade_admin(env: Env, caller: Address, new_admin: Address) {
-        caller.require_auth();
-        commitments::require_admin(&env, &caller);
+    pub fn set_upgrade_admin(env: Env, new_admin: Address) {
         upgrade::set_upgrade_admin(&env, new_admin);
     }
 
@@ -364,9 +366,12 @@ impl RegistryContract {
     /// atomically and without changing the contract ID or touching stored state.
     ///
     /// # Authorization
-    /// * Authorized caller: the contract admin (via `require_auth`).
+    /// * Authorized caller: the upgrade admin (in production, the Timelock
+    ///   contract), via `require_auth` inside `upgrade::upgrade`.
     /// * Why: this entrypoint can change the behaviour of every other entrypoint, so
-    ///   it is restricted to the contract admin.
+    ///   it stays gated by the same delayed, vetoable governance path rather than
+    ///   the plain contract admin — the admin key must not be able to bypass the
+    ///   timelock and upgrade instantly.
     ///
     /// # Arguments
     /// * `new_wasm_hash` - Hash of an already-uploaded Wasm blob. Pinned by the
@@ -376,16 +381,12 @@ impl RegistryContract {
     ///   Pass the current version to swap the executable without a schema change.
     ///
     /// # Panics
-    /// * Panics with `Error::NotInitialized` if the contract has not been initialized.
-    /// * Panics with `Error::NotAdmin` if the caller is not the contract admin.
     /// * Panics with `Error::UpgradeAdminNotSet` if no upgrade admin is installed.
     /// * Panics with `Error::SchemaDowngrade` if `new_schema_version` is below the
     ///   version currently in force.
     /// * Panics with `Error::UnsupportedSchemaVersion` if `new_schema_version` is
     ///   above what this executable understands.
-    pub fn upgrade(env: Env, caller: Address, new_wasm_hash: BytesN<32>, new_schema_version: u32) {
-        caller.require_auth();
-        commitments::require_admin(&env, &caller);
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>, new_schema_version: u32) {
         upgrade::upgrade(&env, new_wasm_hash, new_schema_version);
     }
 

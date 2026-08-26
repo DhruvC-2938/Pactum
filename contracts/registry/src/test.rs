@@ -504,7 +504,15 @@ fn setup_test_with_arbitrators(
             &(crate::commitments::DISPUTE_STAKE_AMOUNT * 10),
         );
     }
-    (env, client, arbitrators, issuer, counterparty, resolver, admin)
+    (
+        env,
+        client,
+        arbitrators,
+        issuer,
+        counterparty,
+        resolver,
+        admin,
+    )
 }
 
 #[test]
@@ -556,7 +564,7 @@ fn test_get_arbitrators_fails_if_uninitialized() {
 
 #[test]
 fn test_dispute_and_resolution_end_to_end() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -597,7 +605,7 @@ fn test_dispute_and_resolution_end_to_end() {
 
 #[test]
 fn test_dispute_fails_outside_dispute_window() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -627,7 +635,7 @@ fn test_dispute_fails_outside_dispute_window() {
 
 #[test]
 fn test_dispute_succeeds_at_window_boundary() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -658,7 +666,7 @@ fn test_dispute_succeeds_at_window_boundary() {
 
 #[test]
 fn test_dispute_fails_if_caller_not_issuer_or_counterparty() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -692,7 +700,7 @@ fn test_dispute_fails_if_caller_not_issuer_or_counterparty() {
 }
 #[test]
 fn test_resolve_dispute_fails_if_caller_not_arbitrator() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -727,7 +735,7 @@ fn test_resolve_dispute_fails_if_caller_not_arbitrator() {
 
 #[test]
 fn test_resolve_dispute_fails_if_commitment_not_disputed() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -757,7 +765,7 @@ fn test_resolve_dispute_fails_if_commitment_not_disputed() {
 
 #[test]
 fn test_resolve_dispute_rejects_invalid_final_outcome() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -819,7 +827,7 @@ fn setup_disputed_commitment(
 
 #[test]
 fn test_resolve_dispute_requires_a_majority_vote() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver, admin) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
     let arb1 = arbitrators.get(1).unwrap();
@@ -851,7 +859,7 @@ fn test_resolve_dispute_requires_a_majority_vote() {
 
 #[test]
 fn test_resolve_dispute_majority_wins_over_dissent() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver, admin) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
     let arb1 = arbitrators.get(1).unwrap();
@@ -883,7 +891,7 @@ fn test_resolve_dispute_majority_wins_over_dissent() {
 
 #[test]
 fn test_resolve_dispute_arbitrator_cannot_vote_twice() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver, admin) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
 
@@ -904,7 +912,7 @@ fn test_resolve_dispute_arbitrator_cannot_vote_twice() {
 
 #[test]
 fn test_resolve_dispute_half_the_committee_is_not_enough() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver, admin) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(2);
     let arb0 = arbitrators.get(0).unwrap();
     let arb1 = arbitrators.get(1).unwrap();
@@ -927,7 +935,7 @@ fn test_resolve_dispute_half_the_committee_is_not_enough() {
 
 #[test]
 fn test_resolve_dispute_single_arbitrator_finalizes_on_first_vote() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver, admin) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(1);
     let arb0 = arbitrators.get(0).unwrap();
 
@@ -943,7 +951,7 @@ fn test_resolve_dispute_single_arbitrator_finalizes_on_first_vote() {
 
 #[test]
 fn test_resolve_dispute_committee_cannot_vote_on_custom_resolver_commitment() {
-    let (env, client, arbitrators, issuer, counterparty, _resolver, admin) =
+    let (env, client, arbitrators, issuer, counterparty, _resolver, _admin) =
         setup_test_with_arbitrators(3);
     let arb0 = arbitrators.get(0).unwrap();
 
@@ -965,7 +973,7 @@ fn test_resolve_dispute_committee_cannot_vote_on_custom_resolver_commitment() {
 
 #[test]
 fn test_dispute_fails_if_pending() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -989,7 +997,7 @@ fn test_dispute_fails_if_pending() {
 
 #[test]
 fn test_dispute_fails_if_already_disputed() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1043,7 +1051,7 @@ fn test_dispute_events_emitted() {
     use soroban_sdk::testutils::Events;
     use soroban_sdk::{symbol_short, FromVal, IntoVal, Val, Vec};
 
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1241,7 +1249,7 @@ fn test_reputation_increments_direct_attestation() {
 
 #[test]
 fn test_reputation_not_incremented_when_disputed() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1272,7 +1280,7 @@ fn test_reputation_not_incremented_when_disputed() {
 
 #[test]
 fn test_reputation_reflects_final_outcome_after_dispute() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let id = client.create_commitment(
@@ -1309,7 +1317,7 @@ fn test_reputation_reflects_final_outcome_after_dispute() {
 
 #[test]
 fn test_reputation_aggregates_multiple_commitments() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
@@ -1405,7 +1413,7 @@ fn test_create_commitment_fails_if_due_at_is_current_timestamp() {
 
 #[test]
 fn test_dispute_fails_if_already_resolved() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1434,7 +1442,7 @@ fn test_dispute_fails_if_already_resolved() {
 #[test]
 fn test_realistic_sequence() {
     // create -> attest late -> dispute -> resolve fulfilled -> verify reputation
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[1u8; 32]);
@@ -1592,7 +1600,7 @@ fn test_reentrant_attest_call_is_rejected() {
 
 #[test]
 fn test_get_trust_score_reflects_outcomes() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
 
@@ -1888,7 +1896,7 @@ fn test_admin_lifecycle_operations_exempt_from_pause() {
     // upgrade admin installed it is still rejected by the admin gate
     // (UpgradeAdminNotSet), not by the pause gate (ProtocolPaused).
     let mock_wasm_hash = BytesN::from_array(&env, &[2u8; 32]);
-    let res = client.try_upgrade(&admin, &mock_wasm_hash, &SCHEMA_VERSION_V1);
+    let res = client.try_upgrade(&mock_wasm_hash, &SCHEMA_VERSION_V1);
     assert_eq!(res, Err(Ok(Error::UpgradeAdminNotSet.into())));
 
     // pause/unpause remain callable by the admin while paused.
@@ -1900,7 +1908,8 @@ fn test_admin_lifecycle_operations_exempt_from_pause() {
 
 #[test]
 fn test_custom_resolver_delegation() {
-    let (env, client, issuer, counterparty, _default_resolver, _admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, _default_resolver, _admin) =
+        setup_test_with_arbitrator();
 
     env.ledger().with_mut(|l| l.timestamp = 1000);
     let terms_hash = BytesN::from_array(&env, &[9u8; 32]);
@@ -1954,7 +1963,8 @@ struct PreOracleCommitment {
 
 #[test]
 fn test_legacy_commitment_storage_migration() {
-    let (env, client, issuer, counterparty, _default_resolver, _admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, _default_resolver, _admin) =
+        setup_test_with_arbitrator();
 
     // Directly seed a LegacyCommitment in persistent storage (simulating pre-upgrade storage)
     let arbitrator = client.get_arbitrator();
@@ -2016,7 +2026,7 @@ struct PreAttestorVotingCommitment {
 
 #[test]
 fn test_mid_tier_milestone_commitment_migration_preserves_counters() {
-    let (env, client, issuer, counterparty, resolver, admin) = setup_test_with_arbitrator();
+    let (env, client, issuer, counterparty, resolver, _admin) = setup_test_with_arbitrator();
 
     let mid_id = 77u64;
     let mid_comm = PreAttestorVotingCommitment {

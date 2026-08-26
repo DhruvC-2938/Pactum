@@ -93,10 +93,6 @@ pub enum Error {
     DisputeTokenNotSet = 40,
     /// The dispute stake amount must be greater than zero.
     InvalidDisputeStakeAmount = 41,
-    /// The caller is not the contract admin.
-    NotAdmin = 42,
-    /// The admin address has already been set.
-    AdminAlreadySet = 43,
     /// Forced inclusion was attempted before the rollup challenge window elapsed.
     RollupChallengePending = 42,
     /// The provided Merkle proof does not resolve to the expected batch root.
@@ -104,4 +100,8 @@ pub enum Error {
     /// The fee oracle has not yet received enough observations to produce a
     /// recommendation.
     OracleNotInitialized = 44,
+    /// The caller is not the contract admin.
+    NotAdmin = 45,
+    /// The admin address has already been set.
+    AdminAlreadySet = 46,
 }

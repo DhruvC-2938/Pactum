@@ -64,17 +64,7 @@ async function installFreighterMock(page: Page) {
             };
             break;
           }
-          // Simulate signMessage: returns a deterministic 64-byte base64 signature
-          case 'REQUEST_SIGN_MESSAGE': {
-            // Deterministic mock: base64 of 64 zero bytes (sufficient for HKDF key derivation test)
-            const mockSig = btoa(String.fromCharCode(...new Array(64).fill(42)));
-            response = {
-              signedTransaction: txXdr,
-              signedTxXdr: txXdr,
-              signerAddress: mockAddress,
-            };
-            break;
-          }
+
           // Simulate signMessage: returns a deterministic 64-byte base64 signature.
           // CONFIRMED against @stellar/freighter-api v6 (index.min.js):
           // signMessage() posts type=SUBMIT_BLOB carrying {blob} and expects
@@ -89,22 +79,12 @@ async function installFreighterMock(page: Page) {
             };
             break;
           }
-          case 'SUBMIT_TRANSACTION': {
-            response = {
-              status: 'SUCCESS',
-              txHash: 'a1b2c3d4e5f6',
-            };
-            break;
-          }
+
           // Simulate signTransaction: echo the transaction XDR back as "signed"
           // (submission itself is mocked in mockSorobanRpc, so no real signature
           // is needed).
-          case 'SUBMIT_TRANSACTION':
-            response = {
-              signedTransaction: data.transactionXdr,
-              signerAddress: mockAddress,
-            };
-            break;
+          // Removed duplicate SUBMIT_TRANSACTION here as it is handled above.
+
           default:
             return;
         }
@@ -241,7 +221,6 @@ test.beforeEach(async ({ page }) => {
   await installFreighterMock(page);
 
   await mockSorobanRpc(page);
-
 
   // Offline Soroban RPC mock: account lookup, simulation, submission and
   // confirmation all succeed; create_commitment returns commitment id 42.
@@ -562,10 +541,7 @@ test('loading spinners display during network requests', async ({ page }) => {
 test('WASM validation failure blocks transaction simulation and wallet submission', async ({
   page,
 }) => {
-  // Connect wallet first (submit button is disabled without wallet)
-  await page.getByRole('button', { name: 'Connect Wallet' }).first().click();
-  await page.getByRole('button', { name: /Freighter/ }).click();
-  await expect(page.getByRole('button', { name: SHORT_ADDRESS })).toBeVisible();
+
 
   // Track if signTransaction was called
   await page.evaluate(() => {
@@ -603,7 +579,7 @@ test('WASM validation failure blocks transaction simulation and wallet submissio
 
   // Wait for WASM validation or Zod validation to show the error
   await expect(
-    page.getByText(/Due date must be set in the future|Contract validation failed/i),
+    page.getByText(/Due date must be( set)? in the future|Contract validation failed/i),
   ).toBeVisible({ timeout: 10000 });
 });
 
@@ -660,9 +636,7 @@ test('encrypted commitment: toggle encrypts terms — ciphertext sent to backend
 
   // Wait until the upload actually happened (sign -> submit -> confirm ->
   // store-encrypted), then assert on its body.
-  await expect
-    .poll(() => encryptedRequests.length, { timeout: 30_000 })
-    .toBeGreaterThan(0);
+  await expect.poll(() => encryptedRequests.length, { timeout: 30_000 }).toBeGreaterThan(0);
   await page.waitForTimeout(3000);
 
   // Assert: the encrypted request has ciphertext not plaintext

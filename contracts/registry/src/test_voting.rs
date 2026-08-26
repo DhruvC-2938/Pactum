@@ -72,7 +72,15 @@ fn setup_voting(
 
     env.ledger().with_mut(|l| l.timestamp = T0);
 
-    (client, token, arbitrator, admin, issuer, counterparty, attestors)
+    (
+        client,
+        token,
+        arbitrator,
+        admin,
+        issuer,
+        counterparty,
+        attestors,
+    )
 }
 
 /// Creates a panel-governed commitment, attests it as `Fulfilled`, and raises
@@ -385,7 +393,8 @@ fn test_create_rejects_invalid_thresholds() {
 #[test]
 fn test_vote_balance_unaffected_by_threshold_vote() {
     let env = Env::default();
-    let (client, token, _arbitrator, _admin, _issuer, _counterparty, attestors) = setup_voting(&env);
+    let (client, token, _arbitrator, _admin, _issuer, _counterparty, attestors) =
+        setup_voting(&env);
     let (a1, a2) = (attestors.get(0).unwrap(), attestors.get(1).unwrap());
     let resolver = attestors.get(4).unwrap();
 
