@@ -88,12 +88,17 @@ echo "Deployed contract: ${CONTRACT_ID}"
 ARBITRATOR_ADDR=$($CLI keys address arbitrator)
 
 echo "== Initializing arbitrator committee =="
+# `arbitrator` also doubles as the contract admin for test purposes: `initialize`
+# now requires both the arbitrator committee's and the admin's require_auth, and
+# reusing the one identity that's already the `--source` (and thus already
+# signing) avoids having to get the CLI to co-sign a second, separate identity.
 $CLI contract invoke \
   --id "$CONTRACT_ID" \
   --source arbitrator \
   --network "$NETWORK" \
   -- initialize \
-  --arbitrators "[\"${ARBITRATOR_ADDR}\"]"
+  --arbitrators "[\"${ARBITRATOR_ADDR}\"]" \
+  --admin "$ARBITRATOR_ADDR"
 
 echo "== Writing .env.e2e =="
 cat > .env.e2e <<EOF
