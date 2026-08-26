@@ -30,6 +30,7 @@ struct Fixture {
     client: RegistryContractClient<'static>,
     contract_id: Address,
     arbitrator: Address,
+    admin: Address,
     timelock: Address,
     /// Dispute token address, configured so that `client.dispute()` calls succeed.
     dispute_token: Address,
@@ -46,9 +47,10 @@ fn setup() -> Fixture {
     let client = RegistryContractClient::new(&env, &contract_id);
 
     let arbitrator = Address::generate(&env);
+    let admin = Address::generate(&env);
     let timelock = Address::generate(&env);
-    client.initialize(&vec![&env, arbitrator.clone()]);
-    client.init_upgrade_admin(&timelock);
+    client.initialize(&vec![&env, arbitrator.clone()], &admin);
+    client.init_upgrade_admin(&admin, &timelock);
 
     // Configure the dispute token required by the registry's `dispute` function
     // (error #40 = DisputeTokenNotSet without this).
@@ -62,6 +64,7 @@ fn setup() -> Fixture {
         client,
         contract_id,
         arbitrator,
+        admin,
         timelock,
         dispute_token,
     }
@@ -148,7 +151,7 @@ fn test_init_upgrade_admin_can_only_run_once() {
     let other = Address::generate(&f.env);
     let err = f
         .client
-        .try_init_upgrade_admin(&other)
+        .try_init_upgrade_admin(&f.admin, &other)
         .unwrap_err()
         .unwrap();
     assert_eq!(err, Error::UpgradeAdminAlreadySet.into());
@@ -164,23 +167,27 @@ fn test_init_upgrade_admin_fails_before_initialize() {
     let client = RegistryContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
 
-    let err = client.try_init_upgrade_admin(&admin).unwrap_err().unwrap();
+    let err = client
+        .try_init_upgrade_admin(&admin, &admin)
+        .unwrap_err()
+        .unwrap();
     assert_eq!(err, Error::NotInitialized.into());
 }
 
 #[test]
 #[should_panic]
-fn test_init_upgrade_admin_requires_arbitrator_auth() {
-    // No mock_all_auths: the arbitrator has not signed.
+fn test_init_upgrade_admin_requires_admin_auth() {
+    // No mock_all_auths: the admin has not signed.
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
     let arbitrator = Address::generate(&env);
-    client.initialize(&vec![&env, arbitrator]);
+    let admin = Address::generate(&env);
+    client.initialize(&vec![&env, arbitrator], &admin);
 
     env.set_auths(&[]);
-    client.init_upgrade_admin(&Address::generate(&env));
+    client.init_upgrade_admin(&admin, &admin);
 }
 
 // -------------------------------------------------------------------------
@@ -193,7 +200,8 @@ fn test_upgrade_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&vec![&env, Address::generate(&env)]);
+    let admin = Address::generate(&env);
+    client.initialize(&vec![&env, Address::generate(&env)], &admin);
 
     let err = client
         .try_upgrade(&dummy_wasm_hash(&env), &SCHEMA_VERSION_V2)
@@ -260,7 +268,8 @@ fn test_set_upgrade_admin_fails_without_governance_installed() {
     env.mock_all_auths();
     let contract_id = env.register(RegistryContract, ());
     let client = RegistryContractClient::new(&env, &contract_id);
-    client.initialize(&vec![&env, Address::generate(&env)]);
+    let admin = Address::generate(&env);
+    client.initialize(&vec![&env, Address::generate(&env)], &admin);
 
     let err = client
         .try_set_upgrade_admin(&Address::generate(&env))
@@ -700,6 +709,7 @@ mod wasm {
         client: RegistryContractClient<'static>,
         arbitrator: Address,
         timelock: Address,
+        admin: Address,
     }
 
     fn setup_wasm() -> WasmFixture {
@@ -711,8 +721,9 @@ mod wasm {
         let client = RegistryContractClient::new(&env, &contract_id);
         let arbitrator = Address::generate(&env);
         let timelock = Address::generate(&env);
-        client.initialize(&vec![&env, arbitrator.clone()]);
-        client.init_upgrade_admin(&timelock);
+        let admin = Address::generate(&env);
+        client.initialize(&vec![&env, arbitrator.clone()], &admin);
+        client.init_upgrade_admin(&admin, &timelock);
 
         WasmFixture {
             env,
@@ -720,6 +731,7 @@ mod wasm {
             client,
             arbitrator,
             timelock,
+            admin,
         }
     }
 

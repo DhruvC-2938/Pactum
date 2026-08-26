@@ -51,6 +51,13 @@ jobs:
       - name: Deploy test contract + write .env.e2e
         run: ./scripts/e2e/deploy-test-contract.sh
 
+      # Nothing runs `npm run migrate:timescale` automatically -- backend's Dockerfile CMD is a
+      # bare `npm start`, and no compose service applies the TimescaleDB schema. Without this,
+      # the indexer crash-loops on startup ("relation public.indexer_checkpoint does not exist"),
+      # so `/commitments` 503s for the rest of the job no matter what the contract/frontend do.
+      - name: Run backend DB migrations
+        run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml run --rm backend npm run migrate:timescale
+
       - name: Start backend, indexer, postgres, redis
         run: docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d backend indexer
 
@@ -60,9 +67,20 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      # frontend/ is a member of the npm-workspaces monorepo, so a bare
+      # `npm ci` in this subdir detects the parent workspace and requires the
+      # local @pactum/cli package, which a standalone frontend lockfile cannot
+      # satisfy (EUSAGE: "Missing: @pactum/cli@0.1.0 from lock file"). Mirror
+      # the Frontend Checks job and fall back to `npm install`, which resolves
+      # workspace packages from the repo and succeeds.
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci || npm install
+          else
+            npm install
+          fi
 
       - name: Install Playwright browsers
         working-directory: frontend
@@ -77,7 +95,9 @@ jobs:
 
       - name: Run sandbox E2E tests
         working-directory: frontend
-        run: npx playwright test e2e/sandbox
+        # Only chromium is installed above (--with-deps chromium) -- the firefox project in
+        # playwright.config.ts is for the regular e2e workflow, not this docker-sandbox job.
+        run: npx playwright test e2e/sandbox --project=chromium
         env:
           CI: true
           E2E_SANDBOX: true
@@ -89,6 +109,17 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+      - name: Dump backend/indexer logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml logs backend indexer postgres
+
+      - name: Dump commitment_outcomes table on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.e2e.yml exec -T postgres \
+            psql -U postgres -d pactum_timeseries -c "SELECT * FROM commitment_outcomes ORDER BY time DESC LIMIT 20;"
 
       - name: Tear down
         if: always()

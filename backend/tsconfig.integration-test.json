@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "outDir": "./dist-integration-test",
+    "rootDir": "."
+  },
+  "include": [
+    "src/indexer/**/*.ts",
+    "src/db/**/*.ts",
+    "tests/setup.ts",
+    "tests/integration/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "dist-integration-test"]
+}

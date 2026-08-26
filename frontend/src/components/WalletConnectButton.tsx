@@ -104,7 +104,7 @@ export const WalletConnectButton: React.FC<WalletConnectButtonProps> = ({
           disabled={isConnecting}
           className={className}
           style={{ ...variantStyles[variant], cursor: isConnecting ? 'wait' : 'pointer' }}
-          title="Connect your Stellar wallet"
+          title="Connect a Stellar wallet or login with social"
         >
           <Wallet size={variant === 'dark' ? 15 : 14} />
           {isConnecting ? 'Connecting...' : 'Connect Wallet'}
