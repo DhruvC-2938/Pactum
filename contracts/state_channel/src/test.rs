@@ -13,6 +13,7 @@ pub struct MockWasmRuleset;
 
 #[contractimpl]
 impl MockWasmRuleset {
+    #[allow(clippy::too_many_arguments)]
     pub fn validate_transition(
         _env: Env,
         _old_state_hash: BytesN<32>,

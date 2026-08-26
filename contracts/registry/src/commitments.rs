@@ -727,10 +727,7 @@ pub struct CommitmentParams {
 /// # Panics
 /// * Panics with `Error::BatchTooLarge` if batch size > 50.
 /// * Panics with `Error::DueAtInPast` if any `due_at` is in the past.
-pub fn create_batch(
-    env: &soroban_sdk::Env,
-    params: Vec<CommitmentParams>,
-) -> Vec<u64> {
+pub fn create_batch(env: &soroban_sdk::Env, params: Vec<CommitmentParams>) -> Vec<u64> {
     crate::reentrancy::enter(env);
 
     let batch_size = params.len();

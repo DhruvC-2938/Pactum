@@ -75,6 +75,7 @@ pub trait WasmConsensusRuleset {
     /// Validates an off-chain state transition against user-defined WASM consensus rules.
     /// Returns `true` if the state transition from `old_state_hash` to `new_state_hash`
     /// with state payload `state_data` and balance movement is valid according to the WASM ruleset.
+    #[allow(clippy::too_many_arguments)]
     fn validate_transition(
         env: Env,
         old_state_hash: BytesN<32>,
@@ -93,6 +94,7 @@ pub struct StateChannelContract;
 #[contractimpl]
 impl StateChannelContract {
     /// Opens a new L2 state channel with locked token collateral and assigned WASM consensus ruleset contract.
+    #[allow(clippy::too_many_arguments)]
     pub fn open_channel(
         env: Env,
         party_a: Address,
