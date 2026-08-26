@@ -1,0 +1,95 @@
+name: Security Audit
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  npm-audit:
+    name: "NPM Audit (${{ matrix.directory }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: [frontend, backend, sdk/js]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if package.json exists and is non-empty
+        id: check
+        run: |
+          if [ -s "${{ matrix.directory }}/package.json" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Skipped::${{ matrix.directory }}/package.json is missing or empty. Skipping audit."
+          fi
+
+      - name: Set up Node.js 20.x (LTS)
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Cache npm dependencies
+        if: steps.check.outputs.exists == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-audit-${{ matrix.directory }}-${{ hashFiles(format('{0}/package-lock.json', matrix.directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-npm-audit-${{ matrix.directory }}-
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        working-directory: ${{ matrix.directory }}
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts
+          fi
+
+      - name: Run npm audit
+        if: steps.check.outputs.exists == 'true'
+        working-directory: ${{ matrix.directory }}
+        run: |
+          echo "🔍 Running npm audit in ${{ matrix.directory }}..."
+          npm audit --audit-level=high
+        continue-on-error: false
+
+  cargo-audit:
+    name: Cargo Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-audit-
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo audit
+        working-directory: contracts
+        run: |
+          echo "🔍 Running cargo audit in contracts/..."
+          cargo audit
+        continue-on-error: false
