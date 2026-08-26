@@ -19,6 +19,7 @@ import {
   submitCreateCommitment,
   fundTestnetAccount,
   preflightSimulate,
+  fetchArbitrator,
   extractDiagnosticEventBlobs,
   type CreateCommitmentResult,
   type SimulationPreview,
@@ -320,10 +321,9 @@ export default function CreateCommitmentWizard({
         // Build the same tx as soroban.ts does, just for simulation
         const { rpc, TransactionBuilder, Contract, Address, xdr, Networks, BASE_FEE } =
           await import('@stellar/stellar-sdk');
-        const server = new rpc.Server(
-          import.meta.env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org',
-          { allowHttp: true },
-        );
+        const rpcUrl =
+          import.meta.env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
+        const server = new rpc.Server(rpcUrl, { allowHttp: true });
         const account = await server.getAccount(connectedAddress);
         const contractId =
           import.meta.env.VITE_PACTUM_CONTRACT_ID ||
@@ -333,6 +333,11 @@ export default function CreateCommitmentWizard({
           import.meta.env.VITE_STELLAR_NETWORK_PASSPHRASE || Networks.TESTNET;
         const { hexToBytes } = await import('./lib/soroban');
         const termsHashBytes = hexToBytes(termsHashHex);
+        // Mirror submitCreateCommitment's own argument list exactly (see soroban.ts) --
+        // create_commitment takes 9 parameters, and a preflight built with only the first
+        // 4 fails simulation with a MismatchingParameterLen host error regardless of
+        // whether the real submission would have succeeded.
+        const arbitratorAddress = await fetchArbitrator(rpcUrl, contractId, networkPassphrase);
         const simTx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
           .addOperation(
             contract.call(
@@ -341,6 +346,11 @@ export default function CreateCommitmentWizard({
               Address.fromString(data.counterparty).toScVal(),
               xdr.ScVal.scvBytes(termsHashBytes as any),
               xdr.ScVal.scvU64(xdr.Uint64.fromString(dueAtSeconds.toString())),
+              Address.fromString(arbitratorAddress).toScVal(),
+              xdr.ScVal.scvVoid(),
+              xdr.ScVal.scvVoid(),
+              xdr.ScVal.scvVec([]),
+              xdr.ScVal.scvU32(0),
             ),
           )
           .setTimeout(60)
