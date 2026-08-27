@@ -18,12 +18,12 @@ const THEME_VARIABLES: Record<ResolvedTheme, string> = {
     '--bg:#101114;--bg-card:rgba(30,31,36,.78);--bg-input:rgba(38,39,45,.9);--text-primary:#f5f5f7;--text-secondary:#a1a1aa;--separator:rgba(255,255,255,.1);',
 };
 
-function resolveTheme(preference: ThemePreference): ResolvedTheme {
+export function resolveTheme(preference: ThemePreference): ResolvedTheme {
   if (preference !== 'system') return preference;
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-function applyTheme(theme: ResolvedTheme) {
+export function applyTheme(theme: ResolvedTheme) {
   const root = document.documentElement;
   let style = document.getElementById('pactum-theme-variables');
   if (!style) {
@@ -82,16 +82,3 @@ export function useTheme() {
   return context;
 }
 
-export function ThemeSelector() {
-  const { preference, setPreference } = useTheme();
-  return (
-    <label className="theme-selector">
-      <span className="sr-only">Theme</span>
-      <select value={preference} onChange={(event) => setPreference(event.target.value as ThemePreference)}>
-        <option value="system">System theme</option>
-        <option value="light">Light theme</option>
-        <option value="dark">Dark theme</option>
-      </select>
-    </label>
-  );
-}

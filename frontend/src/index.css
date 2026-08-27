@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/*
+ * Dark mode uses the "class" strategy: the `dark:` variant is applied whenever
+ * an ancestor has the `.dark` class (set by ThemeContext / the pre-paint script
+ * in index.html). This is the Tailwind v4 equivalent of the v3
+ * `darkMode: 'class'` option that used to live in `tailwind.config.js`.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
