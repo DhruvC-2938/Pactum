@@ -12,6 +12,13 @@ import { queryClient } from './lib/queryClient';
 import { WalletProvider } from './context/WalletContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { IndexerModeProvider } from './context/IndexerModeContext';
+import { initSentry } from './lib/sentry';
+import { SentryErrorBoundary } from './components/SentryErrorBoundary';
+
+// Initialise frontend error monitoring (Issue #210) before the tree renders so
+// Sentry can capture unhandled promise rejections, global errors and component
+// crashes from the very first frame. No-op unless VITE_SENTRY_DSN is configured.
+initSentry();
 
 // WalletProvider and QueryClientProvider wrap the whole tree here, in the host, exactly once —
 // not per-remote — since the host owns the single WalletContext and QueryClient instances that
@@ -19,15 +26,17 @@ import { IndexerModeProvider } from './context/IndexerModeContext';
 // docs/module-federation.md). A remote wrapping itself in its own instance of either provider
 // would defeat the singleton sharing this architecture depends on.
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <WalletProvider>
-        <ThemeProvider>
-          <IndexerModeProvider>
-            <App />
-          </IndexerModeProvider>
-        </ThemeProvider>
-      </WalletProvider>
-    </QueryClientProvider>
-  </StrictMode>,
+  <SentryErrorBoundary>
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <WalletProvider>
+          <ThemeProvider>
+            <IndexerModeProvider>
+              <App />
+            </IndexerModeProvider>
+          </ThemeProvider>
+        </WalletProvider>
+      </QueryClientProvider>
+    </StrictMode>
+  </SentryErrorBoundary>,
 );

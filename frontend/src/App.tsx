@@ -25,6 +25,7 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { IndexerModeToggle, useIndexerMode } from './context/IndexerModeContext';
 import { Menu, X, User, Lock } from 'lucide-react';
 import { MeshNetworkMonitor } from './components/MeshNetworkMonitor';
+import { SentryErrorBoundary } from './components/SentryErrorBoundary';
 
 interface CommitmentItemProps {
   commitment: Commitment;
@@ -290,7 +291,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <SentryErrorBoundary>
       {/* Mobile Drawer Backdrop Overlay */}
       {isMobileMenuOpen && (
         <div className="mobile-backdrop" onClick={() => setIsMobileMenuOpen(false)} />
@@ -1773,6 +1774,6 @@ export default function App() {
           </section>
         </main>
       </div>
-    </>
+    </SentryErrorBoundary>
   );
 }
