@@ -13,15 +13,29 @@ import { browserTracingIntegration, captureException, init, withScope } from '@s
  * hashes) are scrubbed before any event is sent to Sentry.
  */
 
-const SENSITIVE_RE = /\b(?:[GCS][A-Z2-7]{55}|[0-9a-fA-F]{64})\b/g;
+/**
+ * Matches sensitive PII-like strings that should never leave the browser:
+ *
+ * - 56-char Stellar addresses: Ed25519 public keys (`G…`), contract IDs
+ *   (`C…`) and secret keys (`S…`).
+ * - 69-char M-prefixed **muxed** account addresses (`M…`), which embed a base
+ *   64-bit memo ID on top of the underlying `G` public key.
+ * - 64-char hex strings: transaction / commitment / proof hashes.
+ *
+ * All use the base32 alphabet (`A-Z2-7`) and are word-bounded so only
+ * standalone tokens are replaced.
+ */
+const SENSITIVE_RE = /\b(?:[GCS][A-Z2-7]{55}|M[A-Z2-7]{68}|[0-9a-fA-F]{64})\b/g;
 const REDACTED = '[REDACTED]';
 
 let enabled = false;
 
+/** Replaces every sensitive token in a string with {@link REDACTED}. */
 function scrubString(value: string): string {
   return value.replace(SENSITIVE_RE, REDACTED);
 }
 
+/** Recursively scrubs sensitive tokens out of a scalar, array or object value. */
 function scrubValue(value: unknown): unknown {
   if (typeof value === 'string') {
     return scrubString(value);
@@ -40,11 +54,12 @@ function scrubValue(value: unknown): unknown {
 }
 
 /**
- * beforeSend hook: scrubs wallet addresses, contract IDs and transaction /
- * commitment hashes out of every event (its message, exception values and any
- * attached `extra` context) before it leaves the browser.
+ * beforeSend hook: scrubs wallet addresses (including muxed `M…` addresses),
+ * contract IDs and transaction / commitment hashes out of every event (its
+ * message, exception values and any attached `extra` context) before it leaves
+ * the browser. Exported so the redaction behaviour can be unit-tested.
  */
-function scrubEvent(event: any, _hint: any): any {
+export function scrubEvent(event: any, _hint: any): any {
   if (typeof event.message === 'string') {
     event.message = scrubString(event.message);
   }
