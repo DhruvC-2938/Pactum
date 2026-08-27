@@ -1,4 +1,5 @@
 import { Account, FeeBumpTransaction, Keypair, Transaction, rpc, xdr } from '@stellar/stellar-sdk';
+import { captureSorobanRpcError } from './sentry';
 
 /**
  * A single Soroban RPC endpoint that the pool can route traffic to.
@@ -352,6 +353,14 @@ export class SorobanRpcPool {
         if (retryable && remaining > 0) {
           this.options.onFallback?.({ url: node.url, error, attempt: attempt + 1, remaining });
         } else if (retryable) {
+          // Every node failed on a retryable (timeout / network / node overload)
+          // error. Report it to Sentry with non-sensitive context so production
+          // RPC timeouts are visible (Issue #210). No-op when Sentry is off.
+          captureSorobanRpcError(error, {
+            rpcNode: node.url,
+            attempts: maxAttempts,
+            errorType: error instanceof Error ? error.name : typeof error,
+          });
           throw new RpcPoolExhaustedError(lastError, this.getStats(), maxAttempts);
         } else {
           // Application-level error (simulation failure, bad request, ...) —
