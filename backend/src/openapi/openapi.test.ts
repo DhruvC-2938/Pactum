@@ -44,8 +44,8 @@ describe('OpenAPI 3.0 Documentation Generator (Pactum #126)', () => {
     assert.ok(spec.components.schemas.Commitment);
     const commitmentObj = spec.components.schemas.Commitment as any;
     assert.equal(commitmentObj.type, 'object');
-    assert.ok(commitmentObj.properties.title);
-    assert.ok(commitmentObj.properties.amount);
-    assert.ok(commitmentObj.properties.dueDate);
+    assert.ok(commitmentObj.properties.issuer);
+    assert.ok(commitmentObj.properties.counterparty);
+    assert.ok(commitmentObj.properties.due_at);
   });
 });
