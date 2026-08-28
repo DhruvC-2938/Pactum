@@ -72,6 +72,7 @@
     "@oxlint/binding-linux-x64-gnu": "^1.75.0",
     "@oxlint/binding-wasm32-wasi": "^1.75.0",
     "@rolldown/binding-linux-x64-gnu": "^1.2.4",
-    "@rolldown/binding-wasm32-wasi": "^1.2.4"
+    "@rolldown/binding-wasm32-wasi": "^1.2.4",
+    "lightningcss-linux-x64-gnu": "^1.33.0"
   }
 }
