@@ -275,6 +275,10 @@ jobs:
           rm -rf node_modules
           npm ci --include=optional
 
+      - name: Repair oxlint optional binding (fallback)
+        working-directory: frontend
+        run: npm i oxlint --include=optional --no-save
+
       - name: Run frontend linter
         working-directory: frontend
         run: npm run lint
