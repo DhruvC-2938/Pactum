@@ -275,9 +275,9 @@ jobs:
           rm -rf node_modules
           npm ci --include=optional
 
-      - name: Repair oxlint optional binding (fallback)
+      - name: Repair native bindings (fallback)
         working-directory: frontend
-        run: npm i oxlint --include=optional --no-save
+        run: npm i oxlint rolldown --include=optional --no-save
 
       - name: Run frontend linter
         working-directory: frontend
@@ -305,12 +305,14 @@ jobs:
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       - name: Install wizard remote dependencies
         working-directory: frontend-wizard-remote
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       - name: Run frontend e2e tests
         working-directory: frontend
@@ -374,18 +376,21 @@ jobs:
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       - name: Install dashboard remote dependencies
         working-directory: frontend-dashboard-remote
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       - name: Install wizard remote dependencies
         working-directory: frontend-wizard-remote
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       - name: Typecheck and build dashboard remote
         working-directory: frontend-dashboard-remote

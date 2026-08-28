@@ -78,6 +78,7 @@ jobs:
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       # playwright.config.ts's webServer also builds+previews the dashboard/wizard Module
       # Federation remotes (see docs/module-federation.md) since the host now lazy-loads them
@@ -88,12 +89,14 @@ jobs:
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       - name: Install wizard remote dependencies
         working-directory: frontend-wizard-remote
         run: |
           rm -rf node_modules
           npm ci --include=optional
+          npm i rolldown --include=optional --no-save
 
       - name: Install Playwright browsers
         working-directory: frontend
